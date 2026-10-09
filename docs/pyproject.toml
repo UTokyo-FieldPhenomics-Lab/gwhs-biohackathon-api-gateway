@@ -1,0 +1,14 @@
+[project]
+name = "biohack-docs"
+version = "0.1.0"
+description = "Temporary documentation site for the Global Wheat BioHackathon API (Zensical)."
+requires-python = ">=3.12"
+dependencies = [
+    "markdown-exec>=1.9",
+    "zensical>=0.0.63",
+]
+
+# The docs site is a disposable build target, not a library: no package. It still commits a
+# uv.lock like the other subprojects, so the resolved versions stay reproducible.
+[tool.uv]
+package = false
