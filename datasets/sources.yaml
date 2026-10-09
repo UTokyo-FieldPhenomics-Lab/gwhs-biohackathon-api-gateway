@@ -1,0 +1,21 @@
+# Provenance for every dataset the publisher consumes.
+#
+# This file is the source of truth for adapters, upstream locations, and licenses. Every
+# version published to S3 must be traceable back to this file. Fill in the fields below
+# before the first real publish; `license` must be cleared before any dataset is distributed
+# publicly. Record an immutable revision in `upstream` (for example an HF commit id) rather
+# than a checksum: this repository computes and stores no content hash.
+
+datasets:
+  gwhd:
+    adapter: gwhd          # image + bounding-box annotations
+    upstream: null         # TODO: HF dataset id @ revision, or local parquet path
+    license: null          # TODO: redistribution terms to verify
+  gwfss:
+    adapter: gwfss         # image + semantic mask annotations
+    upstream: null
+    license: null
+  gwhs:
+    adapter: gwhs          # image + object-level RLE and labels
+    upstream: null
+    license: null
