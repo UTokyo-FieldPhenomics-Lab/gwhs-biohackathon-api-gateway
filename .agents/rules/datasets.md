@@ -8,13 +8,28 @@ repeated here.
   gateway host. Splitting the run invites skipping a stage.
 - **Exit code is the only teardown signal.** A non-zero exit stops the pipeline; only exit 0
   authorizes tearing down whatever environment the run set up, so validation cannot be ignored.
+- **Objects are streamed, never staged.** A publish reads a few rows at a time out of the cached
+  parquet and PUTs each object straight to S3, so peak disk is the cache plus nothing and no
+  scratch volume exists. Peak memory is one parquet row group — the largest measured is 108 MB —
+  and that is a ceiling only while reads stay serial: concurrency belongs to the upload side, and
+  parallel readers are what would multiply it.
 - **Idempotent by comparison, not timestamps.** Decide whether an object is already correct
   from its byte size plus its MD5 (`ETag` for a single-part `PUT`). Do not hash locally and
-  do not trust mtimes.
+  do not trust mtimes. The comparison is about objects in the publisher's own prefix, never about
+  files on the machine: code identity is a git tag or commit, dependencies are `uv.lock`, data
+  identity is the pinned upstream revision, and none of the three is ever verified by comparing
+  bytes.
 - **Validate before upload, verify after.** Metadata is validated before it is written; image
   objects are verified after upload by comparing counts, byte sizes, and ETags. Because a
   single-part `PUT` keeps `ETag` equal to the content MD5, that verification is cheap and
-  always runs.
+  always runs. Every object is small enough for a single-part `PUT` — the largest is about
+  1.2 MB — and that is load-bearing: a multipart upload would replace the content MD5 with a
+  digest of the parts and void the comparison.
+- **Every object carries its own type and a long cache lifetime.** `Content-Type` follows the
+  file extension, because S3 stores no type of its own and a browser will not display an object
+  typed as `binary/octet-stream`; `Cache-Control: public, max-age=31536000, immutable` follows
+  from a path being written once, and without it a viewer revalidates on every request even
+  though CloudFront holds the object.
 - **No content hashing.** The publisher computes no checksum and stores none; correctness
   rests on `size + ETag`. Byte-duplicate rows are a source-data-quality matter — they are
   neither detected nor resolved here. See [`design-philosophy.md`](design-philosophy.md).

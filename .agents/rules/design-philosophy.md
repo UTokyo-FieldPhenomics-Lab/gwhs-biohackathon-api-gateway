@@ -26,8 +26,8 @@ what the hash is *for*:
 
 | Stated purpose | Survives first principles? |
 |---|---|
-| Verify an upload landed intact | No — S3 returns `ETag`, which for a single-part `PUT` **is the content MD5**, computed server-side. Compare local size + MD5 against remote size + `ETag`; no client hashing. |
-| Skip unchanged objects on a re-run (idempotency) | No — the same size + `ETag` comparison answers it. |
+| Verify an upload landed intact | No — S3 returns `ETag`, which for a single-part `PUT` **is the content MD5**, computed server-side. Compare the size we sent against the size a `HEAD` reports, and the `ETag` the `PUT` answered with against the one the `HEAD` does: both digests are S3's, and no client-side hashing happens. |
+| Skip unchanged objects on a re-run (idempotency) | No — the same size + `ETag` comparison answers it, against the publisher's own S3 prefix and nothing else. |
 | Cache key | No — CloudFront keys on the URL, not on content. |
 | Deduplicate images within a dataset | No — byte-duplicate rows are a source-data-quality matter, and byte-identical objects are findable by size + `ETag` after upload without hashing. |
 | Integrity of third-party weights | Maybe — prefer the platform's native checksum (S3 additional checksums, an upstream-published digest) over one we compute and store ourselves. |
