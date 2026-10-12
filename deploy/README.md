@@ -1,8 +1,27 @@
 # Deploy
 
-Bootstrap for the gateway host: one EC2 instance (Debian 13) that serves the API and, during a
-release, runs the publisher against its own data volume. Binding constraints are in
+Bootstrap for the gateway host: one EC2 instance (Debian 13) that serves the API and carries the
+metadata index the gateway loads at startup. Binding constraints are in
 [`../.agents/rules/deploy.md`](../.agents/rules/deploy.md).
+
+## Host configuration
+
+| | |
+|---|---|
+| Instance | `t3.small` — 2 vCPU, 2 GiB, x86_64 |
+| OS | Debian 13 "trixie" |
+| Volumes | root 8 GiB gp3; data 50 GiB gp3, mounted at `/srv/biohack` |
+| Region and zone | the region is environment configuration (the dev host is in `eu-central-1`); the zone is pinned for the life of the data volume, because a volume cannot follow an instance across zones |
+
+Two CPUs is plenty: the gateway holds one small index in memory and answers from it, so its work
+is network-bound rather than CPU-bound. The publisher is the other way round — it wants disk, not
+cores — and it brings its own scratch volume for a run. Both volumes are encrypted; the account
+default key is enough, since a customer-managed one buys nothing here.
+
+The root volume stays small on purpose. Everything worth keeping — the checkout, its
+virtualenvs, the metadata index, and the TLS material — lives on the data volume, which is
+therefore the piece to snapshot before the event
+([`../.agents/rules/deploy.md`](../.agents/rules/deploy.md)).
 
 ## Bring a host up
 
