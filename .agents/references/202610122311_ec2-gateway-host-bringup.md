@@ -16,30 +16,42 @@ the December region together with the European compute leg on 10/20**.
 |---|---|---|
 | OS / arch | Debian GNU/Linux 13 (trixie), x86_64 | x86 chosen deliberately to keep one architecture across local dev and cloud, and to avoid source-builds in the bootstrap script |
 | Instance type | `t3.small` (2 vCPU / 2 GiB) | matches "2 vCPU class ≈ 18 USD/month" |
-| Region / **AZ** | `eu-central-1c` | **the AZ is pinned**: the data volume lives here |
+| Region / AZ | `eu-central-1c` | nothing pins the zone: the second volume that did was retired the next day |
 | IAM instance profile | attached (an EC2 role) | required by SSM; also the future S3 read path |
 | SSM agent | `amazon-ssm-agent 3.3.5390.0`, active, `EC2 registration was successful` | **Debian images do not ship the agent** — it had to be installed by hand |
 | Public IP | auto-assigned (ephemeral) | must become an Elastic IP before DNS points at it |
 | Tailnet address | `gwhs-host` (`biohackathon-api-server`) | |
-| Volumes | root 8 GiB (ext4) + 50 GiB data volume | |
+| Volume | one root volume, grown online 8 → 40 GiB | a second 50 GiB volume was tried, then retired |
+| Checkout | `/opt/gwhs-biohackathon-api-gateway`, owned by `admin` | |
 | Listening sockets | `sshd` on 0.0.0.0:22, `tailscaled` on the tailnet IPs, `systemd-resolved` | no gateway, no TLS yet |
-| Installed tooling | `python3` only | `uv`, `git`, `caddy` all absent — bootstrap not yet run |
+| Installed tooling | `git`, `uv 0.13.0` (symlinked into `/usr/local/bin`) | `caddy` absent — bootstrap for it not yet run |
 
-## Actions taken on the host
+## The second volume, and why it was retired
 
-The 50 GiB volume was formatted and mounted, so state can live off the root volume:
+The host was created with an extra 50 GiB EBS volume, formatted and mounted at `/srv/biohack`, on
+the reasoning that state should live off the root volume. One day later it was measured and removed:
 
-```bash
-sudo mkfs.ext4 -q -L biohack-data /dev/nvme1n1
-# UUID=c098a889-4435-43b9-b2a4-ce0f85451a36
-# /etc/fstab entry:
-# UUID=<uuid> /srv/biohack ext4 defaults,noatime,nofail,x-systemd.device-timeout=10 0 2
-```
+| | |
+|---|---|
+| Data volume usage at retirement | **3.0 MB of 49 GB** (the checkout was 984 KB; no virtualenv existed yet) |
+| Where the checkout went | `/opt/gwhs-biohackathon-api-gateway`, on the root volume |
+| Root volume before / after growing | 1.5 GB used of 7.7 GB → 1.5 GB used of 39 GB |
 
-`nofail` + `x-systemd.device-timeout=10` are deliberate: the volume is meant to be detached,
-snapshotted and re-attached, and a missing device must never stop the host from booting.
-The device was confirmed by **capacity** (53,687,091,200 bytes) before formatting, never by
-device name, because Nitro renames block devices.
+The volume had been sized for the publisher's parquet cache, which then moved to a scratch volume
+discarded with the publish run — and publishing does not happen on this host at all, so nothing
+remained that was either large or irreplaceable. Retiring it also unpinned the availability zone:
+with one volume, a replacement instance may land in any zone of the region.
+
+Two procedural notes worth keeping:
+
+- **Growing the root on this image works online.** The GPT layout puts the ESP *before* the root
+  partition (`p14` at sector 2048, `p15` at 8192, `p1` from 262144 to the end of the disk), so free
+  space from an EBS growth lands immediately after `p1`: `growpart /dev/nvme0n1 1` then
+  `/sbin/resize2fs /dev/nvme0n1p1`, no reboot and no partition surgery. `resize2fs` lives in
+  `/sbin`, which is *not* on the PATH of a non-interactive SSH session — call it by absolute path.
+- **Check before deleting a volume.** It was mounted read-only-where-possible and listed first;
+  after the move it held only `lost+found`. The `umount` then had to precede a second mount of the
+  same device, which the kernel refuses outright.
 
 ## Measured: Frankfurt ↔ Tokyo
 
@@ -108,6 +120,10 @@ doing before December — but **only after an ACL rule restricts it**, see below
 - Onboard the candidate GPU backends (`lab-pc`, `home-pc`) to the tailnet. They are not on it
   yet, and their reachability from Frankfurt is the measurement the December region decision
   actually needs.
-- `deploy/` still owes the systemd unit, the Caddy configuration, and the volume-mount step
-  (idempotent, checking the UUID rather than repeating the format). `install-tailscale.sh` and
-  `prepare-host.sh` have landed.
+- `deploy/` still owes the systemd unit and the Caddy configuration. `install-tailscale.sh` and
+  `prepare-host.sh` have landed; the volume-mount step is no longer needed, the second volume
+  having been retired.
+- `api.globalwheat.com` does not resolve: the zone's authoritative nameservers are GoDaddy's
+  (`ns51/ns52.domaincontrol.com`), not お名前.com's, and its SOA serial is from 2024-03-18. The A
+  record has to be created where the zone is actually served, and it has to point at an Elastic
+  IP that does not exist yet.

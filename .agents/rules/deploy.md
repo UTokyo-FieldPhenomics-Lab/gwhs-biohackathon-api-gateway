@@ -21,11 +21,11 @@ repeated here.
   for that rule. The SSH port is never open to `0.0.0.0/0`. An address-scoped rule is tolerable
   only because these images refuse password and keyboard-interactive authentication, so a key is
   the only credential.
-- **State lives off the root volume.** The checkout and its virtual environments, the metadata
-  index, and the TLS material sit on a separate EBS volume, because the root volume is
-  deliberately small. The volume is snapped before the event, and the availability zone is
-  pinned because a volume cannot follow an instance across zones. Whatever a publish needs beyond
-  the index belongs on a scratch volume that is discarded with the run, not on this one.
+- **Nothing on the host is the only copy of anything.** Code comes from git, the index from a
+  publish, certificates from ACME, and every secret from outside the repository. That is what
+  makes replacing the instance an ordinary event, and it is why the host needs no second volume
+  and pins no availability zone. Scratch space for a publish is a volume that is discarded with
+  the run.
 - **The S3 write grant is time-bounded.** The instance role is read-only; the publishing run
   carries a policy restricted to a single prefix and expiring on a date condition, so no
   manual revocation step can be forgotten.

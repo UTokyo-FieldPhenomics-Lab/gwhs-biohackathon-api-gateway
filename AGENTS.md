@@ -16,7 +16,7 @@ Two planes, joined only by a frozen contract:
   written once at publish: image objects only. No server, so it never goes down, and no mutable
   object, so there is nothing to invalidate.
 - **Metadata plane** — the publisher generates one metadata index per dataset from a pinned
-  upstream revision; the gateway loads it from the host's data volume at startup and serves it
+  upstream revision; the gateway loads it from the host at startup and serves it
   from memory. A republish is followed by a restart, which is the whole refresh mechanism.
   This is the one deliberate exception to "static before dynamic".
 - **Compute plane** — the same gateway on one EC2 host authenticates, enforces quota and a

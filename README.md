@@ -89,7 +89,7 @@ uv run ruff check . && uv run ruff format .      # lint and format
 ### Datasets
 
 The publisher produces both artifacts of a release in one run: image objects in S3, and one
-metadata index per dataset on the host's data volume — the file the gateway loads at startup. A
+metadata index per dataset, which is the file the gateway loads at startup. A
 non-zero exit code is the only signal that forbids tearing down the temporary instance.
 
 ```bash
