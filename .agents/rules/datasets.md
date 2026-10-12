@@ -41,5 +41,13 @@ repeated here.
   dataset id, so that a later full release never renumbers an address already in use.
 - **`sources.yaml` is the provenance record.** Upstream locations — carrying an immutable
   revision — and licenses live there; a license must be cleared before public distribution.
+- **The cache is fetched, never hand-placed.** `datasets/.cache/<dataset_id>/` is produced by
+  `biohack-datasets-fetch` from the pinned revision in `sources.yaml`, holds upstream bytes
+  verbatim, is disposable and machine-local, never enters git, and is rebuilt rather than
+  preserved. Nothing is copied into it by hand.
+- **`include` decides what leaves an upstream.** Only files matching a dataset's patterns are
+  fetched, and the patterns stay under `data/`: an upstream that keeps an archive or a card
+  beside its data has it fetched never, because its bytes are already there once. A dataset
+  that needs a narrower selection than the default says so in `sources.yaml`.
 - **Heavy dependencies live here.** `pyarrow`, `Pillow`, and `boto3` belong to this package
   and must never leak into the gateway's dependency set.

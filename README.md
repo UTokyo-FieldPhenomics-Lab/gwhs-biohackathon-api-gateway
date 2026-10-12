@@ -61,7 +61,7 @@ is released — `gwhs`; `gwhs-temp` is a development-only sample.
 ├── gateway/               FastAPI gateway: model surface (auth, quota, gate, routing)
 │   ├── src/biohack_gateway/  installed app package (app, models, routing, dataset surface)
 │   └── scripts/           contract projections, e.g. gen_api_docs.py
-├── datasets/              publisher CLI: parquet → image objects in S3 + metadata index
+├── datasets/              upstream parquet cache + publisher CLI: parquet → image objects in S3 + metadata index
 ├── deploy/                bootstrap scripts, systemd units, reverse-proxy config
 └── .github/workflows/     planned: secret scan, contract guard, tests, lock, docs
 ```
@@ -92,13 +92,29 @@ The publisher produces both artifacts of a release in one run: image objects in 
 metadata index per dataset, which is the file the gateway loads at startup. A
 non-zero exit code is the only signal that forbids tearing down the temporary instance.
 
+Upstream files are not committed and not shipped: they are fetched into a local, disposable cache
+by a separate step, which reads the pinned revisions in `sources.yaml` and downloads only the
+files each dataset selects — never the archives and cards sitting at the upstream root. Run it on
+the host that will publish, which is the host that holds the cache:
+
 ```bash
 cd datasets
 uv sync
+uv run biohack-datasets-fetch --dry-run          # print the plan: files, sizes, what is cached
+uv run biohack-datasets-fetch                    # fetch everything into datasets/.cache/
+uv run biohack-datasets-fetch --dataset gwhs-temp  # one dataset
+```
+
+The cache is 1.9 GB for all three datasets, holds upstream bytes verbatim under
+`datasets/.cache/<dataset_id>/`, and is rebuilt from the pinned revision rather than preserved.
+`HF_TOKEN` raises the Hub rate limits and is used when it is set; nothing needs it today.
+
+```bash
 uv run biohack-datasets --release v1.0 --dry-run                 # print the plan, change nothing
 uv run biohack-datasets --release v1.0                           # build locally, no upload
 uv run biohack-datasets --release v1.0 --bucket s3://<bucket>    # build → upload → verify
 uv run pytest && uv run mypy && uv run ruff check .
+uv run pytest -m network                         # the Hub is reachable: pinned plan, real download
 ```
 
 The publisher is not implemented yet: a valid invocation parses its arguments and then raises

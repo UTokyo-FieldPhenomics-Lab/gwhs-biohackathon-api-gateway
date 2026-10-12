@@ -75,11 +75,14 @@ Rules state what must hold and why. Execution logs, decisions, and lessons learn
 - **Dev output must be byte-comparable with prod output**, or "it worked in dev" proves
   nothing. Pin interpreter and dependencies with `uv.lock`; write images verbatim rather
   than decode-and-re-encode.
-- **Publishing runs where the data is**, in the same region as the bucket: the machine holding
-  the parquet cache, or a temporary instance there when no cache exists yet. The API host is
-  never it — it has no scratch space for a publish, and staging a dataset in Europe to run one
-  would cross continents twice. Only the metadata index reaches the API host. Republishing is a
-  re-run of that same deterministic command, which is the only rollback mechanism there is.
+- **Publishing runs where the cache is**, which is where the data is: the machine holding the
+  parquet cache, or a temporary instance once a publish needs scratch space the API host does not
+  have. The cache is fetched onto the API host by `biohack-datasets-fetch` — 1.9 GB for all three
+  datasets, disposable and rebuilt from the pinned revision — so the API host is where publishing
+  runs today, and moving a publish elsewhere means moving the cache with it. Staging a dataset on
+  a third machine would cross continents twice. Only the metadata index travels the other way.
+  Republishing is a re-run of that same deterministic command, which is the only rollback
+  mechanism there is.
 
 ## Contract sources
 

@@ -14,10 +14,11 @@ metadata index the gateway loads at startup. Binding constraints are in
 | Region and zone | the region is environment configuration (the dev host is in `eu-central-1`); no zone is pinned, so a replacement instance may land in any of them |
 
 One volume is enough, and there is a measured reason: the separate 50 GiB volume this host began
-with held **3 MB** when it was retired. That volume had been sized for a publisher's parquet
-cache, which belongs on a scratch volume discarded with the publish run — and the publish does not
-happen here at all (`.agents/rules/deploy.md`). The checkout is under a megabyte and the
-virtualenvs add a few hundred, so the root volume carries everything with room to spare.
+with held **3 MB** when it was retired. It had been sized for a publisher's parquet cache, which
+is now fetched onto this host's root volume by `biohack-datasets-fetch` and is **1.9 GB** for all
+three datasets — rebuilt from the pinned revision, so it is not state to preserve
+(`../.agents/rules/datasets.md`). The checkout is under a megabyte and the virtualenvs add a few
+hundred, so the root volume carries everything with room to spare.
 
 Two CPUs is plenty: the gateway holds one small index in memory and answers from it, so its work
 is network-bound rather than CPU-bound. The volume is encrypted; the account default key is
@@ -50,7 +51,8 @@ from:
 curl -fsSL https://raw.githubusercontent.com/UTokyo-FieldPhenomics-Lab/gwhs-biohackathon-api-gateway/main/deploy/prepare-host.sh | sudo bash
 ```
 
-Then, from the checkout, `cd gateway && uv sync`.
+Then, from the checkout, `cd gateway && uv sync`. The dataset cache is fetched on the same host,
+because it is where a publish runs: `cd datasets && uv sync && uv run biohack-datasets-fetch`.
 
 ## Optional: put the host on the tailnet
 
