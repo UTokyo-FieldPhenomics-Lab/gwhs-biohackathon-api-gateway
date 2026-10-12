@@ -218,3 +218,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Upstream files fetched by biohack-datasets-fetch: a local, disposable cache, not source.
+# (Already covered by the generic `.cache` rule above; kept named because it is load-bearing.)
+datasets/.cache/
