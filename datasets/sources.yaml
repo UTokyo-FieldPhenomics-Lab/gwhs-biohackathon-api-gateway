@@ -5,17 +5,25 @@
 # before the first real publish; `license` must be cleared before any dataset is distributed
 # publicly. Record an immutable revision in `upstream` (for example an HF commit id) rather
 # than a checksum: this repository computes and stores no content hash.
+#
+# One dataset id per upstream; a preliminary release gets its own id so a later full release
+# never renumbers an address that is already in use. `adapter` names the reader for a schema,
+# not a dataset: `gwhs` and `gwhs-temp` share one.
 
 datasets:
   gwhd:
     adapter: gwhd          # image + bounding-box annotations
-    upstream: null         # TODO: HF dataset id @ revision, or local parquet path
-    license: null          # TODO: redistribution terms to verify
+    upstream: Etienne-David/GlobalWheatHeadDataset2021@d223a227ee21fca3dbab9605d3fbcdcc2e33abc5
+    license: cc-by-4.0     # as declared by the upstream dataset card
   gwfss:
     adapter: gwfss         # image + semantic mask annotations
-    upstream: null
-    license: null
+    upstream: GlobalWheat/GWFSS_v1.0@d32eb4a70811fa4107000e0b8821e892df710830
+    license: cc-by-4.0     # as declared by the upstream dataset card
+  gwhs-temp:
+    adapter: gwhs          # development-only sample of the GWHS schema
+    upstream: GWHS/sample_dataset@655118534e9ad980b6f7c0dd6566a406d5a29a27
+    license: null          # TODO: the sample's card declares no license
   gwhs:
     adapter: gwhs          # image + object-level RLE and labels
-    upstream: null
-    license: null
+    upstream: null         # TODO: pin when the full annotation is released
+    license: null          # TODO: redistribution terms to verify
