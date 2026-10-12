@@ -28,6 +28,21 @@ repeated here.
 - **The S3 write grant is time-bounded.** The instance role is read-only; the publishing run
   carries a policy restricted to a single prefix and expiring on a date condition, so no
   manual revocation step can be forgotten.
+- **The bucket is private and CloudFront is the only reader.** Block Public Access stays on and
+  the only policy statement names the distribution through its origin access control. No object is
+  ever made public: a public bucket would be a second path to the same bytes and a second cache to
+  reason about, while `data.*` is the single path clients use.
+- **The bucket sits in the region that publishes into it** — `eu-central-1` today — so a publish
+  moves bytes inside one region: no cross-region transfer to pay for and no latency between the
+  cached parquet and the `PUT`. Moving the bucket moves the publish host with it.
+- **Object paths are write-once, so there is nothing to invalidate.** Objects are served with a
+  long cache lifetime and no invalidation is ever issued; a path that has to change becomes a new
+  path at publish time.
+- **The data plane is created by hand, once per environment, from
+  [`../../deploy/data-plane.md`](../../deploy/data-plane.md).** A bucket, a distribution, a
+  certificate, and a DNS record are account-level resources used once each; a script that created
+  them would on a second run rewrite a live distribution. The host scripts
+  (`prepare-host.sh`, `install-tailscale.sh`) are the idempotent ones, because a host is rebuilt.
 - **Rollback pins identity, not a checksum we compute.** Code by git tag, container images by
   digest, model weights by an immutable upstream reference — the model repository's
   revision/tag or the S3 object version. Never generate and maintain our own checksum file;

@@ -33,10 +33,10 @@ read with range requests, so the check cost about 50 KB rather than 1.8 GB:
 |---|---|---|---|
 | tree API `lfs.oid` | `bcfe0585…444f` | `bcfe0585…444f` | `bcfe0585…444f` |
 | `resolve` `x-linked-etag` | `bcfe0585…444f` | `bcfe0585…444f` | `bcfe0585…444f` |
-| parquet footer sha256 | `4e6a4bcf…a941` | same | same |
+| parquet footer bytes | identical, 16155 B | identical | identical |
 | size / `num_rows` | 258313428 / 548 | same | same |
 
-The second shard agrees the same way (352455102 bytes, 548 rows, footer `6ed75545…`), and
+The second shard agrees the same way (352455102 bytes, 16952-byte footer, 548 rows), and
 548 × 2 = **1096**, which is the number the dataset card declares for `labelled`. The Hub's
 `datasets-server` also registers `labelled` as the only split. The files carry `image` and
 `mask`, so the claim "only `labelled` is annotated" is false: the three names are byte-identical,
@@ -44,8 +44,8 @@ mask included. If `all` was meant to add the unlabelled images, the upload never
 at the ETH research collection, not on the Hub.
 
 **Lesson.** An upstream's file names are a claim, not a fact. Pinning the revision makes the
-bytes immutable, and the platform's own tokens (`lfs.oid`, `etag`, and a footer read) settle
-what a name cannot.
+bytes immutable, and the platform's own tokens (`lfs.oid`, `x-linked-etag`) plus a byte comparison
+of the two footers settle what a name cannot — with no digest computed on our side anywhere.
 
 ## Decisions and their reasons
 
@@ -57,7 +57,7 @@ what a name cannot.
 | Verify by reading parquet footers, not by hashing | `project.md` forbids hashing capability, and the Hub's client already checks sizes; what it cannot check is that the bytes are parquet, which is exactly what the publisher needs |
 | An unreadable file is deleted, and the run fails | The Hub client would otherwise keep believing the cache entry is present and skip it on the rerun |
 | Patterns stay under `data/`, and a test enforces it | The upstreams keep a 611 MB zip of their own parquet at the root; nothing must ever fetch it |
-| No disk-space pre-check | The cache is 1.9 GB against a 39 GiB root volume, and both modes print the planned and missing byte counts, so the number is visible before it is spent |
+| No disk-space pre-check | The cache is 1.88 GB against a 37 GiB free root volume, and both modes print the planned and missing byte counts, so the number is visible before it is spent |
 
 ## Verified
 
@@ -72,7 +72,7 @@ what a name cannot.
 
 ## Open items
 
-- The full 1.9 GB fetch has not been run yet; it belongs on the API host.
+- The full 1.88 GB fetch has not been run yet; it belongs on the API host.
 - The publisher still reads no cache — wiring `biohack-datasets` to `datasets/.cache` is the
   next step, and it is where the row counts `verify` already prints become the index.
 - A `--dry-run` still creates the cache directory and empty `.lock` files, because the Hub client
