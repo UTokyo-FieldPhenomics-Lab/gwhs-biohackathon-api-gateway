@@ -18,6 +18,17 @@ sshd refuses both password and keyboard-interactive authentication, so there is 
 know. It must be `chmod 600`: at 0644 ssh ignores it and reports only `UNPROTECTED PRIVATE KEY
 FILE`, which reads like a wrong key rather than a wrong permission.
 
+## Prepare the environment
+
+Installs git and uv — Debian 13 ships no uv package, so it comes from the official installer —
+and clones this repository onto the data volume, owned by the user you sudo from:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/UTokyo-FieldPhenomics-Lab/gwhs-biohackaton-api-gateway/main/deploy/prepare-host.sh | sudo bash
+```
+
+Then, from the checkout, `cd gateway && uv sync`.
+
 ## Optional: put the host on the tailnet
 
 `install-tailscale.sh` installs Tailscale and joins the tailnet; it is idempotent. With no
