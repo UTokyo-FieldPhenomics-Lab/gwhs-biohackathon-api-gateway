@@ -9,6 +9,11 @@
 # One dataset id per upstream; a preliminary release gets its own id so a later full release
 # never renumbers an address that is already in use. `adapter` names the reader for a schema,
 # not a dataset: `gwhs` and `gwhs-temp` share one.
+#
+# `include` selects what `biohack-datasets-fetch` downloads from the pinned revision, as glob
+# patterns over repository-relative paths. The default, used when the key is absent, is
+# `data/*.parquet`. Upstreams keep archives and cards at the repository root; no pattern here
+# reaches them, and that is the whole reason the key exists.
 
 datasets:
   gwhd:
@@ -18,6 +23,7 @@ datasets:
   gwfss:
     adapter: gwfss         # image + semantic mask annotations
     upstream: GlobalWheat/GWFSS_v1.0@d32eb4a70811fa4107000e0b8821e892df710830
+    include: ["data/labelled-*.parquet"]   # its all/full files are byte-identical to labelled
     license: cc-by-4.0     # as declared by the upstream dataset card
   gwhs-temp:
     adapter: gwhs          # development-only sample of the GWHS schema
