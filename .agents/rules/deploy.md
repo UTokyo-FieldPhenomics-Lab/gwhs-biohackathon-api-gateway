@@ -22,10 +22,9 @@ repeated here.
   only because these images refuse password and keyboard-interactive authentication, so a key is
   the only credential.
 - **Nothing on the host is the only copy of anything.** Code comes from git, the index from a
-  publish, certificates from ACME, and every secret from outside the repository. That is what
-  makes replacing the instance an ordinary event, and it is why the host needs no second volume
-  and pins no availability zone. Scratch space for a publish is a volume that is discarded with
-  the run.
+  publish, certificates from ACME, the parquet cache from the pinned upstream revision, and every
+  secret from outside the repository. That is what makes replacing the instance an ordinary
+  event, and it is why the host needs no second volume and pins no availability zone.
 - **The S3 write grant is time-bounded.** The instance role is read-only; the publishing run
   carries a policy restricted to a single prefix and expiring on a date condition, so no
   manual revocation step can be forgotten.

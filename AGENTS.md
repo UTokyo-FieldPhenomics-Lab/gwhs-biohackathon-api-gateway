@@ -57,7 +57,7 @@ number of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-la
 ├── gateway/               FastAPI gateway: model surface (auth, quota, gate, routing)
 │   ├── src/biohack_gateway/  installed app package (app, models, routing, dataset surface)
 │   └── scripts/           contract projections, e.g. gen_api_docs.py
-├── datasets/              publisher CLI: parquet → image objects in S3 + metadata index
+├── datasets/              upstream parquet cache + publisher CLI: parquet → image objects in S3 + metadata index
 ├── deploy/                bootstrap scripts, systemd units, reverse-proxy config
 └── .github/workflows/     planned: secret scan, contract guard, tests, lock, docs
 ```
