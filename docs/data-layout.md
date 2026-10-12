@@ -59,7 +59,7 @@ its rows from zero.
 ## Metadata index
 
 One JSONL artifact per dataset, produced by the publisher, loaded by the gateway at startup. It is
-a build artifact on the host's data volume, not a published object. Field names are the upstream
+a build artifact on the gateway host, not a published object. Field names are the upstream
 column names kept verbatim — including the long ones — so that no vocabulary of ours has to be kept
 in step with theirs. The earlier `site=` / `stage=` query naming is therefore abandoned.
 

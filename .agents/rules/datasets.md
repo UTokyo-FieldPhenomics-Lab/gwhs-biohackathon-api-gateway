@@ -4,8 +4,8 @@ Package: `datasets/`. Repo-wide invariants are in [`project.md`](project.md) and
 repeated here.
 
 - **One command, four switches, two artifacts.** A single invocation does build → validate →
-  upload → verify and emits both outputs: image objects to S3 and a metadata index to the host's
-  data volume. Splitting the run invites skipping a stage.
+  upload → verify and emits both outputs: image objects to S3 and a metadata index for the
+  gateway host. Splitting the run invites skipping a stage.
 - **Exit code is the only teardown signal.** A non-zero exit stops the pipeline; only exit 0
   authorizes tearing down whatever environment the run set up, so validation cannot be ignored.
 - **Idempotent by comparison, not timestamps.** Decide whether an object is already correct
@@ -28,8 +28,9 @@ repeated here.
 - **The row number is the identity.** Identity is the absolute row number of the pinned upstream
   revision. An upstream id, where one exists, is carried as a field and never as a second way to
   address the same row.
-- **The metadata index is a build artifact, not a published object.** It is written next to the
-  parquet cache on the host's data volume, which is where the gateway loads it from.
+- **The metadata index is a build artifact, not a published object.** The gateway loads it from
+  its own host, and how it gets there is a deployment detail: the index file travels, the images
+  never do.
 - **One artifact per purpose.** Never publish the same bytes twice; an upstream release that
   ships a redundant archive beside its data is not republished in kind.
 - **Deterministic output.** Fixed JSON key order, float formatting, and iteration order, so
