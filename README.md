@@ -23,7 +23,7 @@ Two planes joined only by a frozen contract:
 |---|---|---|
 | Image | Serves images (and masks) | S3 (private) behind CloudFront with OAC — written once at publish, no server, never down, and nothing mutable to invalidate |
 | Metadata | Serves metadata, annotations, facets, and addressing | The publisher generates one index per dataset from a pinned upstream revision; the gateway loads it at startup and answers from memory |
-| Compute | Authenticates, enforces quota and a concurrency gate, routes work | One FastAPI gateway on EC2 (Tokyo) routing to Docker-capable GPU backends over an authenticated, non-public link — a lab machine, a GPU VPS, or a rented GPU container |
+| Compute | Authenticates, enforces quota and a concurrency gate, routes work | One FastAPI gateway on an EC2 host (region per environment) routing to Docker-capable GPU backends over an authenticated, non-public link — a lab machine, a GPU VPS, or a rented GPU container |
 | Contract | Defines the API surface and the data layout | This repository: OpenAPI models, `docs/data-layout.md`, examples, skills |
 
 Metadata is the one deliberate exception to static-first: it lives in the gateway's memory so a
@@ -62,7 +62,7 @@ is released — `gwhs`; `gwhs-temp` is a development-only sample.
 │   ├── src/biohack_gateway/  installed app package (app, models, routing, dataset surface)
 │   └── scripts/           contract projections, e.g. gen_api_docs.py
 ├── datasets/              publisher CLI: parquet → image objects in S3 + metadata index
-├── deploy/                bootstrap script, systemd units, reverse-proxy config
+├── deploy/                bootstrap scripts, systemd units, reverse-proxy config
 └── .github/workflows/     planned: secret scan, contract guard, tests, lock, docs
 ```
 

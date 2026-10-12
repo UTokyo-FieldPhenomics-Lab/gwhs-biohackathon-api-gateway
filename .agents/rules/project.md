@@ -50,6 +50,9 @@ Rules state what must hold and why. Execution logs, decisions, and lessons learn
 - **A client-supplied URL is parsed, never fetched.** It is decoded into `(dataset, row)` and
   then resolved through the same lookup. Fetching it would turn the gateway into a proxy into
   the private network, GPU backends included.
+- **The overlay is not assumed to be ours alone.** A private network can carry other people's
+  devices, so anything bound to it is isolated by tag and access policy, with the per-service
+  token as the second lock rather than the first.
 - **GPU backends are never publicly reachable.** The gateway reaches them over an
   authenticated, non-public link and each requires its own token; CloudFront never forwards
   to them. The transport — a VPN, a private network, or a provider tunnel — is an
