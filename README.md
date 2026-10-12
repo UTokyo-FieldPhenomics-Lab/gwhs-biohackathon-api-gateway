@@ -21,19 +21,28 @@ Two planes joined only by a frozen contract:
 
 | Plane | What it does | How |
 |---|---|---|
-| Data | Serves images, metadata, annotations, and index files | S3 (private) behind CloudFront with OAC — purely static, no server, never down |
+| Image | Serves images (and masks) | S3 (private) behind CloudFront with OAC — written once at publish, no server, never down, and nothing mutable to invalidate |
+| Metadata | Serves metadata, annotations, facets, and addressing | The publisher generates one index per dataset from a pinned upstream revision; the gateway loads it at startup and answers from memory |
 | Compute | Authenticates, enforces quota and a concurrency gate, routes work | One FastAPI gateway on EC2 (Tokyo) routing to Docker-capable GPU backends over an authenticated, non-public link — a lab machine, a GPU VPS, or a rented GPU container |
 | Contract | Defines the API surface and the data layout | This repository: OpenAPI models, `docs/data-layout.md`, examples, skills |
+
+Metadata is the one deliberate exception to static-first: it lives in the gateway's memory so a
+republish takes effect immediately and no client has to hold a copy.
 
 Two domains, deliberately separate:
 
 ```
-data.<domain>  → CloudFront → S3        static assets, no auth, long cache, fallback path
+data.<domain>  → CloudFront → S3        static images, no auth, long cache
 api.<domain>   → gateway   → backends   dynamic requests, always requires a key
 ```
 
-The gateway **never proxies image bytes**: it answers `302` redirects to the static plane, so
-bandwidth stays on the CDN and off the gateway.
+The gateway **never carries bytes**: it answers with the public `data.*` URL of an object, which
+is what clients display, so bandwidth stays on the CDN and off the gateway. Every address is
+resolved by lookup in the in-memory index, never assembled from client input.
+
+Addresses are `(dataset, row)` — the absolute row number of the pinned upstream revision, which is
+meaningless without its dataset. Dataset ids are `gwhd`, `gwfss`, and — once the full annotation
+is released — `gwhs`; `gwhs-temp` is a development-only sample.
 
 ## Repository layout
 
@@ -45,14 +54,14 @@ bandwidth stays on the CDN and off the gateway.
 │   ├── references/        detailed execution records and lessons learned
 │   └── skills/            packaged agent skills (planned: API + data layout)
 ├── docs/                  documentation site sources (Zensical)
-│   ├── data-layout.md     handwritten contract: S3 layout, index fields, manifest fields
+│   ├── data-layout.md     handwritten contract: object layout, addressing, index fields
 │   ├── api/               API reference markdown, generated and committed
 │   ├── notebooks/         tutorial sources (markdown is the source, .ipynb is derived)
 │   └── examples/          curl / python / js snippets, executed in CI
-├── gateway/               FastAPI gateway: auth, quota, gate, routing
-│   ├── src/biohack_gateway/  installed app package (app.py, models, routing)
+├── gateway/               FastAPI gateway: model surface (auth, quota, gate, routing)
+│   ├── src/biohack_gateway/  installed app package (app, models, routing, dataset surface)
 │   └── scripts/           contract projections, e.g. gen_api_docs.py
-├── datasets/              publisher CLI: build + sync the CDN-ready static layout
+├── datasets/              publisher CLI: parquet → image objects in S3 + metadata index
 ├── deploy/                bootstrap script, systemd units, reverse-proxy config
 └── .github/workflows/     planned: secret scan, contract guard, tests, lock, docs
 ```
@@ -79,8 +88,9 @@ uv run ruff check . && uv run ruff format .      # lint and format
 
 ### Datasets
 
-The publisher builds the CDN-ready layout and, with `--bucket`, uploads and re-verifies it.
-A non-zero exit code is the only signal that forbids tearing down the temporary instance.
+The publisher produces both artifacts of a release in one run: image objects in S3, and one
+metadata index per dataset on the host's data volume — the file the gateway loads at startup. A
+non-zero exit code is the only signal that forbids tearing down the temporary instance.
 
 ```bash
 cd datasets

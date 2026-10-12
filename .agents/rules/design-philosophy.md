@@ -46,5 +46,5 @@ Duplicated facts drift.
 - Audit an existing upstream script before rewriting it. The sample repository already ships
   `Darwin_to_hf.py`; the dataset publisher must extend that conversion path, not fork a second
   metadata mapping beside it.
-- Prefer the platform primitive over a reimplementation: `302` over a proxy, `ETag` over a
-  hand-rolled checksum, the framework's validator over a bespoke one.
+- Prefer the platform primitive over a reimplementation: a public object URL over a proxy,
+  `ETag` over a hand-rolled checksum, the framework's validator over a bespoke one.

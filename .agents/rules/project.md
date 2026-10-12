@@ -18,16 +18,23 @@ Rules state what must hold and why. Execution logs, decisions, and lessons learn
 
 ## Architecture invariants
 
-- **Never proxy bytes.** Wrapping a static resource means answering `302` to the static
-  plane. Inlining image bytes pulls bandwidth back onto the gateway and voids the CDN and
-  cost model.
-- **Static before dynamic.** If data can be delivered as objects, do that. Add a server
-  only when a trigger for it actually exists.
-- **Single source of truth.** The gateway reads `index.jsonl` from S3; it never generates
-  or caches its own index.
-- **Paths are immutable.** Once published, an S3 key never changes. Any attribute that can
-  change after release stays in the index, not in the path.
-- **`/v1` is frozen.** Only additive changes; a breaking change means a new version prefix.
+- **Bytes never traverse the gateway.** The API answers with the public `data.*` URL of a
+  static object; it never serves bytes and never builds a per-request redirect. Inlining
+  image bytes pulls bandwidth back onto the gateway and voids the CDN and cost model.
+- **Static before dynamic, with one named exception.** If data can be delivered as objects,
+  do that. Dataset metadata is that exception: the gateway serves it from memory because a
+  republish must take effect immediately and because no client should have to hold a copy.
+- **Single source of truth.** The publisher generates the metadata index once from the pinned
+  upstream revision; the gateway loads it at startup and never edits, augments, or re-derives
+  it. Nothing hand-edited may enter it.
+- **S3 is frozen at publish.** An image object's path is written once and never overwritten;
+  changed content means a new path. With no version prefix there is nothing to invalidate and
+  no second copy to keep consistent.
+- **One dataset, one id space.** An address is the absolute row number of the pinned upstream
+  revision, and it is meaningless without its dataset because row numbers repeat across
+  datasets. A position inside a filtered result is a cursor, never an identifier.
+- **The contract is frozen for the event.** There is no version prefix, so no breaking change
+  to a published endpoint is possible — only additive ones.
 - **No hashing capability.** Nothing here computes or stores a content hash or checksum.
   Identity comes from names, keys, and platform tokens (`ETag`, S3 native checksums, image
   digests, object versions, upstream revisions). A content hash returns only against a
@@ -37,8 +44,12 @@ Rules state what must hold and why. Execution logs, decisions, and lessons learn
 
 - **No secrets, ever, including git history.** Bucket names, account IDs, and keys arrive
   via SSM or environment variables, never in the repository.
-- **Validate `image_id` against the index allowlist.** This is the most likely real
-  vulnerability (path traversal / arbitrary object read) and the boundary is on us.
+- **Resolve addresses, never concatenate them.** A row is a lookup key in the closed in-memory
+  index, so reaching an object key or a filesystem path is impossible by construction. This is
+  the most likely real vulnerability and the boundary is on us.
+- **A client-supplied URL is parsed, never fetched.** It is decoded into `(dataset, row)` and
+  then resolved through the same lookup. Fetching it would turn the gateway into a proxy into
+  the private network, GPU backends included.
 - **GPU backends are never publicly reachable.** The gateway reaches them over an
   authenticated, non-public link and each requires its own token; CloudFront never forwards
   to them. The transport — a VPN, a private network, or a provider tunnel — is an
@@ -61,8 +72,9 @@ Rules state what must hold and why. Execution logs, decisions, and lessons learn
 - **Dev output must be byte-comparable with prod output**, or "it worked in dev" proves
   nothing. Pin interpreter and dependencies with `uv.lock`; write images verbatim rather
   than decode-and-re-encode.
-- **Prod dataset publishing runs where the data is**, in the same region as S3 (a temporary Tokyo
-  EC2 instance), never on the small cloud host.
+- **Publishing runs where the parquet cache is**, in the same region as the bucket: the API
+  host during the event, a temporary instance when no cache exists yet. Republishing is a re-run
+  of that same deterministic command, which is the only rollback mechanism there is.
 
 ## Contract sources
 

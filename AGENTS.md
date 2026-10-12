@@ -12,20 +12,32 @@ GPU**. Fetching an image and getting a model result are each a single HTTP call.
 
 Two planes, joined only by a frozen contract:
 
-- **Data plane** — S3 (ap-northeast-1, private) behind CloudFront with OAC. Purely static:
-  images, metadata, annotations, and index files. No server, so it never goes down.
-- **Compute plane** — one gateway on EC2 (Tokyo) that authenticates, enforces quota and a
+- **Image plane** — S3 (ap-northeast-1, private) behind CloudFront with OAC. Purely static, and
+  written once at publish: image objects only. No server, so it never goes down, and no mutable
+  object, so there is nothing to invalidate.
+- **Metadata plane** — the publisher generates one metadata index per dataset from a pinned
+  upstream revision; the gateway loads it from the host's data volume at startup and serves it
+  from memory. A republish is followed by a restart, which is the whole refresh mechanism.
+  This is the one deliberate exception to "static before dynamic".
+- **Compute plane** — the same gateway on EC2 (Tokyo) authenticates, enforces quota and a
   concurrency gate, and routes inference work to GPU compute backends. A backend is any
   Docker-capable GPU resource reachable over an authenticated, non-public link — a lab
   machine, a GPU VPS, or a rented GPU container; the provider is a deployment choice, not a
   fixed route.
 - **Contract plane** — this repository: the OpenAPI surface, the data layout, examples,
   and skills.
-- **Domains** — `data.*` serves static assets through CloudFront (no auth, long cache,
-  fallback path); `api.*` hits the gateway directly and always requires a key. They are
-  deliberately separate distributions, never one.
+- **Domains** — `data.*` serves static images through CloudFront (no auth, long cache);
+  `api.*` hits the gateway directly and always requires a key, images included, because
+  clients display images from `data.*` rather than through the API. They are deliberately
+  separate distributions, never one.
 
-The gateway never proxies image bytes: it answers with `302` redirects to the static plane.
+The gateway never carries bytes. It answers with the public `data.*` URL of an object and
+resolves every address by lookup in its in-memory index, so no client input is ever concatenated
+into a key or a path.
+
+The dataset ids are `gwhd`, `gwfss` and — once the full annotation is released — `gwhs`, plus
+`gwhs-temp` for development. Addresses are `(dataset, row)`, where the row is the absolute row
+number of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-layout.md).
 
 ## Directory Structure
 
@@ -37,14 +49,14 @@ The gateway never proxies image bytes: it answers with `302` redirects to the st
 │   ├── references/        detailed execution records and lessons learned
 │   └── skills/            packaged agent skills (planned: API + data layout)
 ├── docs/                  documentation site sources (Zensical)
-│   ├── data-layout.md     handwritten contract: S3 layout, index fields, manifest fields
+│   ├── data-layout.md     handwritten contract: object layout, addressing, index fields
 │   ├── api/               API reference markdown, generated and committed
 │   ├── notebooks/         tutorial sources (markdown is the source, .ipynb is derived)
 │   └── examples/          curl / python / js snippets, executed in CI
-├── gateway/               FastAPI gateway: auth, quota, gate, routing (Python)
-│   ├── src/biohack_gateway/  installed app package (app.py, models, routing)
+├── gateway/               FastAPI gateway: model surface (auth, quota, gate, routing)
+│   ├── src/biohack_gateway/  installed app package (app, models, routing, dataset surface)
 │   └── scripts/           contract projections, e.g. gen_api_docs.py
-├── datasets/              publisher CLI: build + sync the CDN-ready static layout
+├── datasets/              publisher CLI: parquet → image objects in S3 + metadata index
 ├── deploy/                bootstrap script, systemd units, reverse-proxy config
 └── .github/workflows/     planned: secret scan, contract guard, tests, lock, docs
 ```
