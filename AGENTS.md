@@ -19,8 +19,9 @@ Two planes, joined only by a frozen contract:
   upstream revision; the gateway loads it from the host's data volume at startup and serves it
   from memory. A republish is followed by a restart, which is the whole refresh mechanism.
   This is the one deliberate exception to "static before dynamic".
-- **Compute plane** — the same gateway on EC2 (Tokyo) authenticates, enforces quota and a
-  concurrency gate, and routes inference work to GPU compute backends. A backend is any
+- **Compute plane** — the same gateway on one EC2 host authenticates, enforces quota and a
+  concurrency gate, and routes inference work to GPU compute backends. Its region is environment
+  configuration rather than architecture: the dev host runs in `eu-central-1`. A backend is any
   Docker-capable GPU resource reachable over an authenticated, non-public link — a lab
   machine, a GPU VPS, or a rented GPU container; the provider is a deployment choice, not a
   fixed route.
@@ -57,7 +58,7 @@ number of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-la
 │   ├── src/biohack_gateway/  installed app package (app, models, routing, dataset surface)
 │   └── scripts/           contract projections, e.g. gen_api_docs.py
 ├── datasets/              publisher CLI: parquet → image objects in S3 + metadata index
-├── deploy/                bootstrap script, systemd units, reverse-proxy config
+├── deploy/                bootstrap scripts, systemd units, reverse-proxy config
 └── .github/workflows/     planned: secret scan, contract guard, tests, lock, docs
 ```
 

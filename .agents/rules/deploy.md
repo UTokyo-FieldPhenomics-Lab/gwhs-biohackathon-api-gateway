@@ -3,11 +3,12 @@
 Package: `deploy/`. Repo-wide invariants are in [`project.md`](project.md) and are not
 repeated here.
 
-- **systemd, not Docker, for the gateway.** Ship a unit file and one bootstrap script. A
+- **systemd, not Docker, for the gateway.** Ship the unit file and the bootstrap scripts. A
   `gateway/Dockerfile` is added only if a hosted platform is ever used; it does not exist
   today.
-- **Secrets are injected at deploy time.** When the deploy scripts land they include a
-  committed `.env.example` that lists variable names only, never values.
+- **Secrets are injected at deploy time.** A script reads such a value from the environment; the
+  repository records the variable's *name* — in a committed `.env.example` — never a value, and
+  only for the scripts that need one.
 - **Two environments, one artifact.** dev and prod share code and lock file and differ only
   by configuration: separate buckets, distributions, and domains.
 - **TLS terminates at the box** (Caddy or nginx). The backend surface is bound to a
@@ -15,13 +16,16 @@ repeated here.
   which private transport provides that is a deployment choice.
 - **The gateway host is on-demand.** It runs during the event window and is stopped
   otherwise.
-- **SSH is not exposed.** The security group carries no inbound rule for the SSH port; the
-  host is reached over the private overlay network, with SSM Session Manager as the
-  out-of-band fallback that needs no listening port at all.
-- **State lives off the root volume.** The parquet cache and the metadata index sit on a
-  separate EBS volume, so replacing the instance costs no re-download. The volume is snapped
-  before the event, and the availability zone is pinned because a volume cannot follow an
-  instance across zones.
+- **The host is reached deliberately, never by convenience.** Two paths are accepted: an inbound
+  TCP 22 rule scoped to a known address, and the private overlay network, which removes the need
+  for that rule. The SSH port is never open to `0.0.0.0/0`. An address-scoped rule is tolerable
+  only because these images refuse password and keyboard-interactive authentication, so a key is
+  the only credential.
+- **State lives off the root volume.** The checkout and its virtual environments, the metadata
+  index, and the TLS material sit on a separate EBS volume, because the root volume is
+  deliberately small. The volume is snapped before the event, and the availability zone is
+  pinned because a volume cannot follow an instance across zones. Whatever a publish needs beyond
+  the index belongs on a scratch volume that is discarded with the run, not on this one.
 - **The S3 write grant is time-bounded.** The instance role is read-only; the publishing run
   carries a policy restricted to a single prefix and expiring on a date condition, so no
   manual revocation step can be forgotten.

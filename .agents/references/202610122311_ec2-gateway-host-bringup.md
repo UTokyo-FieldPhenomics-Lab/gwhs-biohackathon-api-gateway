@@ -81,9 +81,9 @@ doing before December — but **only after an ACL rule restricts it**, see below
 - **SSM needs two independent things, and the console diagnostics only name one.** Two hours
   were lost alternating between "no IAM role" and "no SSM agent". Debian images ship no
   agent, so the role alone can never be enough, and installing the agent requires exactly the
-  access that SSM was supposed to provide. The escape is a temporary inbound TCP 22 rule
-  scoped to one `/32`, removed once the node is registered. Treat "temporary 22 for bootstrap"
-  as the documented exception to the no-SSH-ingress rule, not as a violation of it.
+  access that SSM was supposed to provide. Both are on the host now, but SSM is **not** the path
+  we rely on: an address-scoped inbound TCP 22 rule and the overlay are the two accepted routes,
+  and this detour is why.
 - **IAM users and user groups are irrelevant to an instance.** An instance assumes a **role**
   through an instance profile; there is no path from a user group to an EC2 resource.
 - **CloudFront certificates must be requested in `us-east-1`**, whatever the origin region is.
@@ -99,7 +99,8 @@ doing before December — but **only after an ACL rule restricts it**, see below
 
 ## Open items
 
-- Remove the temporary inbound TCP 22 rule now that the SSM node has registered.
+- The inbound TCP 22 rule is scoped to one address, which `deploy.md` now accepts as a standing
+  option rather than a temporary exception. Removing it is a choice, not a cleanup.
 - Allocate an Elastic IP; the auto-assigned public IPv4 changes on stop/start, and the host is
   meant to be stopped outside event windows.
 - Inbound UDP 41641 was added and removed again; see the connectivity section above before
@@ -107,5 +108,6 @@ doing before December — but **only after an ACL rule restricts it**, see below
 - Onboard the candidate GPU backends (`lab-pc`, `home-pc`) to the tailnet. They are not on it
   yet, and their reachability from Frankfurt is the measurement the December region decision
   actually needs.
-- Write `deploy/` (bootstrap script, systemd unit, Caddy config, `.env.example`), all
-  idempotent, including the volume mount checked by UUID rather than repeated blindly.
+- `deploy/` still owes the systemd unit, the Caddy configuration, and the volume-mount step
+  (idempotent, checking the UUID rather than repeating the format). `install-tailscale.sh` and
+  `prepare-host.sh` have landed.
