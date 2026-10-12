@@ -12,9 +12,10 @@ GPU**. Fetching an image and getting a model result are each a single HTTP call.
 
 Two planes, joined only by a frozen contract:
 
-- **Image plane** — S3 (ap-northeast-1, private) behind CloudFront with OAC. Purely static, and
-  written once at publish: image objects only. No server, so it never goes down, and no mutable
-  object, so there is nothing to invalidate.
+- **Image plane** — S3 (private, `eu-central-1`) behind CloudFront with OAC. Purely static, and
+  written once at publish: image objects only, PUT straight from the publishing host, which sits in
+  the same region. No server, so it never goes down, and no mutable object, so there is nothing to
+  invalidate.
 - **Metadata plane** — the publisher generates one metadata index per dataset from a pinned
   upstream revision; the gateway loads it from the host at startup and serves it
   from memory. A republish is followed by a restart, which is the whole refresh mechanism.
@@ -58,7 +59,7 @@ number of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-la
 │   ├── src/biohack_gateway/  installed app package (app, models, routing, dataset surface)
 │   └── scripts/           contract projections, e.g. gen_api_docs.py
 ├── datasets/              upstream parquet cache + publisher CLI: parquet → image objects in S3 + metadata index
-├── deploy/                bootstrap scripts, systemd units, reverse-proxy config
+├── deploy/                bootstrap scripts, systemd units, reverse-proxy config, data-plane runbook
 └── .github/workflows/     planned: secret scan, contract guard, tests, lock, docs
 ```
 
