@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Prepare the gateway host: install the tooling the API server needs, then clone this repository
-# onto the data volume.
+# into /opt.
 #
 # Run it on the host, as root (the checkout ends up owned by the user you sudo from):
 #   curl -fsSL https://raw.githubusercontent.com/UTokyo-FieldPhenomics-Lab/gwhs-biohackathon-api-gateway/main/deploy/prepare-host.sh | sudo bash
@@ -12,8 +12,7 @@
 set -euo pipefail
 
 REPO_URL=https://github.com/UTokyo-FieldPhenomics-Lab/gwhs-biohackathon-api-gateway.git
-DATA_DIR=/srv/biohack
-CHECKOUT="$DATA_DIR/gwhs-biohackathon-api-gateway"
+CHECKOUT=/opt/gwhs-biohackathon-api-gateway
 TARGET_USER="${SUDO_USER:-root}"
 
 # curl is deliberately not in this list: fetching this script already proved curl and a working
@@ -25,13 +24,10 @@ apt-get install -y -qq git
 TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
 [[ -n "$TARGET_HOME" ]] || { echo "error: no usable home directory for $TARGET_USER" >&2; exit 1; }
 
-# The checkout carries the virtualenvs, which are the bulky part. The root volume is 8 GiB, so
-# it belongs on the data volume; a missing mount there is worth saying out loud rather than
-# discovering as a full disk during the event.
-if [[ -z "$(findmnt -no TARGET "$DATA_DIR" 2>/dev/null)" ]]; then
-  echo "warning: $DATA_DIR is not a mountpoint, so the checkout lands on the root volume" >&2
-fi
-install -d -o "$TARGET_USER" -g "$TARGET_USER" "$DATA_DIR"
+# One disk is enough: the checkout is under a megabyte and the virtualenvs add a few hundred, all
+# of which fit the root volume. Nothing on this host is the only copy of anything, so there is
+# nothing worth giving its own volume to (see .agents/rules/deploy.md).
+install -d -o "$TARGET_USER" -g "$TARGET_USER" "$CHECKOUT"
 
 UV="$TARGET_HOME/.local/bin/uv"
 if [[ ! -x "$UV" ]]; then
