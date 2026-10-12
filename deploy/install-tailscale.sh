@@ -2,7 +2,7 @@
 # Install Tailscale on the gateway host and join the tailnet.
 #
 # Run it on the host, as root, during the first login:
-#   curl -fsSL https://raw.githubusercontent.com/UTokyo-FieldPhenomics-Lab/gwhs-biohackaton-api-gateway/main/deploy/install-tailscale.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/UTokyo-FieldPhenomics-Lab/gwhs-biohackathon-api-gateway/main/deploy/install-tailscale.sh | sudo bash
 #
 # With no pre-authorization key it prints a URL and waits while you approve the machine in a
 # browser, then reports the address. Safe to run again: apt and `tailscale up` both converge.

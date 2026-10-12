@@ -3,7 +3,7 @@
 # onto the data volume.
 #
 # Run it on the host, as root (the checkout ends up owned by the user you sudo from):
-#   curl -fsSL https://raw.githubusercontent.com/UTokyo-FieldPhenomics-Lab/gwhs-biohackaton-api-gateway/main/deploy/prepare-host.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/UTokyo-FieldPhenomics-Lab/gwhs-biohackathon-api-gateway/main/deploy/prepare-host.sh | sudo bash
 #
 # Idempotent: apt and the uv installer converge, and an existing checkout is fast-forwarded
 # rather than cloned a second time. Debian 13 ships no uv package, so it comes from the official
@@ -11,9 +11,9 @@
 
 set -euo pipefail
 
-REPO_URL=https://github.com/UTokyo-FieldPhenomics-Lab/gwhs-biohackaton-api-gateway.git
+REPO_URL=https://github.com/UTokyo-FieldPhenomics-Lab/gwhs-biohackathon-api-gateway.git
 DATA_DIR=/srv/biohack
-CHECKOUT="$DATA_DIR/gwhs-biohackaton-api-gateway"
+CHECKOUT="$DATA_DIR/gwhs-biohackathon-api-gateway"
 TARGET_USER="${SUDO_USER:-root}"
 
 # curl is deliberately not in this list: fetching this script already proved curl and a working
