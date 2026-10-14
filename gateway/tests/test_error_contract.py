@@ -9,7 +9,13 @@ from biohack_gateway.app import ErrorCode, ErrorResponse
 
 
 def test_error_code_set_is_the_frozen_initial_set() -> None:
-    """The code set matches the frozen initial contract exactly."""
+    """The code set matches the frozen contract exactly, growth included.
+
+    Editing this expectation is how a code is added: the set grows additively, so a member that is
+    removed or renamed has to break this test, and a new one has to be recorded here on purpose.
+    ``internal_error`` is the first of those, added when the gateway began answering unhandled
+    failures with the contract instead of with a traceback.
+    """
     assert {code.value for code in ErrorCode} == {
         "invalid_request",
         "invalid_key",
@@ -18,6 +24,7 @@ def test_error_code_set_is_the_frozen_initial_set() -> None:
         "upstream_error",
         "unavailable",
         "upstream_timeout",
+        "internal_error",
     }
 
 
