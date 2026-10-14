@@ -63,9 +63,9 @@ is released — `gwhs`; `gwhs-temp` is a development-only sample.
 │   ├── api/               API reference markdown, generated and committed
 │   ├── notebooks/         tutorial sources (markdown is the source, .ipynb is derived)
 │   └── examples/          curl / python / js snippets, executed in CI
-├── gateway/               FastAPI gateway: model surface (auth, quota, gate, routing)
-│   ├── src/biohack_gateway/  installed app package (app, models, routing, dataset surface)
-│   └── scripts/           contract projections, e.g. gen_api_docs.py
+├── gateway/               FastAPI gateway: the request gate, and the model and dataset surfaces
+│   ├── src/biohack_gateway/  installed package: app, auth, tokens, and the biohack-gateway CLI
+│   └── scripts/           contract projections, e.g. gen_api_docs.py (planned)
 ├── datasets/              upstream parquet cache + publisher CLI: parquet → image objects in S3 + metadata index
 ├── deploy/                host bring-up, the dataset bucket and its CDN, bootstrap scripts
 └── .github/workflows/     planned: secret scan, contract guard, tests, lock, docs
@@ -85,11 +85,29 @@ Start inside the subproject you are working on — there is no root environment.
 ```bash
 cd gateway
 uv sync                                          # create .venv, install deps + this package
-uv run uvicorn biohack_gateway.app:app --reload  # run the API locally (skeleton: no endpoints yet)
 uv run pytest                                    # tests
 uv run mypy .                                    # strict type check
 uv run ruff check . && uv run ruff format .      # lint and format
 ```
+
+Run the API locally. `/health` and the documentation pages answer without a key; everything else needs
+a participant token, so issue yourself one first — the pool defaults to the same path on every machine,
+host and laptop alike, which is what keeps the two behaving the same:
+
+```bash
+uv run biohack-gateway tokens add --id dev        # the token goes to stdout, notes about the file to stderr
+uv run uvicorn biohack_gateway.app:app --reload
+
+curl -s localhost:8000/health                     # {"status":"ok","version":"0.1.0"}
+curl -s localhost:8000/                           # 401 invalid_key
+curl -s -H "X-API-Key: <token>" localhost:8000/   # 404 not_found, which means the key was accepted
+```
+
+`biohack-gateway tokens --help` carries every verb and flag: `add` — plus `--token` to store a value a
+team generated itself, and `--force` to rotate one without changing the team id — `list` (team ids only,
+never tokens), `remove`, and `--file` for working against a copy. The pool is read when a request first
+presents a key, so a change applies at the next restart. Issuing tokens on the host, and the copy kept
+off it: [`deploy/README.md`](deploy/README.md).
 
 ### Datasets
 
