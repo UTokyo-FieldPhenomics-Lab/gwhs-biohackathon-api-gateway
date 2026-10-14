@@ -220,5 +220,5 @@ __marimo__/
 .streamlit/secrets.toml
 
 # Upstream files fetched by biohack-datasets-fetch: a local, disposable cache, not source.
-# (Already covered by the generic `.cache` rule above; kept named because it is load-bearing.)
-datasets/.cache/
+# Named after the tool that fills it, like .mypy_cache, .pytest_cache, and .ruff_cache.
+datasets/.hf_cache/

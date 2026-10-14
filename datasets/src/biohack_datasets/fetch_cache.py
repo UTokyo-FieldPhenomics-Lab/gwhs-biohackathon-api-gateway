@@ -7,7 +7,7 @@ pattern matching, and size checking are the Hub client's job; this module decide
 fetch, reports the plan it is about to execute, and checks that what landed is readable
 parquet.
 
-The cache lives at ``datasets/.cache/<dataset_id>/`` and is ignored by git.
+The cache lives at ``datasets/.hf_cache/<dataset_id>/`` and is ignored by git.
 """
 
 from __future__ import annotations
@@ -25,8 +25,11 @@ from huggingface_hub.utils.tqdm import disable_progress_bars
 
 from biohack_datasets.sources import Source, Upstream, load_sources
 
-DEFAULT_CACHE_DIR = Path(__file__).resolve().parents[2] / ".cache"
-"""``datasets/.cache``, resolved from the package so the working directory does not matter."""
+DEFAULT_CACHE_DIR = Path(__file__).resolve().parents[2] / ".hf_cache"
+"""``datasets/.hf_cache``, resolved from the package so the working directory does not matter.
+
+Named after the tool that fills it, like ``.mypy_cache``, ``.pytest_cache``, and ``.ruff_cache``.
+"""
 
 DEFAULT_CONCURRENCY = 8
 """Parallel downloads when the caller names no other number."""
@@ -223,7 +226,7 @@ def _parse_args(argv: list[str] | None, dataset_ids: list[str]) -> argparse.Name
     parser = argparse.ArgumentParser(
         prog="biohack-datasets-fetch",
         description=(
-            "Download the pinned upstream files of every dataset into datasets/.cache. "
+            "Download the pinned upstream files of every dataset into datasets/.hf_cache. "
             "Only the files each dataset selects are fetched; nothing is published."
         ),
     )
