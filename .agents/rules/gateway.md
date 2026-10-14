@@ -34,9 +34,8 @@ repeated here.
   existing rather than by remembering a decorator, and a path that does not exist is refused too. The
   exceptions are named in the code — `/health` and the generated documentation pages, which carry no
   data and could not be opened in a browser if the page itself needed a header. An absent pool is a
-  closed gateway rather than an open one; a pool that does not parse answers `503 unavailable` until it
-  does, without a restart; and the pool itself is read once, so issuing a token takes effect at the
-  next restart. Images reach clients through the public `data.*` plane, so nothing has to be anonymous.
+  closed gateway rather than an open one, and a pool that has never parsed answers `503 unavailable`
+  until it does. Images reach clients through the public `data.*` plane, so nothing has to be anonymous.
 - **Liveness is a route, not a probe loop.** `/health` answers without a key so a monitor and the
   deploy script can ask it; nothing polls anything else. It is the one place a request is answered
   before authentication, and it reports the installed package version, which is how a host running
@@ -60,8 +59,13 @@ repeated here.
   hashing is a capability this repository does not have — and nothing else: no HTTP surface, no
   `systemctl` call, no absolute host path, so it runs on a laptop against a copy too. `list` prints
   team ids and never tokens, which is what makes it safe to paste anywhere. Issuance is a human action
-  on the host, a key-authenticated request is what verifies a token, and the reading half changes
-  behaviour on restart like every other read-into-memory surface.
+  on the host, and a key-authenticated request is what verifies a token.
+- **A pool change applies without a restart, and an index change does not.** The pool is compared before
+  every request — modification time, size and inode — and re-read when it differs, so issuing, rotating
+  or revoking takes effect on the next request. Revocation is the case that decides this: a leaked key
+  has to stop working without a human remembering a command. An edit that does not parse never displaces
+  the last pool that did, so a typo cannot lock participants out; one log line names the file. The
+  dataset index keeps the other bargain, restart, because a publish is deliberate and large.
 - **Stay small.** The model surface stays near 400 lines; the dataset surface adds roughly 200
   lines on top for index load, addressing, list, and facets. Growth past that is a signal to stop
   and reconsider.
