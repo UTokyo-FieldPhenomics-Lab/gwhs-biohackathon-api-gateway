@@ -108,10 +108,22 @@ Two things this says about the shape of the check, worth keeping:
 
 ## Left as it should be
 
-The three `scp`-ed files were removed from the host's checkout afterwards — they arrive with the next
-`git pull`, and leaving them would have blocked that pull with "untracked working tree files would be
-overwritten". Until the commits are pushed, the host cannot re-run the script; the installed
-`/etc/caddy/Caddyfile` and unit are already in place, so nothing is missing meanwhile.
+The three `scp`-ed files were removed from the host's checkout afterwards, so the next `git pull` would
+not be blocked by untracked files. The commits were then pushed, and the host pulled all 13 of them:
+
+```bash
+git -C /opt/gwhs-biohackathon-api-gateway pull --ff-only   # b163801 → dacb9db, fast-forward
+sudo bash /opt/gwhs-biohackathon-api-gateway/deploy/setup-gateway.sh
+```
+
+That run is the update path the runbook describes, and it is the one that exercises the fixed smoke
+test: exit 0, `waiting for the certificate and the gateway to come up…` printed once, `404` at the end,
+and `obtaining certificate` still **once** in the journal — the certificate was reused, so a pull and a
+re-run cost no ACME validation. `uv sync --frozen` rebuilt the package (the `[project.scripts]` entry
+arrived with it), and the command works from the host's own virtualenv:
+`gateway/.venv/bin/biohack-gateway tokens list` exits 0 on an empty pool, `add` prints a token, and the
+pool lands where `--file` says. Five files' md5s match the working tree afterwards, and the checkout is
+clean at `dacb9db`.
 
 Not tested, and deliberately: a host reboot (the units are `enabled`, so boot-time start is wired but
 unproven, and rebooting the host without asking is not mine to do).
