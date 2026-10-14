@@ -57,7 +57,14 @@ Rules state what must hold and why. Execution logs, decisions, and lessons learn
   authenticated, non-public link and each requires its own token; CloudFront never forwards
   to them. The transport — a VPN, a private network, or a provider tunnel — is an
   implementation detail, not a fixed route.
-- **Per-key quota and rate limits are enforced server-side**, and keys are revocable.
+- **Per-key limits are enforced server-side, and keys are revocable.** What is enforced is a global
+  and a per-key concurrency gate plus a per-key request rate; revocation is removing the team from
+  the token pool. A per-key *count* quota (a budget of N requests, topped up when exhausted) is
+  deliberately absent: a count needs persistence, a lifetime, and a top-up path, and its only effect
+  is a human round-trip at the moment a team is blocked, while the concurrency gate already protects
+  the thing that actually runs out — GPU slots. Attribution comes from the team id in the request
+  log. The trigger for adding a count: a backend that is billed per request, or a fairness complaint
+  between teams.
 
 ## Scope discipline
 

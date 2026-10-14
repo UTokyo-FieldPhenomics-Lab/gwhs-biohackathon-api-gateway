@@ -9,8 +9,9 @@ repeated here.
   (`src/biohack_gateway`) launched as `uvicorn biohack_gateway.app:app`; no code depends on the
   working directory, so a script in any subdirectory can import it.
 - **Every request is key-authenticated.** Enforce a global and a per-key concurrency
-  gate; return `503` / `429` with `Retry-After` when exceeded. Endpoints carry no version
-  prefix; the surface is frozen for the event instead.
+  gate and a per-key request rate; return `503` / `429` with `Retry-After` when exceeded. Endpoints
+  carry no version prefix; the surface is frozen for the event instead. Counted quotas are absent by
+  decision, and [`project.md`](project.md) records the trigger that would bring one back.
 - **Routing is a sequential retry over interchangeable backends.** Try backends in order,
   mark a failed one unhealthy for 30 seconds, move on. A backend is any Docker-capable GPU
   resource behind one uniform protocol; the gateway never special-cases a provider. No
@@ -34,6 +35,15 @@ repeated here.
   default `422`; error bodies keep one shape.
 - **No ML dependencies.** `torch` and friends belong to the model repository; CI splits by
   path so gateway checks stay fast.
+- **The token pool is a file this package owns.** `biohack-gateway tokens list|add|remove --id` is a
+  subcommand of the same installed package, so the writer and the reader share one Pydantic model and
+  one lock file rather than two definitions of a format. It edits
+  `~/.config/biohack-gateway/tokens.json` — a flat `{team_id: token}` map, tokens verbatim, since
+  hashing is a capability this repository does not have — and nothing else: no HTTP surface, no
+  `systemctl` call, no absolute host path, so it runs on a laptop against a copy too. `list` prints
+  team ids and never tokens, which is what makes it safe to paste anywhere. Issuance is a human action
+  on the host, a key-authenticated request is what verifies a token, and the reading half changes
+  behaviour on restart like every other read-into-memory surface.
 - **Stay small.** The model surface stays near 400 lines; the dataset surface adds roughly 200
   lines on top for index load, addressing, list, and facets. Growth past that is a signal to stop
   and reconsider.

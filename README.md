@@ -37,8 +37,8 @@ are built is in [`deploy/README.md`](deploy/README.md).
 Two domains, deliberately separate:
 
 ```
-data.<domain>  → CloudFront → S3        static images, no auth, long cache
-api.<domain>   → gateway   → backends   dynamic requests, always requires a key
+data.global-wheat.com  → CloudFront → S3         static images, no auth, long cache
+api.global-wheat.com   → gateway    → backends   dynamic requests, always requires a key
 ```
 
 The gateway **never carries bytes**: it answers with the public `data.*` URL of an object, which
