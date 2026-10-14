@@ -104,3 +104,12 @@ Rules state what must hold and why. Execution logs, decisions, and lessons learn
   written by hand, but anything schema-shaped is a projection of those two.
 - The generated API markdown is committed. The drift check regenerates it in the gateway
   environment — the only one that can import the app — and runs `git diff --exit-code`.
+
+## Where guidance lives
+
+- **Guidance sits where the work happens, and links rather than repeats.** The commands for running
+  something are documented in the README section of the thing they run — the root README, one section
+  per subproject — and the operations that touch the host live in
+  [`../../deploy/README.md`](../../deploy/README.md). The runbook points at the command reference
+  instead of restating its flags, so a reader arriving from either direction gets the same answer and
+  every flag is described in one place.

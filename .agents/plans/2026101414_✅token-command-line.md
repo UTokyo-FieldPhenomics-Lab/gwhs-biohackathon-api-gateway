@@ -1,8 +1,8 @@
 # The token command line
 
-Status: implemented 2026-10-14 — both halves: the writer is `biohack-gateway tokens`, and the reader is
-the request gate in
-[`2026101415_✅api-auth-and-error-contract.md`](2026101415_✅api-auth-and-error-contract.md).
+Status: done 2026-10-14 — both halves: the writer is `biohack-gateway tokens`, the reader is the request
+gate in [`2026101415_✅api-auth-and-error-contract.md`](2026101415_✅api-auth-and-error-contract.md), and
+the guidance is placed as recorded below.
 Owner files: `gateway/src/biohack_gateway/tokens.py`,
 `gateway/src/biohack_gateway/cli.py`, `gateway/pyproject.toml`, `gateway/tests/test_tokens*.py`,
 plus the docs that name the command.
@@ -67,3 +67,24 @@ uv run biohack-gateway tokens add --id gw-01 --file /tmp/opencode/tokens.json
 uv run biohack-gateway tokens list --file /tmp/opencode/tokens.json
 uv run biohack-gateway tokens remove --id gw-01 --file /tmp/opencode/tokens.json
 ```
+
+## Where the guidance lives
+
+Settled with the user on 2026-10-14, after the command turned out to be findable only as half a sentence
+inside a runbook paragraph — the reader had implemented it, went looking for how to use it, and found
+nothing to act on.
+
+- **The root README's Gateway section** carries the command's recipe: issue a token, run the API
+  locally, and the three curls that show the gate (`/health` `200`, `/` `401`, signed `/` `404`), plus
+  what `--help` holds. That is where someone running the package already looks.
+- **`deploy/README.md` §1.5** carries the host operations — issuing, rotating, revoking, the copy kept
+  off-host — now with the invocation an operator actually types: `uv run biohack-gateway tokens …` out
+  of the checkout, because the console script is not on `PATH` for the service user. That was the
+  missing piece: the runbook named the command but never showed it.
+- **No `gateway/README.md`.** The repository has a README per subproject that needs one — `datasets/`
+  and `docs/` have none — and a package README would restate the root README's section.
+- **`.agents/rules/project.md` records the placement**, so the next command does not scatter the same way.
+
+Both recipes were run before being written down: the default-path pool with a local `uvicorn` (three
+curls as above, and the attribution line in the log), and `uv run biohack-gateway tokens --help` from
+the checkout on the host.

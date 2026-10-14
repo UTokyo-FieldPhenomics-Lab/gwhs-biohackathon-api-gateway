@@ -188,12 +188,27 @@ refreshed whenever the pool changes, and it is one command:
 scp admin@<host>:~/.config/biohack-gateway/tokens.json ~/private/
 ```
 
-The pool is edited by `biohack-gateway tokens list|add|remove --id` in the gateway's own environment.
-The running gateway reads it when a request first presents a key, so a restart is what applies a
-change — like every other read-into-memory surface here. `--force` rotates a team's token without
-changing its id, which is what a leaked credential needs. `list` prints team ids only, which is what
-makes it safe to paste anywhere — it is not how a copy is taken, the file is. The command is installed
-with the package.
+The pool is edited by `biohack-gateway tokens …`, run in the gateway's own environment on the host. The
+console script is not on `PATH` for the service user, so run it out of the checkout:
+
+```bash
+ssh admin@<host>
+cd /opt/gwhs-biohackathon-api-gateway/gateway
+uv run biohack-gateway tokens add --id team-07     # the token goes to stdout, once; notes go to stderr
+sudo systemctl restart biohack-gateway             # the pool is read when a request first presents a key
+```
+
+`uv run biohack-gateway tokens --help` lists the rest. Issuing an id that already has a token fails,
+which is the point — a working team is not rotated by accident. `--force` rotates a token while keeping
+the team id, which is what a leaked credential needs; `--token` stores a value the team generated
+itself; `list` prints team ids only and never tokens, which is what makes it safe to paste anywhere;
+`remove --id` revokes. The file holds tokens verbatim, so a token that goes missing before it reaches
+its team can be read back out of it. `--file` points the command at a copy instead of the default path,
+which is how the same command runs against the copy taken above, on any machine:
+
+```bash
+uv run biohack-gateway tokens list --file ~/private/tokens.json
+```
 
 A team sends its token in the `X-API-Key` header. **Everything requires one except `/health` and the
 documentation pages** (`/docs`, `/redoc`, `/openapi.json`), which carry no data and could not be
@@ -203,7 +218,7 @@ refused before routing as well, so the open surface cannot be probed into existe
 ```bash
 curl -s                     https://api.global-wheat.com/health          # {"status":"ok","version":…}
 curl -s                     https://api.global-wheat.com/                # 401 invalid_key
-curl -s -H "X-API-Key: …"   https://api.global-wheat.com/                # 404 not_found
+curl -s -H "X-API-Key: …"   https://api.global-wheat.com/                # 404 not_found: the token is good, the path is not
 ```
 
 A missing or unknown token is `401` with `invalid_key`, and the presented value is never echoed back.
