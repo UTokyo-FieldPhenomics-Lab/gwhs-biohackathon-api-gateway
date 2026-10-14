@@ -218,10 +218,10 @@ def create_app(tokens_path: Path = DEFAULT_TOKENS_FILE) -> FastAPI:
 
         try:
             team_id = authenticator.team_for(request.headers.get(API_KEY_HEADER, ""))
-        except TokenPoolError as exc:
-            # The pool is the operator's to fix, and nobody can be authenticated until they do. The
-            # caller is told only that the gateway cannot serve them.
-            logger.error("token pool unusable: %s", exc)
+        except TokenPoolError:
+            # Nobody can be authenticated until the file parses, and the caller is told only
+            # that the gateway cannot serve them. The pool names its own problem where it is
+            # read — once per change, rather than once per request as it would be here.
             return _error(
                 503,
                 ErrorCode.UNAVAILABLE,

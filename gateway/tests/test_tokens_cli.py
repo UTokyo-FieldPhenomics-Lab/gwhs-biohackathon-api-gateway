@@ -23,7 +23,7 @@ def test_add_prints_the_token_and_writes_the_pool(
     assert token and "\n" not in token
     assert json.loads(path.read_text(encoding="utf-8")) == {"gw-01": token}
     assert "written" in err
-    assert "restart" in err
+    assert "next request" in err
 
 
 def test_list_prints_team_ids_and_never_tokens(tmp_path: Path, capsys: CaptureFixture[str]) -> None:
