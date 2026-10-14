@@ -14,15 +14,15 @@ Two planes, joined only by a frozen contract:
 
 - **Image plane** — S3 (private, `eu-central-1`) behind CloudFront with OAC. Purely static, and
   written once at publish: image objects only, PUT straight from the publishing host, which sits in
-  the same region. No server, so it never goes down, and no mutable object, so there is nothing to
-  invalidate.
+  the same region. No server, so it never goes down, and no mutable object, so a change is a new path
+  rather than an invalidation.
 - **Metadata plane** — the publisher generates one metadata index per dataset from a pinned
   upstream revision; the gateway loads it from the host at startup and serves it
   from memory. A republish is followed by a restart, which is the whole refresh mechanism.
   This is the one deliberate exception to "static before dynamic".
 - **Compute plane** — the same gateway on one EC2 host authenticates, enforces quota and a
   concurrency gate, and routes inference work to GPU compute backends. Its region is environment
-  configuration rather than architecture: the dev host runs in `eu-central-1`. A backend is any
+  configuration rather than architecture: the host runs in `eu-central-1`. A backend is any
   Docker-capable GPU resource reachable over an authenticated, non-public link — a lab
   machine, a GPU VPS, or a rented GPU container; the provider is a deployment choice, not a
   fixed route.
@@ -59,7 +59,7 @@ number of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-la
 │   ├── src/biohack_gateway/  installed app package (app, models, routing, dataset surface)
 │   └── scripts/           contract projections, e.g. gen_api_docs.py
 ├── datasets/              upstream parquet cache + publisher CLI: parquet → image objects in S3 + metadata index
-├── deploy/                bootstrap scripts, systemd units, reverse-proxy config, data-plane runbook
+├── deploy/                host bring-up, the dataset bucket and its CDN, bootstrap scripts
 └── .github/workflows/     planned: secret scan, contract guard, tests, lock, docs
 ```
 

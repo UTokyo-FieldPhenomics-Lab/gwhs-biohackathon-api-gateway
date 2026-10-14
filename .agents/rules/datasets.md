@@ -13,12 +13,14 @@ repeated here.
   scratch volume exists. Peak memory is one parquet row group — the largest measured is 108 MB —
   and that is a ceiling only while reads stay serial: concurrency belongs to the upload side, and
   parallel readers are what would multiply it.
-- **Idempotent by comparison, not timestamps.** Decide whether an object is already correct
-  from its byte size plus its MD5 (`ETag` for a single-part `PUT`). Do not hash locally and
-  do not trust mtimes. The comparison is about objects in the publisher's own prefix, never about
-  files on the machine: code identity is a git tag or commit, dependencies are `uv.lock`, data
-  identity is the pinned upstream revision, and none of the three is ever verified by comparing
-  bytes.
+- **Idempotent by comparison, not timestamps.** Decide whether an object is already correct from
+  its byte size, its MD5 (`ETag` for a single-part `PUT`), and the two headers the publisher owns
+  (`Content-Type`, `Cache-Control`) — one `HeadObject` returns all four. Equal bytes with different
+  headers are repaired by re-`PUT`ting the same bytes: the content did not change, so it is not an
+  overwrite. Do not hash locally and do not trust mtimes. The comparison is about objects in the
+  publisher's own prefix, never about files on the machine: code identity is a git tag or commit,
+  dependencies are `uv.lock`, data identity is the pinned upstream revision, and none of the three
+  is ever verified by comparing bytes.
 - **Validate before upload, verify after.** Metadata is validated before it is written; image
   objects are verified after upload by comparing counts, byte sizes, and ETags. Because a
   single-part `PUT` keeps `ETag` equal to the content MD5, that verification is cheap and
@@ -35,7 +37,10 @@ repeated here.
   neither detected nor resolved here. See [`design-philosophy.md`](design-philosophy.md).
 - **S3 images are frozen at publish.** An object path is written once and never overwritten;
   changed content means a new path. There is no version prefix, and collisions raise at build
-  time.
+  time — including the collision a re-publish meets from the other side, a key that already exists
+  and would receive a different byte sequence: the run stops and names that key, and the operator
+  decides between a new dataset id and a deliberate wipe of a prefix still under development. The
+  publisher never overwrites and never deletes; both are human actions.
 - **Bytes are copied verbatim out of the parquet column.** Extracting an image is a byte copy,
   never a transcode: never decode-and-re-encode. Reading a header for its dimensions is fine, and
   normalizing the filename is fine; nothing else touches the bytes, because the upstream encoder
@@ -56,7 +61,7 @@ repeated here.
   dataset id, so that a later full release never renumbers an address already in use.
 - **`sources.yaml` is the provenance record.** Upstream locations — carrying an immutable
   revision — and licenses live there; a license must be cleared before public distribution.
-- **The cache is fetched, never hand-placed.** `datasets/.cache/<dataset_id>/` is produced by
+- **The cache is fetched, never hand-placed.** `datasets/.hf_cache/<dataset_id>/` is produced by
   `biohack-datasets-fetch` from the pinned revision in `sources.yaml`, holds upstream bytes
   verbatim, is disposable and machine-local, never enters git, and is rebuilt rather than
   preserved. Nothing is copied into it by hand.

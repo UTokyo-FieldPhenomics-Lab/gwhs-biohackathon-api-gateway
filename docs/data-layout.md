@@ -38,8 +38,10 @@ record. Distributing a dataset publicly requires its license to be cleared there
   upstream stored a mask in a lossy encoding, that is a source-data question and the publisher
   does not repair it — the same stance it takes on duplicate rows.
 - Objects are written once. A published path is never overwritten; changed content means a new
-  path. There is no version prefix.
-- The layout is identical in dev and prod; only the bucket and distribution differ.
+  path. There is no version prefix. A correction to an object's headers is not a content change, and
+  repairing an object already being served is an explicit, deliberate action — the break-glass in the
+  deploy rules — never a routine publish.
+- The layout is identical in every environment; only the bucket and distribution differ.
 
 Annotation bytes are not objects. Boxes and tags live in the metadata index; masks are their own
 objects because they are images.
