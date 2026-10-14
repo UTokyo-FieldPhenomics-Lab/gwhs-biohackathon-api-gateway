@@ -40,9 +40,11 @@ repeated here.
 - **Object paths are write-once, so a change means a new path.** A routine publish never invalidates
   anything and objects carry a long cache lifetime. **The one exception is a break-glass:** an object
   already being served that is proven wrong — during development or a rehearsal, or a published
-  dataset found incorrect before it is republished — may have that path invalidated deliberately (the
-  first 1,000 paths a month are free). Invalidation repairs served bytes after the fact; it is never
-  how a change is made.
+  dataset found incorrect before it is republished — may have that path invalidated deliberately.
+  Invalidate the paths that are actually wrong and not a wildcard over a prefix: the charge is per
+  path (the first 1,000 a month are free, and one `*` counts once however many objects it matches),
+  and a prefix whose contents all change is a new dataset id, not an invalidation. Invalidation
+  repairs served bytes after the fact; it is never how a change is made.
 - **The dataset bucket and its CDN are created by hand, once, from
   [`../../deploy/README.md`](../../deploy/README.md).** A bucket, a distribution, a certificate, and
   a DNS record are account-level resources used once each; a script that created them would on a
