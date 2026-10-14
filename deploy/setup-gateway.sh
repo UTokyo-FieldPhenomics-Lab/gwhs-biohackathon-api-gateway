@@ -9,9 +9,10 @@
 #
 # Two things it deliberately does not do. It cannot see whether the security group accepts
 # connections from outside, because that is a rule on the host's perimeter: from in here the host
-# only ever sees its own success, so the script prints the check to run from elsewhere. And it
-# configures none of the gateway's own settings, because nothing reads a configuration file yet —
-# those arrive with the authentication work (see .agents/rules/deploy.md).
+# only ever sees its own success, so the script prints the check to run from elsewhere. And it never
+# touches the participant token pool: the gateway reads that file on its first authenticated request,
+# so an absent pool is a valid state — nobody has been issued a token yet — and minting tokens stays
+# a human command (see .agents/rules/deploy.md).
 
 set -euo pipefail
 
@@ -132,18 +133,22 @@ for unit in caddy biohack-gateway; do
 done
 
 # One request covers the whole chain: DNS, the security group, the certificate, the proxy, and the
-# gateway. The status itself is not asserted beyond "the gateway answered", which keeps this script
-# out of the application's routes; 502 is the one answer that means the chain broke behind Caddy.
+# gateway. It asks `/health`, which is the one route that needs no key, so the script never has to
+# hold a participant credential to check that the stack is up — and unlike `/`, which answers 401
+# now that keys exist, it says something about the application rather than only about Caddy.
 #
-# Both transients a fresh run can hit are covered by retrying the whole thing for a bounded window
-# rather than asking once. Until the certificate exists the TLS handshake has nothing to present, and
-# until the gateway's socket accepts Caddy answers 502 — and that second gap is structural rather
-# than unlucky, because `systemctl restart` returns when the process has been executed, not when it
-# listens. A security group that never opened fails the same way as the first case, one connect
-# timeout per attempt.
+# Two answers are worth waiting for, because both are transients a fresh run can hit. Until the
+# certificate exists the TLS handshake has nothing to present, and until the gateway's socket
+# accepts Caddy answers 502 — and that second gap is structural rather than unlucky, because
+# `systemctl restart` returns when the process has been executed, not when it listens. A security
+# group that never opened fails the same way as the first case, one connect timeout per attempt.
+#
+# Anything else is the gateway itself answering, so 200 is the only acceptable outcome: a 401 or a
+# 404 here means the host is running a build that has no `/health`, and that is worth failing on
+# immediately rather than sleeping through.
 STATUS=""
 for attempt in $(seq 1 12); do
-  STATUS="$(curl -sS --connect-timeout 5 --max-time 20 -o /dev/null -w '%{http_code}' "https://$API_DOMAIN/" || true)"
+  STATUS="$(curl -sS --connect-timeout 5 --max-time 20 -o /dev/null -w '%{http_code}' "https://$API_DOMAIN/health" || true)"
   if [[ -n "$STATUS" && "$STATUS" != "000" && "$STATUS" != "502" ]]; then
     break
   fi
@@ -153,16 +158,17 @@ for attempt in $(seq 1 12); do
   sleep 5
 done
 if [[ -z "$STATUS" || "$STATUS" == "000" ]]; then
-  echo "error: no answer from https://$API_DOMAIN/ — check DNS, the security group, and journalctl -u caddy" >&2
+  echo "error: no answer from https://$API_DOMAIN/health — check DNS, the security group, and journalctl -u caddy" >&2
   exit 1
 fi
-if [[ "$STATUS" == "502" ]]; then
-  echo "error: Caddy served, but the gateway never answered — journalctl -u biohack-gateway" >&2
+if [[ "$STATUS" != "200" ]]; then
+  echo "error: https://$API_DOMAIN/health answered $STATUS, not 200 — journalctl -u biohack-gateway" >&2
   exit 1
 fi
 
 echo
-echo "https://$API_DOMAIN/ answered $STATUS with a certificate the client accepted."
+echo "https://$API_DOMAIN/health answered 200 with a certificate the client accepted."
 echo "  certificate: journalctl -u caddy -n 30   (Caddy renews it on its own)"
 echo "  gateway:     journalctl -u biohack-gateway"
 echo "  settings:    $STATE_DIR/env   (created empty; the variables arrive with the settings layer)"
+echo "  tokens:      biohack-gateway tokens add --id <team>   (everything but /health and /docs needs one)"
