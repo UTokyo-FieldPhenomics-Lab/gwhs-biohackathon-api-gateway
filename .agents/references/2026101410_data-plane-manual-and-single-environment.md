@@ -171,9 +171,25 @@ year is right when CloudFront's own default is a day. The year stays, and the nu
   mistakes are *repaired*.
 
 So written-once paths and the long cache stay, a routine publish still invalidates nothing, and a
-proven-wrong object **may** be invalidated deliberately — first 1,000 paths a month free — during
-development, in a rehearsal, or for published data found incorrect before it is republished. The
-publisher's own account gains nothing: it still never overwrites and never deletes.
+proven-wrong object **may** be invalidated deliberately — during development, in a rehearsal, or for
+published data found incorrect before it is republished. The repair names the paths that are actually
+wrong rather than sweeping a prefix. The publisher's own account gains nothing: it still never
+overwrites and never deletes.
+
+Two facts from the page that prices invalidation, because the cost follows the request and not the size
+of the dataset:
+
+- **A path is one path, however many objects it matches.** The first 1,000 invalidation paths a month
+  are free across every distribution in the account, then $0.005 each, and a `*` "counts as one path
+  even if it causes CloudFront to invalidate thousands of files". So the wrong paths cost nothing, `/*`
+  costs nothing, and only writing out all 8,714 keys would — about $39. Naming the wrong path is still
+  the choice: it keeps the blast radius on the object that was wrong and leaves the edge copies that
+  are fine alone.
+- **An invalidation does not reach client caches.** The same page warns that a user may "continue to
+  see the old version until it expires from those caches", so the break-glass repairs the CDN side only
+  — a browser holding `max-age=31536000, immutable` will not come back for a year. That is the boundary
+  of the repair, not an argument against the long cache; the page itself recommends versioned names
+  over invalidation for content that changes often, which is the shape this plane already has.
 
 Two smaller findings from the same thread are in `rules/datasets.md` now:
 
