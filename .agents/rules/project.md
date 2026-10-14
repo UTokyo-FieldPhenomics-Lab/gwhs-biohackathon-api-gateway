@@ -28,8 +28,8 @@ Rules state what must hold and why. Execution logs, decisions, and lessons learn
   upstream revision; the gateway loads it at startup and never edits, augments, or re-derives
   it. Nothing hand-edited may enter it.
 - **S3 is frozen at publish.** An image object's path is written once and never overwritten;
-  changed content means a new path. With no version prefix there is nothing to invalidate and
-  no second copy to keep consistent.
+  changed content means a new path. With no version prefix a change is a new path rather than an
+  invalidation, and there is no second copy to keep consistent.
 - **One dataset, one id space.** An address is the absolute row number of the pinned upstream
   revision, and it is meaningless without its dataset because row numbers repeat across
   datasets. A position inside a filtered result is a cursor, never an identifier.
@@ -70,11 +70,16 @@ Rules state what must hold and why. Execution logs, decisions, and lessons learn
 
 ## Environment separation
 
-- **dev and prod use separate buckets and separate CloudFront distributions.** The dev
-  bucket never faces participants.
-- **Dev output must be byte-comparable with prod output**, or "it worked in dev" proves
-  nothing. Pin interpreter and dependencies with `uv.lock`; write images verbatim rather
-  than decode-and-re-encode.
+- **One bucket and one distribution per environment, and a dev pair never faces
+  participants.** Today exactly one environment exists — the Frankfurt host and its bucket — so
+  there is no dev pair to keep apart. When the need for a private place to rehearse appears, it
+  becomes its own bucket and its own distribution, never a prefix inside the live one; until then
+  the rehearsal target is the dev-only dataset `gwhs-temp` (10 rows) published into the same
+  bucket, which exercises the whole path for the price of ten objects.
+- **Output is a deterministic function of the pinned revision**, not an artifact of the machine
+  that produced it. Pin interpreter and dependencies with `uv.lock`; write images verbatim rather
+  than decode-and-re-encode. With one environment this is what makes a republish reproducible
+  rather than merely repeated, and it is what a second environment would be compared against.
 - **Publishing runs where the cache is, in the bucket's region, and streams.** The cache is
   fetched onto the API host by `biohack-datasets-fetch` — 1.88 GB for all three datasets,
   disposable and rebuilt from the pinned revision — and the bucket sits in that host's region, so

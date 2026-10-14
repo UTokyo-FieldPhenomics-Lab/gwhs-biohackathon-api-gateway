@@ -21,7 +21,7 @@ Two planes joined only by a frozen contract:
 
 | Plane | What it does | How |
 |---|---|---|
-| Image | Serves images (and masks) | S3 (private, `eu-central-1`) behind CloudFront with OAC — written once at publish, no server, never down, and nothing mutable to invalidate |
+| Image | Serves images (and masks) | S3 (private, `eu-central-1`) behind CloudFront with OAC — written once at publish, no server, never down, and nothing mutable: a change is a new path, not an invalidation |
 | Metadata | Serves metadata, annotations, facets, and addressing | The publisher generates one index per dataset from a pinned upstream revision; the gateway loads it at startup and answers from memory |
 | Compute | Authenticates, enforces quota and a concurrency gate, routes work | One FastAPI gateway on an EC2 host (region per environment) routing to Docker-capable GPU backends over an authenticated, non-public link — a lab machine, a GPU VPS, or a rented GPU container |
 | Contract | Defines the API surface and the data layout | This repository: OpenAPI models, `docs/data-layout.md`, examples, skills |
@@ -32,7 +32,7 @@ republish takes effect immediately and no client has to hold a copy.
 The bucket and the host that publishes into it share a region, so the publisher reads a row's bytes
 out of its cached parquet and PUTs them in one request: nothing is staged on disk, and a publish
 moves no bytes between regions. How the bucket, the distribution, the certificate, and the domain
-are built is in [`deploy/data-plane.md`](deploy/data-plane.md).
+are built is in [`deploy/README.md`](deploy/README.md).
 
 Two domains, deliberately separate:
 
@@ -67,7 +67,7 @@ is released — `gwhs`; `gwhs-temp` is a development-only sample.
 │   ├── src/biohack_gateway/  installed app package (app, models, routing, dataset surface)
 │   └── scripts/           contract projections, e.g. gen_api_docs.py
 ├── datasets/              upstream parquet cache + publisher CLI: parquet → image objects in S3 + metadata index
-├── deploy/                bootstrap scripts, systemd units, reverse-proxy config, data-plane runbook
+├── deploy/                host bring-up, the dataset bucket and its CDN, bootstrap scripts
 └── .github/workflows/     planned: secret scan, contract guard, tests, lock, docs
 ```
 
@@ -106,12 +106,12 @@ the host that will publish, which is the host that holds the cache:
 cd datasets
 uv sync
 uv run biohack-datasets-fetch --dry-run          # print the plan: files, sizes, what is cached
-uv run biohack-datasets-fetch                    # fetch everything into datasets/.cache/
+uv run biohack-datasets-fetch                    # fetch everything into datasets/.hf_cache/
 uv run biohack-datasets-fetch --dataset gwhs-temp  # one dataset
 ```
 
 The cache is 1.88 GB for all three datasets, holds upstream bytes verbatim under
-`datasets/.cache/<dataset_id>/`, and is rebuilt from the pinned revision rather than preserved.
+`datasets/.hf_cache/<dataset_id>/`, and is rebuilt from the pinned revision rather than preserved.
 `HF_TOKEN` raises the Hub rate limits and is used when it is set; nothing needs it today.
 
 ```bash

@@ -9,8 +9,11 @@ repeated here.
 - **Secrets are injected at deploy time.** A script reads such a value from the environment; the
   repository records the variable's *name* — in a committed `.env.example` — never a value, and
   only for the scripts that need one.
-- **Two environments, one artifact.** dev and prod share code and lock file and differ only
-  by configuration: separate buckets, distributions, and domains.
+- **One artifact, one environment today.** Code and lock file are shared, and a second
+  environment would differ only by configuration — bucket, distribution, domain. There is one at
+  present (the Frankfurt host, its bucket, and one distribution), so nothing is duplicated by
+  environment yet; a second environment is added when a rehearsal needs a bucket that is not the
+  one participants read.
 - **TLS terminates at the box** (Caddy or nginx). The backend surface is bound to a
   non-public interface, carries its own token, and is never reachable through CloudFront;
   which private transport provides that is a deployment choice.
@@ -25,9 +28,8 @@ repeated here.
   publish, certificates from ACME, the parquet cache from the pinned upstream revision, and every
   secret from outside the repository. That is what makes replacing the instance an ordinary
   event, and it is why the host needs no second volume and pins no availability zone.
-- **The S3 write grant is time-bounded.** The instance role is read-only; the publishing run
-  carries a policy restricted to a single prefix and expiring on a date condition, so no
-  manual revocation step can be forgotten.
+- **The S3 write grant is scoped to one dataset prefix.** The instance role stays read-only, and
+  publishing is the only thing that writes.
 - **The bucket is private and CloudFront is the only reader.** Block Public Access stays on and
   the only policy statement names the distribution through its origin access control. No object is
   ever made public: a public bucket would be a second path to the same bytes and a second cache to
@@ -35,14 +37,23 @@ repeated here.
 - **The bucket sits in the region that publishes into it** — `eu-central-1` today — so a publish
   moves bytes inside one region: no cross-region transfer to pay for and no latency between the
   cached parquet and the `PUT`. Moving the bucket moves the publish host with it.
-- **Object paths are write-once, so there is nothing to invalidate.** Objects are served with a
-  long cache lifetime and no invalidation is ever issued; a path that has to change becomes a new
-  path at publish time.
-- **The data plane is created by hand, once per environment, from
-  [`../../deploy/data-plane.md`](../../deploy/data-plane.md).** A bucket, a distribution, a
-  certificate, and a DNS record are account-level resources used once each; a script that created
-  them would on a second run rewrite a live distribution. The host scripts
-  (`prepare-host.sh`, `install-tailscale.sh`) are the idempotent ones, because a host is rebuilt.
+- **Object paths are write-once, so a change means a new path.** A routine publish never invalidates
+  anything and objects carry a long cache lifetime. **The one exception is a break-glass:** an object
+  already being served that is proven wrong — during development or a rehearsal, or a published
+  dataset found incorrect before it is republished — may have that path invalidated deliberately (the
+  first 1,000 paths a month are free). Invalidation repairs served bytes after the fact; it is never
+  how a change is made.
+- **The dataset bucket and its CDN are created by hand, once, from
+  [`../../deploy/README.md`](../../deploy/README.md).** A bucket, a distribution, a certificate, and
+  a DNS record are account-level resources used once each; a script that created them would on a
+  second run rewrite a live distribution. The host scripts (`prepare-host.sh`,
+  `install-tailscale.sh`) are the idempotent ones, because a host is rebuilt.
+- **The host is reached from a room through exactly one of two switches.** Either the host accepts the
+  room subnets (what `install-tailscale.sh` sets, and the configuration here, so a room client keeps
+  its own address) or every room's router masquerades its LAN traffic. With both off, the host reports
+  itself online while no room can reach it, and every symptom matches a host that is down. Tailnet
+  flags live in that script — `tailscale up` applies exactly the flags on its line, so a flag set by
+  hand is cleared on the next run — and reachability is re-checked after every stop/start.
 - **Rollback pins identity, not a checksum we compute.** Code by git tag, container images by
   digest, model weights by an immutable upstream reference — the model repository's
   revision/tag or the S3 object version. Never generate and maintain our own checksum file;
