@@ -39,6 +39,12 @@ repeated here.
   mean opposite things: `Connection refused` says the group is open and nothing is listening yet,
   while `timed out` may be the checking network rather than the group — on 2026-10-14 one address
   timed out on 22 although the group allowed it. Confirm from a second network before changing a rule.
+- **The smoke test asserts the application, not only the proxy.** `setup-gateway.sh` ends by fetching
+  `https://…/health` and requiring `200`: that is the one route needing no key, so the script never
+  holds a participant credential, and unlike `/` — a `401` now that keys exist — it proves the gateway
+  is answering rather than that Caddy is. Two answers are retried, because both are transients: no TLS
+  handshake until the certificate exists, and `502` while the gateway's socket is still coming up.
+  Anything else fails the script, since a host running a build without `/health` is worth failing on.
 - **The gateway host is on-demand.** It runs during the event window and is stopped
   otherwise, so the proxy and the gateway are systemd units enabled at boot: starting the instance
   must restore the API surface with nobody logged in to do it by hand.

@@ -1,6 +1,8 @@
 # The token command line
 
-Status: implemented 2026-10-14 (the writer; the reading half is the authentication work).
+Status: implemented 2026-10-14 — both halves: the writer is `biohack-gateway tokens`, and the reader is
+the request gate in
+[`2026101415_✅api-auth-and-error-contract.md`](2026101415_✅api-auth-and-error-contract.md).
 Owner files: `gateway/src/biohack_gateway/tokens.py`,
 `gateway/src/biohack_gateway/cli.py`, `gateway/pyproject.toml`, `gateway/tests/test_tokens*.py`,
 plus the docs that name the command.
