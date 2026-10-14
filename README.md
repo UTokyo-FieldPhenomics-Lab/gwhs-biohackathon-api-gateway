@@ -77,8 +77,19 @@ package. Deeper notes and constraints live under [`.agents/`](.agents/) and in
 
 ## Getting started
 
-Requires [uv](https://docs.astral.sh/uv/) (Python 3.12+ is fetched automatically if missing).
-Start inside the subproject you are working on — there is no root environment.
+Work through [`deploy/README.md`](deploy/README.md) once, when the host, its API surface, or the
+dataset bucket does not exist yet: that is where the machine, the checkout, and the data plane are
+created, and the checkout lands at a fixed path. Every session afterwards starts in it — if you are not
+sure where the repository is, that path is the default:
+
+```bash
+export CHECKOUT=/opt/gwhs-biohackathon-api-gateway   # the checkout: prepare-host.sh clones it here
+cd "$CHECKOUT"
+```
+
+Then work inside the subproject you need rather than at the root — `cd gateway`, `cd datasets`, and so
+on. Each is independent, with its own environment, and
+[uv](https://docs.astral.sh/uv/) fetches Python 3.12+ automatically if it is missing.
 
 ### Gateway
 
@@ -90,24 +101,36 @@ uv run mypy .                                    # strict type check
 uv run ruff check . && uv run ruff format .      # lint and format
 ```
 
-Run the API locally. `/health` and the documentation pages answer without a key; everything else needs
-a participant token, so issue yourself one first — the pool defaults to the same path on every machine,
-host and laptop alike, which is what keeps the two behaving the same:
+Serve it. This one stays in the foreground until you stop it, so it wants its own terminal:
 
 ```bash
-uv run biohack-gateway tokens add --id dev        # the token goes to stdout, notes about the file to stderr
 uv run uvicorn biohack_gateway.app:app --reload
-
-curl -s localhost:8000/health                     # {"status":"ok","version":"0.1.0"}
-curl -s localhost:8000/                           # 401 invalid_key
-curl -s -H "X-API-Key: <token>" localhost:8000/   # 404 not_found, which means the key was accepted
 ```
 
-`biohack-gateway tokens --help` carries every verb and flag: `add` — plus `--token` to store a value a
-team generated itself, and `--force` to rotate one without changing the team id — `list` (team ids only,
-never tokens), `remove`, and `--file` for working against a copy. The pool is read when a request first
-presents a key, so a change applies at the next restart. Issuing tokens on the host, and the copy kept
-off it: [`deploy/README.md`](deploy/README.md).
+`/health` and the documentation pages answer without a key; everything else needs a participant token,
+so issue one. The pool lives at the same path on every machine, host and laptop alike, which is what
+keeps the two behaving the same. The three verbs:
+
+```bash
+uv run biohack-gateway tokens add --id dev       # issue; the token goes to stdout, once
+uv run biohack-gateway tokens list               # team ids only, never the tokens, so it is safe to paste
+uv run biohack-gateway tokens remove --id dev    # revoke
+```
+
+Now call it:
+
+```bash
+curl -s localhost:8000/health                    # {"status":"ok","version":"0.1.0"}
+curl -s localhost:8000/                          # 401 invalid_key
+curl -s -H "X-API-Key: <token>" localhost:8000/  # 404 not_found, which means the key was accepted
+```
+
+The gateway re-reads the pool whenever the file changes, so a token issued, rotated or revoked applies
+on the next request — there is nothing to restart. `--force` rotates an existing team's token without
+changing its id — what a leaked credential needs — and `--file` points any of the three verbs at a copy
+instead of the default pool: a laptop, or the copy kept off the host. The exact flags are in
+`biohack-gateway tokens --help`; issuing tokens on the host during the event, and keeping that copy
+fresh: [`deploy/README.md`](deploy/README.md).
 
 ### Datasets
 

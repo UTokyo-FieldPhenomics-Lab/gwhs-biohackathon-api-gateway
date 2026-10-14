@@ -32,6 +32,20 @@ Three facts behind that table, each measured rather than assumed:
 
 # 1. The host
 
+## Getting in
+
+The host we run, so a session starts without looking anything up. It is the *current* host: §1.1
+launches a replacement and the addresses below change with it — `api.global-wheat.com` follows the
+Elastic IP that §1.4 associates, and the tailnet address holds until the node is re-registered (§1.3).
+
+```bash
+ssh -i ~/.ssh/gwhs-demo.pem admin@100.88.197.115        # the tailnet: works from a room where port 22 does not
+ssh -i ~/.ssh/gwhs-demo.pem admin@api.global-wheat.com  # public, if the security group allows your address
+```
+
+Inside, the checkout is `/opt/gwhs-biohackathon-api-gateway` — the path `prepare-host.sh` clones to, and
+where §1.2's variable points.
+
 ## 1.1 Launch it — AWS console
 
 | Field (EC2 → Launch instance) | Value |
@@ -51,7 +65,9 @@ The private key is the only credential. Cloud images give the default user no pa
 refuses both password and keyboard-interactive authentication, so there is nothing else to know. It
 must be `chmod 600`: at 0644 ssh ignores it and reports only `UNPROTECTED PRIVATE KEY FILE`, which
 reads like a wrong key rather than a wrong permission. Connect with
-`ssh -i ~/.ssh/<key>.pem admin@<host>` — Debian images use `admin`, not `ec2-user`.
+`ssh -i ~/.ssh/<key>.pem admin@<address>` — the instance's public IPv4 from the console at this point,
+and the Elastic IP from §1.4 on. Debian images use `admin`, not `ec2-user`, and the host we run now is
+in [Getting in](#getting-in) above.
 
 ## 1.2 Prepare it
 
@@ -60,6 +76,14 @@ clones this repository into `/opt/gwhs-biohackathon-api-gateway`, owned by the u
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/UTokyo-FieldPhenomics-Lab/gwhs-biohackathon-api-gateway/main/deploy/prepare-host.sh | sudo bash
+```
+
+To save retyping the path each session — note that the scripts set a `CHECKOUT` of their own for their
+internal use, so exporting it here only affects your shell, not them:
+
+```bash
+export CHECKOUT=/opt/gwhs-biohackathon-api-gateway
+cd "$CHECKOUT"   # go to github repo path
 ```
 
 Then, from the checkout, `cd datasets && uv sync && uv run biohack-datasets-fetch` — the dataset
@@ -74,8 +98,8 @@ curl -fsSL https://raw.githubusercontent.com/UTokyo-FieldPhenomics-Lab/gwhs-bioh
 ```
 
 It prints a URL to approve in a browser when there is no pre-authorization key, then the tailnet
-address — `ssh -i ~/.ssh/gwhs-demo.pem admin@100.88.197.115`. Room machines use that address instead
-of the port 22 rule. Then two things in the Tailscale admin console → Machines:
+address — the one in [Getting in](#getting-in). Room machines use that address instead of the port 22
+rule. Then two things in the Tailscale admin console → Machines:
 
 1. **Disable key expiry.** Expiry runs on the clock, not on activity, so a host stopped between events
    would otherwise drop off the tailnet exactly when it is needed.
@@ -189,13 +213,14 @@ scp admin@<host>:~/.config/biohack-gateway/tokens.json ~/private/
 ```
 
 The pool is edited by `biohack-gateway tokens …`, run in the gateway's own environment on the host. The
-console script is not on `PATH` for the service user, so run it out of the checkout:
+console script is not on `PATH` for the service user, so run it out of the checkout — and there is
+nothing to restart afterwards: the gateway re-reads the file as soon as it changes, so an issued,
+rotated or revoked token applies to the next request.
 
 ```bash
 ssh admin@<host>
 cd /opt/gwhs-biohackathon-api-gateway/gateway
 uv run biohack-gateway tokens add --id team-07     # the token goes to stdout, once; notes go to stderr
-sudo systemctl restart biohack-gateway             # the pool is read when a request first presents a key
 ```
 
 `uv run biohack-gateway tokens --help` lists the rest. Issuing an id that already has a token fails,
@@ -222,10 +247,11 @@ curl -s -H "X-API-Key: …"   https://api.global-wheat.com/                # 404
 ```
 
 A missing or unknown token is `401` with `invalid_key`, and the presented value is never echoed back.
-A pool that cannot be parsed is `503` with `unavailable` — that is the operator's problem rather than
-the caller's — and the gateway starts answering as soon as the file does, without a restart. While
-that is happening `/health` still answers, so a monitor sees a live process with a broken pool rather
-than a dead host.
+A pool that cannot be parsed is `503` with `unavailable` — the operator's problem rather than the
+caller's — and only until it parses. While that is happening `/health` still answers, so a monitor sees
+a live process with a broken pool rather than a dead host. An edit that breaks a pool the gateway was
+already serving is not the same: the last pool that parsed keeps answering, and one line in
+`journalctl -u biohack-gateway` names the file and the parse error.
 
 ---
 
