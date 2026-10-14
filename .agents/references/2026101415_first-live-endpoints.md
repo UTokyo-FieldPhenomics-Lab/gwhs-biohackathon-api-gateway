@@ -88,6 +88,12 @@ sudo bash deploy/setup-gateway.sh           # exit 0
 The temporary token was removed afterwards, so the host's pool is absent again — `tokens.json` appears
 when the operator first issues one. Nothing else was left behind: the state directory holds only `env`.
 
+The host then moved onto the committed revision rather than the copies carried over for the test: the
+three files were dropped (`rm auth.py`, `git checkout -- app.py setup-gateway.sh`), `git pull --ff-only`
+brought them back at `568deb4`, all three checksums matched the working tree, and the pulled script was
+run again as the update path — exit 0, the smoke on `/health` `200`, `/` `401`, and a clean checkout.
+That is the state the next session starts from.
+
 ## Left for later
 
 - Declaring the `X-API-Key` scheme in the OpenAPI document, so the docs page can send a key.
