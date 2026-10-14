@@ -90,7 +90,7 @@ def test_an_explicit_token_is_stored_verbatim() -> None:
 
 
 def test_revoking_a_team_removes_it() -> None:
-    """Revocation is deletion from the pool, and it takes effect on the next restart."""
+    """Revocation is deletion from the pool, and the gateway applies it on its next request."""
     pool = TokenPool({"gw-01": "a", "gw-02": "b"})
     pool.revoke("gw-01")
     assert pool.root == {"gw-02": "b"}

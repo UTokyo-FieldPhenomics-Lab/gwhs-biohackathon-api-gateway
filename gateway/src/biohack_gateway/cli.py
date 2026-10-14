@@ -81,7 +81,7 @@ def _note_written(path: Path) -> None:
     """
     print(f"written: {path}", file=sys.stderr)
     print(
-        "restart the gateway to apply, and refresh the copy you keep off the host",
+        "the gateway applies this on its next request; refresh the copy you keep off the host",
         file=sys.stderr,
     )
 
