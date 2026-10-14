@@ -1,0 +1,14 @@
+# The API's public surface. TLS terminates here: Caddy obtains and renews the certificate for the
+# name below over ACME, so the host stores no certificate and runs no renewal job.
+#
+# deploy/setup-gateway.sh copies this file to /etc/caddy/Caddyfile. Edit it here rather than there,
+# or the next run of that script overwrites the change.
+#
+# The name is written out instead of coming from the environment: the official Debian caddy.service
+# loads no environment file, so a placeholder would need a systemd override for a value that is
+# public anyway. setup-gateway.sh checks that this name resolves to the host, and fails at the end
+# if the name it served does not match the one here.
+
+api.global-wheat.com {
+	reverse_proxy 127.0.0.1:8000
+}
