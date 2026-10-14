@@ -1,0 +1,30 @@
+# The gateway, on the host whose only public entry point is the TLS terminator in front of it.
+#
+# deploy/setup-gateway.sh rewrites the User= line below to the owner of the checkout and installs
+# this file as /etc/systemd/system/biohack-gateway.service. Edit it here rather than there, or the
+# next run of that script overwrites the change.
+#
+# One worker, deliberately: the authentication and concurrency gates keep their counters in process
+# memory, so a second worker would enforce them per worker instead of globally.
+#
+# Settings and secrets come from the host state directory, not from this file: `env` holds one
+# VARIABLE=value per line and the participant key pool lives beside it (.agents/rules/deploy.md).
+# `EnvironmentFile=` gets no `-` prefix, so a missing settings file is a startup failure rather than
+# a service that runs with defaults. deploy/setup-gateway.sh created `env` before installing this
+# unit, and rewrites both the User= and the EnvironmentFile= line below to the host it runs on, so a
+# rebuilt host with a different login needs no edit.
+
+[Unit]
+Description=Global Wheat API gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=admin
+EnvironmentFile=/home/admin/.config/biohack-gateway/env
+ExecStart=/opt/gwhs-biohackathon-api-gateway/gateway/.venv/bin/uvicorn biohack_gateway.app:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

@@ -46,4 +46,5 @@ fi
 [[ "$(stat -c %U "$CHECKOUT")" == "$TARGET_USER" ]] || chown -R "$TARGET_USER:$TARGET_USER" "$CHECKOUT"
 
 echo
-echo "next: cd $CHECKOUT/gateway && uv sync"
+echo "next: bind api.global-wheat.com to this host, then start it (deploy/README.md §1.4 → §1.5):"
+echo "  sudo bash $CHECKOUT/deploy/setup-gateway.sh"
