@@ -148,10 +148,12 @@ sudo bash /opt/gwhs-biohackathon-api-gateway/deploy/setup-gateway.sh
 
 It checks that `api.global-wheat.com` resolves to this host, installs Caddy from its own apt
 repository, writes `/etc/caddy/Caddyfile`, syncs the gateway's environment, installs and starts
-`biohack-gateway.service`, and finishes by fetching `https://api.global-wheat.com/` — retrying for up
-to a minute, because both the certificate and the gateway's socket may still be coming up the first
-time it asks. A final status code and "with a certificate the client accepted" means DNS, the security group, ACME, the proxy, and the
-unit are all working together; `502` means Caddy is serving and the gateway is not answering.
+`biohack-gateway.service`, and finishes by fetching `https://api.global-wheat.com/health` — retrying
+for up to a minute, because the certificate and the gateway's socket may both still be coming up the
+first time it asks. `200` on that route means DNS, the security group, ACME, the proxy, the unit, and
+the application are working together; any other answer fails the script, and the message names the
+journal to read. It asks `/health` because that is the one route needing no key — so the script never
+has to hold a participant credential — and because it is the application answering rather than Caddy.
 
 Re-running it is the update path after a `git pull`: it rewrites both configuration files from the
 checkout, so edit `deploy/Caddyfile` and `deploy/systemd/biohack-gateway.service` in the repository
@@ -172,8 +174,8 @@ ssh admin@<host>
 sudo systemctl restart biohack-gateway
 ```
 
-Nothing reads the file yet: the variable names arrive with the authentication work, and names — never
-values — are recorded in a committed `gateway/.env.example`.
+Nothing reads `env` yet: the variables arrive with the surfaces that need one, and the names — never
+the values — are recorded in a committed `gateway/.env.example` when they do.
 
 The participant token pool is `tokens.json` in that same directory, and it is **the one thing in this
 repository that is authoritative on the host** rather than kept outside it. Issuing a token from the
@@ -186,12 +188,29 @@ refreshed whenever the pool changes, and it is one command:
 scp admin@<host>:~/.config/biohack-gateway/tokens.json ~/private/
 ```
 
-The pool is edited by `biohack-gateway tokens list|add|remove --id` in the gateway's own environment,
-then a restart, because the file is read at startup like everything else. `--force` rotates a team's
-token without changing its id, which is what a leaked credential needs. `list` prints team ids only,
-which is what makes it safe to paste anywhere — it is not how a copy is taken, the file is. The
-command is installed with the package; the half that *reads* the pool arrives with the authentication
-work, so nothing enforces a token yet.
+The pool is edited by `biohack-gateway tokens list|add|remove --id` in the gateway's own environment.
+The running gateway reads it when a request first presents a key, so a restart is what applies a
+change — like every other read-into-memory surface here. `--force` rotates a team's token without
+changing its id, which is what a leaked credential needs. `list` prints team ids only, which is what
+makes it safe to paste anywhere — it is not how a copy is taken, the file is. The command is installed
+with the package.
+
+A team sends its token in the `X-API-Key` header. **Everything requires one except `/health` and the
+documentation pages** (`/docs`, `/redoc`, `/openapi.json`), which carry no data and could not be
+opened in a browser if the page that lists the endpoints needed a header itself. An unknown path is
+refused before routing as well, so the open surface cannot be probed into existence:
+
+```bash
+curl -s                     https://api.global-wheat.com/health          # {"status":"ok","version":…}
+curl -s                     https://api.global-wheat.com/                # 401 invalid_key
+curl -s -H "X-API-Key: …"   https://api.global-wheat.com/                # 404 not_found
+```
+
+A missing or unknown token is `401` with `invalid_key`, and the presented value is never echoed back.
+A pool that cannot be parsed is `503` with `unavailable` — that is the operator's problem rather than
+the caller's — and the gateway starts answering as soon as the file does, without a restart. While
+that is happening `/health` still answers, so a monitor sees a live process with a broken pool rather
+than a dead host.
 
 ---
 

@@ -73,7 +73,9 @@ Rules state what must hold and why. Execution logs, decisions, and lessons learn
 - **Two parallel interface paths usually mean one constraint should be deleted.** Prefer
   removing a path over maintaining both.
 - **Do not add ASGI layers, caches, state machines, or health-probe loops ahead of need.**
-  The stated thresholds decide when they return.
+  The stated thresholds decide when they return. The request gate and `/health` are not that:
+  authentication is part of the contract rather than a cache in front of it, and a liveness route
+  something else asks is not a loop that polls.
 
 ## Environment separation
 
