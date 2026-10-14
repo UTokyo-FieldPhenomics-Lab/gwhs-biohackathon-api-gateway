@@ -19,7 +19,8 @@ the December region together with the European compute leg on 10/20**.
 | Region / AZ | `eu-central-1c` | nothing pins the zone: the second volume that did was retired the next day |
 | IAM instance profile | attached (an EC2 role) | required by SSM; also the future S3 read path |
 | SSM agent | `amazon-ssm-agent 3.3.5390.0`, active, `EC2 registration was successful` | **Debian images do not ship the agent** — it had to be installed by hand |
-| Public IP | auto-assigned (ephemeral) | must become an Elastic IP before DNS points at it |
+| Public IP | Elastic IP `gwhs-host`, associated | confirmed twice: IMDS `public-ipv4` and the instance's own view of its egress address |
+| Domain | `global-wheat.com`, DNS at お名前.com (`01–04.dnsv.jp`) | `api.*` A → the EIP; `data.*` not created yet |
 | Tailnet address | `gwhs-host` (`biohackathon-api-server`) | |
 | Volume | one root volume, grown online 8 → 40 GiB | a second 50 GiB volume was tried, then retired |
 | Checkout | `/opt/gwhs-biohackathon-api-gateway`, owned by `admin` | |
@@ -123,7 +124,17 @@ doing before December — but **only after an ACL rule restricts it**, see below
 - `deploy/` still owes the systemd unit and the Caddy configuration. `install-tailscale.sh` and
   `prepare-host.sh` have landed; the volume-mount step is no longer needed, the second volume
   having been retired.
-- `api.globalwheat.com` does not resolve: the zone's authoritative nameservers are GoDaddy's
-  (`ns51/ns52.domaincontrol.com`), not お名前.com's, and its SOA serial is from 2024-03-18. The A
-  record has to be created where the zone is actually served, and it has to point at an Elastic
-  IP that does not exist yet.
+- **Do not point a certificate at a name whose cached address is stale.** `api.global-wheat.com`
+  had just been set to the Elastic IP, but public resolvers still answered with the previous,
+  now-released auto-assigned address for the length of its 3600 s TTL. ACME validates by
+  resolving the name, so starting Caddy inside that window fails the challenge and spends one of
+  Let's Encrypt's five failures per hour. Check resolution first:
+
+  ```bash
+  curl -s 'https://dns.google/resolve?name=api.global-wheat.com&type=A'
+  ```
+
+- A domain mix-up worth recording, because it cost a detour: `globalwheat.com` (no hyphen) is an
+  unrelated parked domain on GoDaddy's nameservers, and checking *it* produced a confident and
+  entirely wrong conclusion about our own DNS. The zone we own is `global-wheat.com`, served by
+  `dnsv.jp`. Confirm the exact spelling before diagnosing a name.
