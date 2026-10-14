@@ -9,6 +9,9 @@ dependencies = [
     "uvicorn[standard]>=0.30",
 ]
 
+[project.scripts]
+biohack-gateway = "biohack_gateway.cli:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
