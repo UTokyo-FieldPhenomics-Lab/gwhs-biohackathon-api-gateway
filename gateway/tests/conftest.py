@@ -1,7 +1,7 @@
 """One synthetic index directory, built from the publisher's frozen schema.
 
 The gateway reads the artifact `biohack-datasets publish` writes, so the tests build one here with
-the eight tables of `docs/data-layout.md` rather than importing the publisher package: the gateway
+the eight tables of `docs/content/data-layout.md` rather than importing the publisher package: the gateway
 has no runtime dependency on it, and a fixture transcribed from the handwritten contract is what
 turns a schema drift into a failing test instead of a wrong answer.
 """

@@ -24,7 +24,7 @@ Two planes joined only by a frozen contract:
 | Image | Serves images (and masks) | S3 (private, `eu-central-1`) behind CloudFront with OAC — written once at publish, no server, never down, and nothing mutable: a change is a new path, not an invalidation |
 | Metadata | Serves metadata, annotations, facets, and addressing | The publisher generates one index per dataset from a pinned upstream revision; the gateway loads it at startup and answers from memory |
 | Compute | Authenticates, enforces quota and a concurrency gate, routes work | One FastAPI gateway on an EC2 host (region per environment) routing to Docker-capable GPU backends over an authenticated, non-public link — a lab machine, a GPU VPS, or a rented GPU container |
-| Contract | Defines the API surface and the data layout | This repository: OpenAPI models, `docs/data-layout.md`, examples, skills |
+| Contract | Defines the API surface and the data layout | This repository: OpenAPI models, `docs/content/data-layout.md`, examples, skills |
 
 Metadata is the one deliberate exception to static-first: it lives in the gateway's memory so a
 republish takes effect immediately and no client has to hold a copy.
@@ -58,11 +58,14 @@ is released — `gwhs`; `gwhs-temp` is a development-only sample.
 │   ├── rules/             short, binding constraints (project.md + design-philosophy.md + one per package)
 │   ├── references/        detailed execution records and lessons learned
 │   └── skills/            packaged agent skills (planned: API + data layout)
-├── docs/                  documentation site sources (Zensical)
-│   ├── data-layout.md     handwritten contract: object layout, addressing, index fields
-│   ├── api/               API reference markdown, generated and committed
-│   ├── notebooks/         tutorial sources (markdown is the source, .ipynb is derived)
-│   └── examples/          curl / python / js snippets, executed in CI
+├── zensical.toml          documentation site config: docs/content → site/, published by
+│                          .github/workflows/docs.yml to GitHub Pages
+├── docs/                  documentation site subproject (Zensical)
+│   └── content/           the site's pages and assets: the only thing Zensical builds
+│       ├── data-layout.md handwritten contract: object layout, addressing, index fields
+│       ├── api/           API reference markdown, generated and committed
+│       ├── notebooks/     tutorial sources (markdown is the source, .ipynb is derived)
+│       └── examples/      curl / python / js snippets, executed in CI
 ├── gateway/               FastAPI gateway: the request gate, and the model and dataset surfaces
 │   ├── src/biohack_gateway/  installed package: app, auth, tokens, dataset surface, and the CLI
 │   └── scripts/           contract projections, e.g. gen_api_docs.py (planned)
@@ -145,7 +148,7 @@ curl -s -H "X-API-Key: <token>" localhost:8000/datasets/gwhs-temp/images/0   # o
 
 The gateway reads its index from the path above and addresses images at
 `https://data.global-wheat.com`; both are `create_app` defaults, and it reads no host environment.
-What the responses mean is [`docs/data-layout.md`](docs/data-layout.md).
+What the responses mean is [`docs/content/data-layout.md`](docs/content/data-layout.md).
 
 ### Datasets
 
@@ -201,14 +204,20 @@ content — `~/.config/biohack-gateway/index/<dataset>.db`, override with `--ind
 
 ### Documentation site
 
+The curated documentation is live at <https://docs.global-wheat.com>, built by Zensical from
+`docs/content/` and published to GitHub Pages by [`.github/workflows/docs.yml`](.github/workflows/docs.yml)
+on every push to `main`. `api.global-wheat.com/docs` stays the interactive reference — FastAPI's own
+Swagger UI — and the site links to it rather than duplicating it.
+
 ```bash
-cd docs
-uv sync
-uv run zensical serve    # preview the site locally
-uv run zensical build    # build the static site
+uv sync --locked --project docs                    # from the repository root
+uv run --project docs zensical build --strict      # a warning fails the build
+uv run --project docs zensical serve -a 127.0.0.1:8765
 ```
 
-The docs site configuration is not committed yet; add the Zensical config before building.
+`site_dir` must stay outside `docs/content/`, and so must the virtualenv: a `.venv` anywhere under
+the content root silently stops the build putting `site/assets/` in the output, which serves an
+unstyled site. The hand steps behind the domain are [`deploy/README.md`](deploy/README.md) §6.
 
 ## Changing dependencies
 

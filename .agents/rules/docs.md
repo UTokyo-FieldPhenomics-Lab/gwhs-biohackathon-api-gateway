@@ -5,6 +5,15 @@ repeated here.
 
 - **Disposable by design.** The site exists for the event window and may be deleted whole
   afterwards, so no production pipeline may depend on it.
+- **Hosted by GitHub Pages at `docs.global-wheat.com`.** `zensical.toml` at the repository root
+  builds `docs/content/` into `site/`, and `.github/workflows/docs.yml` publishes that artifact from
+  `main` with `--strict`; nothing in the build holds a secret, and no host of ours is involved. The
+  hand steps behind the domain are `deploy/README.md` §6, and retiring the site means removing the
+  `docs` DNS record as well, or the name stays claimable by someone else.
+- **The content root holds site material only.** `docs_dir` is `docs/content/`, never `docs/`,
+  because a virtualenv anywhere under the content root stops the build emitting `site/assets/`
+  entirely: the pages publish unstyled and the build reports no problem. The subproject's
+  `pyproject.toml`, `uv.lock`, and `.venv` therefore sit outside it.
 - **Locked like the rest.** `docs/` commits a `uv.lock` like every other subproject:
   `requires-python` is a floor and the lock pins the rest. Re-run `uv lock` whenever
   `pyproject.toml` changes.
@@ -16,7 +25,7 @@ repeated here.
   generator in the gateway environment imports `biohack_gateway`, writes the committed
   markdown, and `docs/` only renders it.
 - **Policy prose is handwritten, references are generated.** Error, auth, and rate-limit
-  policy will live in `docs/api/errors.md`; endpoints, fields, and examples come from the app.
+  policy will live in `docs/content/api/errors.md`; endpoints, fields, and examples come from the app.
 - **Examples run in CI.** Snippets and notebooks execute during the build; pages needing a
   GPU are excluded and run once by hand before release.
 - **English only**, consistent with the rest of the repository.

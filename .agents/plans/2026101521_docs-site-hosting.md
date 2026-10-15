@@ -64,7 +64,7 @@ Measurements taken on 2026-10-15, so execution does not re-derive them:
 - Notebook derivation (jupytext) and executing examples during the build. Executing anything needs
   extra dependencies in `docs/` (`numpy`, `Pillow`) plus a token for the live snippets; it is a
   separate step with its own plan.
-- Any change to `docs/data-layout.md`, `docs/examples/*`, `docs/api/.gitkeep`, or `docs/notebooks/`.
+- Any change to `docs/content/data-layout.md`, `docs/content/examples/*`, `docs/content/api/.gitkeep`, or `docs/content/notebooks/`.
 
 ## Hand steps (blocking; this order)
 
@@ -111,7 +111,7 @@ Deliverables:
 2. **new `docs/index.md`.** Short landing page: what the API gives a participant, the two calls
    (fetch an image, get a model result), where images resolve (`data.global-wheat.com`), and links to
    the interactive reference, the data layout, and the examples. Every claim must come from
-   `README.md` or `docs/data-layout.md`; invent no numbers and no process. How a participant receives
+   `README.md` or `docs/content/data-layout.md`; invent no numbers and no process. How a participant receives
    a token is **not** documented anywhere yet, so link to `README.md` and record the gap in the plan's
    Result rather than authoring a process.
 3. **new `.github/workflows/docs.yml`.** Shape, with the major versions confirmed on the marketplace

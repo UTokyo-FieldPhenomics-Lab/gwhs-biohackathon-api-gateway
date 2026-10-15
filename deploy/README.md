@@ -720,10 +720,10 @@ uv run --project docs zensical build --strict     # exit 0; writes site/, which 
 uv run --project docs zensical serve              # http://localhost:8000
 ```
 
-`zensical.toml` sits at the repository root and its `docs_dir` and `site_dir` are resolved relative to
-that file, which is what makes `docs/` the content root and `site/` the output. `docs/` holds site
-material and nothing else: the runbook is this file, so the site never grows a second README to keep
-honest.
+`zensical.toml` sits at the repository root and its `docs_dir` and `site_dir` are resolved relative
+to that file, which is what makes `docs/content/` the content root and `site/` the output. The content
+root holds site material and nothing else — not the subproject's virtualenv, which suppresses the
+build's assets — and the runbook is this file, so the site never grows a second README to keep honest.
 
 ## 6.3 Verify
 
