@@ -244,12 +244,13 @@ unstyled, and `--strict` reported nothing. A virtualenv under `docs_dir` — `uv
 creates `docs/.venv` — stops the theme assets being written; the pages moved to `docs/content/` and
 `docs_dir` follows. See the reference file for the probes that isolated it.
 
-Still open when this was written: `Enforce HTTPS` was unticked (ticked on 2026-10-15 afterwards), the
-repository homepage still pointed at `api.*/docs`, and a participant's token hand-out is still
-undocumented beyond "ask the organisers". After a content review the same day, the internal contract
-left the site and the landing page was rewritten around what a participant needs: the calls, the
-responses, the addressing rules, and the datasets — no index tables, no object-key layout, and no
-development-only dataset.
+Still open when this was written: `Enforce HTTPS` was unticked and the repository homepage still
+pointed at `api.*/docs` — the operator fixed both the same day. A participant's token hand-out is
+still undocumented beyond "ask the organisers". After a content review the same day, the internal
+contract left the site and the landing page was rewritten around what a participant needs: the calls,
+the responses, the addressing rules, and the datasets — no index tables, no object-key layout, and no
+development-only dataset. The one thing still undone is on the host: `create_app`'s new description
+reaches the live Swagger only after the checkout there is pulled and the unit restarted.
 
 ## Open items
 
