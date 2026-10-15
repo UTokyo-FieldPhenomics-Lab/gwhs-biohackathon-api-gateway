@@ -23,7 +23,9 @@ Rules state what must hold and why. Execution logs, decisions, and lessons learn
   image bytes pulls bandwidth back onto the gateway and voids the CDN and cost model.
 - **Static before dynamic, with one named exception.** If data can be delivered as objects,
   do that. Dataset metadata is that exception: the gateway serves it from memory because a
-  republish must take effect immediately and because no client should have to hold a copy.
+  republish must take effect immediately and because no client should have to hold a copy. The
+  exception carries annotation **geometry** too, returned on demand; masks and images that are
+  bytes stay in the image plane, and no mask or image bytes traverse the gateway.
 - **Single source of truth.** The publisher generates the metadata index once from the pinned
   upstream revision; the gateway loads it at startup and never edits, augments, or re-derives
   it. Nothing hand-edited may enter it.
@@ -84,7 +86,12 @@ Rules state what must hold and why. Execution logs, decisions, and lessons learn
   there is no dev pair to keep apart. When the need for a private place to rehearse appears, it
   becomes its own bucket and its own distribution, never a prefix inside the live one; until then
   the rehearsal target is the dev-only dataset `gwhs-temp` (10 rows) published into the same
-  bucket, which exercises the whole path for the price of ten objects.
+  bucket, which exercises the whole path for the price of ten objects. `gwhs` publishes only
+  after its license is cleared the way `gwhd`'s and `gwfss`'s were. Host state — `env`,
+  `tokens.json`, the index directory, and the publisher's `publish/` directory — its `env` and
+  the console's access-key CSV — lives under `~/.config/biohack-gateway/`, outside the checkout;
+  the gateway's unit excludes `publish/` with `InaccessiblePaths=`, because the service and the
+  publisher run as the same user and file modes alone cannot separate them.
 - **Output is a deterministic function of the pinned revision**, not an artifact of the machine
   that produced it. Pin interpreter and dependencies with `uv.lock`; write images verbatim rather
   than decode-and-re-encode. With one environment this is what makes a republish reproducible

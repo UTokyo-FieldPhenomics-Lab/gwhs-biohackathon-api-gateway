@@ -21,9 +21,19 @@ repeated here.
   dataset surface serves metadata, facets, and addressing. They share the error contract,
   authentication, and configuration. The dataset surface owns no bytes and calls no backend.
 - **The dataset surface is read-only and index-backed.** Metadata is loaded from the publisher's
-  JSONL at startup, and a republish is followed by a restart — that is the whole refresh
+  SQLite index at startup, and a republish is followed by a restart — that is the whole refresh
   mechanism. Facets are a deterministic projection of that index computed once, never a second
   store.
+- **One geometry encoding across both surfaces.** The model surface returns the same object shape
+  and the same COCO RLE for masks as the dataset surface (`{bbox, category?, score?, rle?}`), so a
+  participant writes one decoder that serves ground truth and model output alike.
+- **Normalisation happens in the backend's image, never in the gateway.** Each model container
+  carries a post-processing step that turns that model's native output — SAM 3's raster or
+  compressed raster among them — into that shape before it reaches the gateway. The gateway keeps
+  zero ML dependencies and does no encoding.
+- **A list carries statistics, never the per-image annotation.** The dataset surface's list
+  endpoints return counts and presence sets; the annotation itself is one row at a time from the
+  detail endpoint.
 - **Addresses are resolved, never concatenated.** A row is a lookup key in the closed index; a
   client-supplied URL is parsed into `(dataset, row)` and never fetched.
 - **No bulk endpoints.** The largest page is 1000 rows, and there is no dataset-dump endpoint —
