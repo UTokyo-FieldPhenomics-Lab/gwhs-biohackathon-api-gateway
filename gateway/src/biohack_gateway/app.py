@@ -68,11 +68,18 @@ SWAGGER_FRAME_REPORTER = """
   // document's box does not shrink back to its content while the frame stays tall. The container
   // does shrink, so it is what gets observed — together with the class changes Swagger UI makes
   // when a section is toggled, which is what a collapse looks like.
-  const report_height = () => {
+  if (window.parent !== window) {
+    // Framed: the site around the frame owns the height, so this page must not scroll — a scrollbar
+    // here would also narrow the viewport, reflow the text a few pixels taller, and keep itself
+    // alive. Opened directly, nothing is hidden and the page scrolls as Swagger UI intends.
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+  }
+  const report_height = () => requestAnimationFrame(() => {
     const ui = document.querySelector("#swagger-ui") || document.body;
     const height = Math.ceil(ui.getBoundingClientRect().bottom + window.scrollY);
     window.parent.postMessage({docsHeight: height}, "https://docs.global-wheat.com");
-  };
+  });
   const observed = document.querySelector("#swagger-ui") || document.body;
   new ResizeObserver(report_height).observe(observed);
   new MutationObserver(report_height).observe(document.body, {
