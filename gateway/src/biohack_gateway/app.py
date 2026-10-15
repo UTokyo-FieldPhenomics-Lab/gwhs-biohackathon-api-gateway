@@ -56,6 +56,17 @@ who has no key yet, and the documentation pages cannot be reached from a browser
 itself needs a header. Every other path — including ones that do not exist — is behind the gate.
 """
 
+_DARK_STYLE_PATH = Path(__file__).with_name("swagger_dark.css")
+
+SWAGGER_DARK_STYLE = f"<style>{_DARK_STYLE_PATH.read_text(encoding='utf-8')}</style>"
+"""Swagger UI in the documentation site's dark palette, carried by the page itself.
+
+Swagger UI ships no dark theme — the CDN serves one stylesheet and no dark variant — so this one
+lives beside this module and is read at import. It applies only when the page has been told which
+side it is on: by the `?scheme=` it was framed with, by the site's message when the reader switches,
+or by the operating system's preference when the page is opened on its own.
+"""
+
 SWAGGER_FRAME_REPORTER = """
 <script>
   // The documentation site frames this page, and a cross-origin frame cannot be measured from
@@ -68,6 +79,17 @@ SWAGGER_FRAME_REPORTER = """
   // document's box does not shrink back to its content while the frame stays tall. The container
   // does shrink, so it is what gets observed — together with the class changes Swagger UI makes
   // when a section is toggled, which is what a collapse looks like.
+  // The same channel carries the theme: the site says which side of the palette it is on, as a
+  // query parameter for the first paint and as a message whenever the reader switches.
+  const SITE_ORIGIN = "https://docs.global-wheat.com";
+  const apply_scheme = (scheme) => {
+    if (scheme === "dark" || scheme === "light") document.documentElement.dataset.scheme = scheme;
+  };
+  apply_scheme(
+    new URLSearchParams(location.search).get("scheme")
+      || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"),
+  );
+
   if (window.parent !== window) {
     // Framed: the site around the frame owns the height, so this page must not scroll — a scrollbar
     // here would also narrow the viewport, reflow the text a few pixels taller, and keep itself
@@ -78,7 +100,11 @@ SWAGGER_FRAME_REPORTER = """
   const report_height = () => requestAnimationFrame(() => {
     const ui = document.querySelector("#swagger-ui") || document.body;
     const height = Math.ceil(ui.getBoundingClientRect().bottom + window.scrollY);
-    window.parent.postMessage({docsHeight: height}, "https://docs.global-wheat.com");
+    window.parent.postMessage({docsHeight: height}, SITE_ORIGIN);
+  });
+  window.addEventListener("message", (event) => {
+    if (event.origin !== SITE_ORIGIN || !event.data) return;
+    apply_scheme(event.data.scheme);
   });
   const observed = document.querySelector("#swagger-ui") || document.body;
   new ResizeObserver(report_height).observe(observed);
@@ -264,8 +290,10 @@ def create_app(
             directly sees no difference.
         """
         page = get_swagger_ui_html(openapi_url="/openapi.json", title=f"{app.title} — reference")
-        html = bytes(page.body).decode().replace("</body>", f"{SWAGGER_FRAME_REPORTER}</body>")
-        return HTMLResponse(html)
+        html = bytes(page.body).decode()
+        return HTMLResponse(
+            html.replace("</body>", f"{SWAGGER_DARK_STYLE}{SWAGGER_FRAME_REPORTER}</body>")
+        )
 
     @app.middleware("http")
     async def require_key(request: Request, call_next: RequestResponseEndpoint) -> Response:

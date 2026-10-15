@@ -1,0 +1,195 @@
+/* Swagger UI in the documentation site's dark palette.
+ *
+ * Swagger UI has no dark theme of its own, so every region the reference actually renders is
+ * overridden here: the page, the info block, the operation cards and their opened bodies, the
+ * parameter and response tables, the buttons and selects, the schema panel, and the code block with
+ * its four syntax colours. Scoped to html[data-scheme="dark"], which the page sets from the frame's
+ * `?scheme=`, from the site's message when the reader switches, or from prefers-color-scheme when the
+ * page is opened on its own.
+ */
+
+html[data-scheme="dark"] {
+  color-scheme: dark;                 /* native carets follow the page, not the operating system */
+  scrollbar-color: #4a5464 #1b1f27;   /* and so do the scrollbars, here and inside the code block */
+  scrollbar-width: thin;
+}
+html[data-scheme="dark"] ::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+html[data-scheme="dark"] ::-webkit-scrollbar-track {
+  background: #1b1f27;
+}
+html[data-scheme="dark"] ::-webkit-scrollbar-thumb {
+  background: #4a5464;
+  border-radius: 6px;
+}
+html[data-scheme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: #5b6678;
+}
+html[data-scheme="dark"] body,
+html[data-scheme="dark"] .swagger-ui {
+  background: #1e2129;
+  color: #d8dee9;
+}
+
+/* Headings and labels */
+html[data-scheme="dark"] .swagger-ui .info .title,
+html[data-scheme="dark"] .swagger-ui .info h1,
+html[data-scheme="dark"] .swagger-ui .info h2,
+html[data-scheme="dark"] .swagger-ui .opblock-tag,
+html[data-scheme="dark"] .swagger-ui .opblock-summary-path,
+html[data-scheme="dark"] .swagger-ui .model-title,
+html[data-scheme="dark"] .swagger-ui section.models h4,
+html[data-scheme="dark"] .swagger-ui .opblock-section-header h4,
+html[data-scheme="dark"] .swagger-ui table thead tr th {
+  color: #e6ebf3;
+}
+
+/* Body copy */
+html[data-scheme="dark"] .swagger-ui .info p,
+html[data-scheme="dark"] .swagger-ui .info li,
+html[data-scheme="dark"] .swagger-ui .markdown p,
+html[data-scheme="dark"] .swagger-ui .markdown li,
+html[data-scheme="dark"] .swagger-ui .renderedMarkdown p,
+html[data-scheme="dark"] .swagger-ui .parameter__name,
+html[data-scheme="dark"] .swagger-ui .response-col_status,
+html[data-scheme="dark"] .swagger-ui .response-col_description,
+html[data-scheme="dark"] .swagger-ui .opblock-description-wrapper p {
+  color: #c3cbd8;
+}
+
+/* Links and type labels */
+html[data-scheme="dark"] .swagger-ui .info a,
+html[data-scheme="dark"] .swagger-ui .info .base-url,
+html[data-scheme="dark"] .swagger-ui .model-title__type {
+  color: #6aa9ff;
+}
+
+/* Secondary text */
+html[data-scheme="dark"] .swagger-ui .opblock-summary-description,
+html[data-scheme="dark"] .swagger-ui .model .property.primitive,
+html[data-scheme="dark"] .swagger-ui .parameter__type,
+html[data-scheme="dark"] .swagger-ui .response-col_links,
+html[data-scheme="dark"] .swagger-ui .tab li {
+  color: #9aa4b2;
+}
+
+/* Operation cards */
+html[data-scheme="dark"] .swagger-ui .opblock {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: #3b4250;
+}
+html[data-scheme="dark"] .swagger-ui .opblock.opblock-get {
+  background: rgba(106, 169, 255, 0.1);
+  border-color: #45658f;
+}
+html[data-scheme="dark"] .swagger-ui .opblock.opblock-get .opblock-summary {
+  border-color: #45658f;
+}
+html[data-scheme="dark"] .swagger-ui .opblock-description-wrapper,
+html[data-scheme="dark"] .swagger-ui .opblock-title_normal,
+html[data-scheme="dark"] .swagger-ui .responses-inner {
+  background: transparent;
+}
+html[data-scheme="dark"] .swagger-ui .opblock-section-header {
+  background: #262b34;
+  border-bottom: 1px solid #3b4250;
+  box-shadow: none;
+}
+html[data-scheme="dark"] .swagger-ui .opblock-section-header h4,
+html[data-scheme="dark"] .swagger-ui .opblock-section-header label {
+  color: #e6ebf3;
+}
+html[data-scheme="dark"] .swagger-ui .opblock .opblock-summary,
+html[data-scheme="dark"] .swagger-ui .opblock-tag,
+html[data-scheme="dark"] .swagger-ui .opblock-description-wrapper {
+  border-bottom-color: #3b4250;
+}
+html[data-scheme="dark"] .swagger-ui .tab li.active::after,
+html[data-scheme="dark"] .swagger-ui .tab li.tabitem.active::after {
+  background: #6aa9ff;
+}
+html[data-scheme="dark"] .swagger-ui .opblock-control-arrow svg,
+html[data-scheme="dark"] .swagger-ui .opblock-summary-control svg,
+html[data-scheme="dark"] .swagger-ui .models-control svg,
+html[data-scheme="dark"] .swagger-ui .dialog-ux .modal-ux-header .close-modal svg {
+  fill: #c3cbd8;
+}
+
+/* Controls */
+html[data-scheme="dark"] .swagger-ui .btn,
+html[data-scheme="dark"] .swagger-ui .btn.try-out__btn {
+  background: #2f3643;
+  color: #d8dee9;
+  border-color: #4a5464;
+}
+html[data-scheme="dark"] .swagger-ui .btn.execute {
+  background-color: #2f6fb5;
+  border-color: #2f6fb5;
+  color: #ffffff;
+}
+html[data-scheme="dark"] .swagger-ui .btn.cancel {
+  border-color: #a9445a;
+  color: #ff9db1;
+}
+html[data-scheme="dark"] .swagger-ui select,
+html[data-scheme="dark"] .swagger-ui input[type="text"],
+html[data-scheme="dark"] .swagger-ui input[type="email"],
+html[data-scheme="dark"] .swagger-ui textarea {
+  background: #1b1f27;
+  color: #e6ebf3;
+  border-color: #4a5464;
+}
+html[data-scheme="dark"] .swagger-ui .content-type__accept-header {
+  color: #7ec699;
+}
+html[data-scheme="dark"] .swagger-ui .tab li.active,
+html[data-scheme="dark"] .swagger-ui .tab li.active * {
+  color: #e6ebf3;
+}
+
+/* Tables and their rules */
+html[data-scheme="dark"] .swagger-ui table thead tr th,
+html[data-scheme="dark"] .swagger-ui table tbody tr td,
+html[data-scheme="dark"] .swagger-ui .response-col_links {
+  border-color: #3b4250;
+}
+
+/* Schemas */
+html[data-scheme="dark"] .swagger-ui .model-box,
+html[data-scheme="dark"] .swagger-ui section.models,
+html[data-scheme="dark"] .swagger-ui section.models .model-container {
+  background: #262b34;
+  border-color: #3b4250;
+}
+html[data-scheme="dark"] .swagger-ui section.models .model-container:hover {
+  background: #2c333f;
+}
+html[data-scheme="dark"] .swagger-ui section.models.is-open h4 {
+  border-bottom-color: #3b4250;
+}
+html[data-scheme="dark"] .swagger-ui .model-box-control:focus,
+html[data-scheme="dark"] .swagger-ui .models-control:focus {
+  outline-color: #6aa9ff;
+}
+
+/* Code, and its four syntax colours */
+html[data-scheme="dark"] .swagger-ui .highlight-code > .microlight,
+html[data-scheme="dark"] .swagger-ui .model-example .highlight-code {
+  background: #14171d;
+  color: #e6ebf3;
+}
+html[data-scheme="dark"] .swagger-ui .microlight .token.property {
+  color: #ff9db1;
+}
+html[data-scheme="dark"] .swagger-ui .microlight .token.string {
+  color: #7ec699;
+}
+html[data-scheme="dark"] .swagger-ui .microlight .token.number,
+html[data-scheme="dark"] .swagger-ui .microlight .token.boolean {
+  color: #f0b37e;
+}
+html[data-scheme="dark"] .swagger-ui .microlight .token.punctuation {
+  color: #d8dee9;
+}
