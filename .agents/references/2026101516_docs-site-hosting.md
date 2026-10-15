@@ -7,8 +7,8 @@ the runbook the operator follows is [`../../deploy/README.md`](../../deploy/READ
 ## Objective
 
 One URL a participant can be given before the event, serving curated documentation, independent of
-the gateway host, which is on demand and whose Elastic IP one measured network already drops
-([`2026101513_campus-path-blocks-the-eip.md`](2026101513_campus-path-blocks-the-eip.md)).
+the gateway host, which is on demand and whose Elastic IP one measured network cannot reach at all
+([`2026101513_host-unreachable-from-the-utokyo-network.md`](2026101513_host-unreachable-from-the-utokyo-network.md)).
 
 ## Decisions, and what each rests on
 

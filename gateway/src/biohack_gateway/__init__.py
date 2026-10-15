@@ -1,1 +1,1 @@
-"""Global Wheat API gateway: authentication, quota, backend routing."""
+"""Global Wheat API gateway: authentication, the dataset surface, and backend routing."""

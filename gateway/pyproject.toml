@@ -1,7 +1,7 @@
 [project]
 name = "biohack-gateway"
 version = "0.1.0"
-description = "Global Wheat dataset and model API gateway: authentication, quota, concurrency gate, backend routing."
+description = "Global Wheat dataset and model API gateway: the request gate, the dataset surface, and backend routing."
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",

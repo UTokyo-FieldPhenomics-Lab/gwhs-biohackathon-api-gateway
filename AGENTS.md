@@ -1,45 +1,40 @@
 # Global Wheat BioHackathon API Gateway
 
-Single entry point for agents working in this repository. Deeper notes live under `.agents/`.
+Agent entry point for this repository: the constraints, the layout, and where to look. What the
+project is and why it is built this way is [`README.md`](README.md); durable notes are under
+`.agents/`.
 
 ## Goal
 
-Let BioHackathon participants (Göttingen, 2026-12-07 to 12-11, hybrid) use a global wheat
-dataset and segmentation models **without downloading data, deploying models, or owning a
-GPU**. Fetching an image and getting a model result are each a single HTTP call.
+Let BioHackathon participants (Göttingen, 2026-12-07 to 12-11, hybrid) use a global wheat dataset
+and segmentation models **without downloading data, deploying models, or owning a GPU**: fetching an
+image and getting a model result are each a single HTTP call.
 
 ## Architecture
 
-Two planes, joined only by a frozen contract:
+Two planes joined only by a frozen contract, plus the compute the model surface will route to:
 
-- **Image plane** — S3 (private, `eu-central-1`) behind CloudFront with OAC. Purely static, and
-  written once at publish: image objects only, PUT straight from the publishing host, which sits in
-  the same region. No server, so it never goes down, and no mutable object, so a change is a new path
-  rather than an invalidation.
-- **Metadata plane** — the publisher generates one metadata index per dataset from a pinned
-  upstream revision; the gateway loads it from the host at startup and serves it
-  from memory. A republish is followed by a restart, which is the whole refresh mechanism.
-  This is the one deliberate exception to "static before dynamic".
-- **Compute plane** — the same gateway on one EC2 host authenticates, enforces quota and a
-  concurrency gate, and routes inference work to GPU compute backends. Its region is environment
-  configuration rather than architecture: the host runs in `eu-central-1`. A backend is any
-  Docker-capable GPU resource reachable over an authenticated, non-public link — a lab
-  machine, a GPU VPS, or a rented GPU container; the provider is a deployment choice, not a
-  fixed route.
-- **Contract plane** — this repository: the OpenAPI surface, the data layout, examples, skills, and
-  the participant-facing site that publishes part of them at <https://docs.global-wheat.com>.
-- **Domains** — `data.*` serves static images through CloudFront (no auth, long cache);
-  `api.*` hits the gateway directly and always requires a key, images included, because
-  clients display images from `data.*` rather than through the API; `docs.*` is a static site on
-  GitHub Pages, which nobody here runs. They are deliberately separate distributions, never one.
+- **Image plane** (live) — private S3 behind CloudFront. Image objects only, written once at publish
+  by a PUT from the publishing host in the bucket's own region: no server to go down, and no mutable
+  object, so a change is a new path rather than an invalidation.
+- **Metadata plane** (live) — the publisher generates one index per dataset from a pinned upstream
+  revision; the gateway loads it at startup and serves it from memory, so a republish arrives as a
+  restart. This is the one deliberate exception to static-first.
+- **Compute plane** (model surface not built yet) — the same gateway on one EC2 host authenticates,
+  and will route inference work to GPU backends. Its region is environment configuration: the host
+  runs in `eu-central-1`. A backend is any Docker-capable GPU resource reachable over an
+  authenticated, non-public link — a lab machine, a GPU VPS, or a rented GPU container; the provider
+  is a deployment choice, not a fixed route.
+- **Contract plane** — this repository: the OpenAPI surface, the data layout, examples, and the
+  participant-facing site at <https://docs.global-wheat.com>.
 
-The gateway never carries bytes. It answers with the public `data.*` URL of an object and
-resolves every address by lookup in its in-memory index, so no client input is ever concatenated
-into a key or a path.
+The gateway never carries bytes: it answers with the public `data.*` URL of an object and resolves
+every address by lookup in its in-memory index, so no client input is ever concatenated into a key or
+a path. The three domains, and why they are separate distributions, are in [`README.md`](README.md).
 
 The dataset ids are `gwhd`, `gwfss` and — once the full annotation is released — `gwhs`, plus
-`gwhs-temp` for development. Addresses are `(dataset, row)`, where the row is the absolute row
-number of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-layout.md).
+`gwhs-temp` for development. Addresses are `(dataset, row)`, where the row is the absolute row number
+of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-layout.md).
 
 ## Directory Structure
 
@@ -49,22 +44,19 @@ number of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-la
 ├── .agents/
 │   ├── rules/             short, binding constraints (project.md + design-philosophy.md + one per package)
 │   ├── references/        detailed execution records and lessons learned
-│   └── skills/            packaged agent skills (planned: API + data layout)
+│   └── plans/             agreed execution plans; a finished one is renamed with ✅ and left as an archive
 ├── zensical.toml          docs site config: docs/content → site/, published to GitHub Pages
 ├── docs/                  documentation subproject (Zensical)
 │   ├── data-layout.md     internal contract: object layout, addressing, index fields — unpublished
 │   ├── scripts/           make_figures.py: every figure the pages show, built from published rows
 │   └── content/           the site's pages and assets: the only thing Zensical builds
 │       ├── api/           the frame's two files: hides the page's heading, sizes and themes the frame
-│       ├── notebooks/     empty; a tutorial would start here as markdown
 │       └── post-processing/  palette masks and RLE geometry, in three languages
-├── gateway/               FastAPI gateway: model surface (auth, quota, gate, routing)
-│   ├── src/biohack_gateway/  installed app package (app, models, routing, dataset surface)
-│   └── scripts/           contract projections, if the reference ever needs a written copy
+├── gateway/               FastAPI gateway: the request gate and the dataset surface
+│   └── src/biohack_gateway/  installed app package (app, auth, tokens, dataset surface, CLI)
 ├── datasets/              upstream parquet cache + publisher CLI: parquet → image objects in S3 + metadata index
 ├── deploy/                host bring-up, the dataset bucket and its CDN, bootstrap scripts
-└── .github/workflows/     docs.yml builds and publishes the site; secret scan, contract guard,
-                           tests, and lock are planned
+└── .github/workflows/     docs.yml builds and publishes the site
 ```
 
 ## Tech Stack
@@ -103,6 +95,9 @@ number of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-la
   file named `YYYYMMDDHH_<topic>.md` recording what was done, the commands run, the observed
   results, what broke, and what to do differently next time. This is the only place for
   narrative detail and failure records. Do not restate rules here; link to them.
+- **`plans/` — agreed execution plans.** `YYYYMMDDHH_<topic>.md`, kept current while the work is
+  open, and renamed `YYYYMMDDHH_✅<topic>.md` when it is finished so it stops being updated. It is
+  an archive at that point; the record of what actually happened belongs in `references/`.
 
 ## Where to Look
 
@@ -110,7 +105,7 @@ number of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-la
 - Per-package constraints: [`.agents/rules/`](.agents/rules)
 - Execution records and lessons: [`.agents/references/`](.agents/references)
 - A host that answers from elsewhere but not from this machine:
-  [`references/2026101523_reaching-the-api-host-from-the-utokyo-network.md`](.agents/references/2026101523_reaching-the-api-host-from-the-utokyo-network.md)
+  [`references/2026101513_host-unreachable-from-the-utokyo-network.md`](.agents/references/2026101513_host-unreachable-from-the-utokyo-network.md)
   — the campus-perimeter workaround; try it before concluding the service is down.
 - Data layout contract: [`docs/data-layout.md`](docs/data-layout.md)
 - Architecture discussion and decision log (SiYuan note, external): "黑客松API服务架构设计"
