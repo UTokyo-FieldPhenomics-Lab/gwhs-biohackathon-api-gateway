@@ -59,12 +59,29 @@ itself needs a header. Every other path — including ones that do not exist —
 SWAGGER_FRAME_REPORTER = """
 <script>
   // The documentation site frames this page, and a cross-origin frame cannot be measured from
-  // outside: the page reports its own height so the frame grows to it and the reader scrolls one
-  // page instead of two nested ones. Nothing here reads or sends anything but that number.
-  const report_height = () => window.parent.postMessage(
-    {docsHeight: document.documentElement.scrollHeight}, "https://docs.global-wheat.com");
-  new ResizeObserver(report_height).observe(document.documentElement);
+  // outside: the page reports its own height so the frame grows to its content and the reader
+  // scrolls one page instead of two nested ones. Nothing here reads or sends anything but that
+  // number, and only to the documentation site.
+  //
+  // The height is the bottom edge of the Swagger UI container, not `documentElement.scrollHeight`:
+  // observing `documentElement` catches a section expanding and misses it collapsing, because a
+  // document's box does not shrink back to its content while the frame stays tall. The container
+  // does shrink, so it is what gets observed — together with the class changes Swagger UI makes
+  // when a section is toggled, which is what a collapse looks like.
+  const report_height = () => {
+    const ui = document.querySelector("#swagger-ui") || document.body;
+    const height = Math.ceil(ui.getBoundingClientRect().bottom + window.scrollY);
+    window.parent.postMessage({docsHeight: height}, "https://docs.global-wheat.com");
+  };
+  const observed = document.querySelector("#swagger-ui") || document.body;
+  new ResizeObserver(report_height).observe(observed);
+  new MutationObserver(report_height).observe(document.body, {
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["class", "style", "hidden"],
+  });
   window.addEventListener("load", report_height);
+  window.addEventListener("resize", report_height);
 </script>
 """
 """Injected into the Swagger UI page so `docs.global-wheat.com` can size the frame around it.
