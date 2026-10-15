@@ -18,7 +18,7 @@ from biohack_datasets.publish import (
     parse_bucket,
     publish_dataset,
 )
-from biohack_datasets.s3 import MemoryObjectStore
+from biohack_datasets.s3 import AlreadyExists, MemoryObjectStore, ObjectUnreadable
 from biohack_datasets.sources import Source, Upstream
 
 REVISION = "655118534e9ad980b6f7c0dd6566a406d5a29a27"
@@ -212,8 +212,22 @@ def test_an_upload_that_does_not_read_back_is_a_verification_error(tmp_path: Pat
     """The bucket's answer after the write is what authorises the object."""
 
     class _LyingStore(MemoryObjectStore):
-        def put(self, key: str, body: bytes, *, content_type: str, cache_control: str) -> str:
-            etag = super().put(key, body, content_type=content_type, cache_control=cache_control)
+        def put(
+            self,
+            key: str,
+            body: bytes,
+            *,
+            content_type: str,
+            cache_control: str,
+            if_none_match: bool = False,
+        ) -> str:
+            etag = super().put(
+                key,
+                body,
+                content_type=content_type,
+                cache_control=cache_control,
+                if_none_match=if_none_match,
+            )
             _, stored_type, stored_control = self.objects[key]
             self.objects[key] = (b"X" * len(body), stored_type, stored_control)
             return etag
@@ -254,3 +268,58 @@ def test_github_style_bucket_references_parse_to_a_name() -> None:
     assert parse_bucket("s3://demo") == "demo"
     assert parse_bucket("demo") == "demo"
     assert parse_bucket(None) is None
+
+
+class _DeniedWhenAbsent(MemoryObjectStore):
+    """A bucket that grants GetObject but not ListBucket: a missing key answers 403."""
+
+    def head(self, key: str) -> object:
+        info = super().head(key)
+        if info is None:
+            raise ObjectUnreadable(f"{key}: denied")
+        return info
+
+
+class _RaceStore(_DeniedWhenAbsent):
+    """The same bucket, where a create is refused because the key appeared between HEAD and PUT."""
+
+    def put(
+        self,
+        key: str,
+        body: bytes,
+        *,
+        content_type: str,
+        cache_control: str,
+        if_none_match: bool = False,
+    ) -> str:
+        if if_none_match and key not in self.objects:
+            self.objects[key] = (bytes(body), content_type, cache_control)
+            raise AlreadyExists(f"{key}: lost the race")
+        return super().put(
+            key,
+            body,
+            content_type=content_type,
+            cache_control=cache_control,
+            if_none_match=if_none_match,
+        )
+
+
+def test_a_denied_head_is_settled_by_a_conditional_create(tmp_path: Path) -> None:
+    """A policy without ListBucket answers 403 for a missing key; the create decides."""
+    store = _DeniedWhenAbsent()
+
+    first = _publish(tmp_path, store)
+    second = _publish(tmp_path, store)
+
+    assert first.uploaded == 2  # type: ignore[attr-defined]
+    assert first.skipped == 0  # type: ignore[attr-defined]
+    assert second.uploaded == 0  # type: ignore[attr-defined]
+    assert second.skipped == 2  # type: ignore[attr-defined]
+
+
+def test_losing_the_conditional_create_race_falls_back_to_comparison(tmp_path: Path) -> None:
+    """A create refused because the key appeared mid-flight is compared, not failed."""
+    summary = _publish(tmp_path, _RaceStore())
+
+    assert summary.uploaded == 0  # type: ignore[attr-defined]
+    assert summary.skipped == 2  # type: ignore[attr-defined]

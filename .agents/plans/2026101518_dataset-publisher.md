@@ -237,10 +237,14 @@ pinned in `sources.yaml`. A failure stops the run with the offending row named.
 
 A narrow protocol (`head`, `put`) with a boto3 implementation and an in-memory fake for tests.
 
-- One `HeadObject` first: absent → `PUT`; present → compare **byte size, `ETag`, `Content-Type`,
-  `Cache-Control`**. All four equal → skip. Equal bytes with a different header → re-`PUT` the same bytes
-  (not an overwrite: the content did not change). Different bytes → **stop and name the key**; the
-  operator chooses between a new dataset id and a deliberate wipe of a prefix still under development.
+- One `HeadObject` first: present → compare **byte size, `ETag`, `Content-Type`, `Cache-Control`**;
+  all four equal → skip, equal bytes with a different header → re-`PUT` the same bytes (not an
+  overwrite: the content did not change), different bytes → **stop and name the key**; the operator
+  chooses between a new dataset id and a deliberate wipe of a prefix still under development.
+- A `403` on that `HEAD` is not "absent": a private bucket without `s3:ListBucket` answers `403` for a
+  missing key, so the publisher settles existence with a conditional create (`If-None-Match: *`),
+  which succeeds only if the key is really free. That is what keeps the write-once rule true without
+  granting `ListBucket`.
 - Every object is one single-part `PUT`, which keeps `ETag` equal to the content MD5 and makes the
   comparison cheap. `Content-Type` comes from the sniffed extension;
   `Cache-Control: public, max-age=31536000, immutable`.

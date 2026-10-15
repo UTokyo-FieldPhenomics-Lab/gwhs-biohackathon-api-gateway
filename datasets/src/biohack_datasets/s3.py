@@ -18,6 +18,22 @@ from botocore.exceptions import ClientError
 from biohack_datasets.credentials import AccessKeys
 
 _NOT_FOUND = frozenset({"404", "NoSuchKey", "NotFound"})
+_DENIED = frozenset({"403", "AccessDenied"})
+_PRECONDITION_FAILED = frozenset({"412", "PreconditionFailed"})
+
+
+class ObjectUnreadable(RuntimeError):
+    """A HEAD was denied, so whether the object exists cannot be determined.
+
+    A private bucket that grants `GetObject` but not `ListBucket` answers `403` for a key
+    that does not exist, because telling the two apart would leak existence. The publisher
+    must read that as neither "absent" nor "present": it settles the question with a
+    conditional create, which only succeeds if the key really is free.
+    """
+
+
+class AlreadyExists(RuntimeError):
+    """A conditional create was refused because the key already holds an object."""
 
 
 @dataclass(frozen=True)
@@ -61,7 +77,15 @@ class ObjectStore(Protocol):
         """
         ...
 
-    def put(self, key: str, body: bytes, *, content_type: str, cache_control: str) -> str:
+    def put(
+        self,
+        key: str,
+        body: bytes,
+        *,
+        content_type: str,
+        cache_control: str,
+        if_none_match: bool = False,
+    ) -> str:
         """Write one object in a single request and return its entity tag.
 
         Parameters
@@ -74,12 +98,20 @@ class ObjectStore(Protocol):
             Type to store with the object.
         cache_control : str
             Cache lifetime to store with the object.
+        if_none_match : bool, default False
+            Refuse the write when the key already holds an object. It is how the publisher
+            settles existence under a policy that grants no `ListBucket`.
 
         Returns
         -------
         str
             The entity tag the bucket answered with, quotes removed. A single-part
             `PUT` makes it the content MD5, which verification compares against.
+
+        Raises
+        ------
+        AlreadyExists
+            `if_none_match` was set and the key is already occupied.
         """
         ...
 
@@ -136,6 +168,10 @@ class Boto3ObjectStore:
             code = str(error.response.get("Error", {}).get("Code", ""))
             if code in _NOT_FOUND:
                 return None
+            if code in _DENIED:
+                raise ObjectUnreadable(
+                    f"{self.bucket}/{key}: HEAD was denied, existence is unknown"
+                ) from error
             raise
         return ObjectInfo(
             size=int(response["ContentLength"]),
@@ -144,15 +180,32 @@ class Boto3ObjectStore:
             cache_control=response.get("CacheControl"),
         )
 
-    def put(self, key: str, body: bytes, *, content_type: str, cache_control: str) -> str:
+    def put(
+        self,
+        key: str,
+        body: bytes,
+        *,
+        content_type: str,
+        cache_control: str,
+        if_none_match: bool = False,
+    ) -> str:
         """Write one object in a single request and return its entity tag."""
-        response = self._client.put_object(
-            Bucket=self.bucket,
-            Key=key,
-            Body=body,
-            ContentType=content_type,
-            CacheControl=cache_control,
-        )
+        request: dict[str, Any] = {
+            "Bucket": self.bucket,
+            "Key": key,
+            "Body": body,
+            "ContentType": content_type,
+            "CacheControl": cache_control,
+        }
+        if if_none_match:
+            request["IfNoneMatch"] = "*"
+        try:
+            response = self._client.put_object(**request)
+        except ClientError as error:
+            code = str(error.response.get("Error", {}).get("Code", ""))
+            if code in _PRECONDITION_FAILED:
+                raise AlreadyExists(f"{self.bucket}/{key}: already exists") from error
+            raise
         return str(response["ETag"]).strip('"')
 
 
@@ -176,8 +229,18 @@ class MemoryObjectStore:
         body, content_type, cache_control = stored
         return ObjectInfo(len(body), hashlib.md5(body).hexdigest(), content_type, cache_control)
 
-    def put(self, key: str, body: bytes, *, content_type: str, cache_control: str) -> str:
+    def put(
+        self,
+        key: str,
+        body: bytes,
+        *,
+        content_type: str,
+        cache_control: str,
+        if_none_match: bool = False,
+    ) -> str:
         """Store one object and answer with the entity tag the real bucket would."""
+        if if_none_match and key in self.objects:
+            raise AlreadyExists(f"{key}: already exists")
         self.objects[key] = (bytes(body), content_type, cache_control)
         return hashlib.md5(body).hexdigest()
 

@@ -113,3 +113,18 @@ three names -- `BIOHACK_BUCKET`, `AWS_REGION`, `BIOHACK_ACCESS_KEYS_CSV` -- inst
 `setup-gateway.sh` creates `publish/` up front so the unit's `InaccessiblePaths=` always resolves
 (systemd refuses a unit whose excluded path does not exist). The state-directory tree is now
 documented in `deploy/README.md` §1.5. All gates stayed green (71 tests).
+
+## Follow-up: HeadObject 403 under the no-ListBucket policy
+
+The first real publish on the host failed with `403` from `HeadObject` on the first key. The
+publish policy grants `s3:PutObject` and `s3:GetObject` and no `s3:ListBucket`, and a private
+bucket answers `403` — not `404` — for a key that does not exist, because revealing the difference
+would leak existence. The publisher read that as a hard error, so no first publish could start.
+
+Fix: a denied `HEAD` raises `ObjectUnreadable`, which is *not* evidence of absence; the publisher
+settles existence with a conditional create (`PutObject` with `If-None-Match: *`). The create
+succeeds only if the key is free (`uploaded`), or is refused with `412` (`AlreadyExists`) when it is
+occupied, after which the normal size and header comparison decides `skipped` or `repaired`.
+Existence is never assumed from a denial and nothing is overwritten, so the write-once rule holds
+without granting `ListBucket`. Tests cover the 403, the 412, the lost-race fallback, and the memory
+fake's conditional create; the rules, the deploy README, and the plan record the nuance.

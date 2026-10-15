@@ -22,7 +22,7 @@ from biohack_datasets.adapters import Adapter, get_adapter
 from biohack_datasets.formats import CACHE_CONTROL, CONTENT_TYPES
 from biohack_datasets.index import build, commit, counts, utc_timestamp
 from biohack_datasets.model import Row
-from biohack_datasets.s3 import ObjectInfo, ObjectStore
+from biohack_datasets.s3 import AlreadyExists, ObjectInfo, ObjectStore, ObjectUnreadable
 from biohack_datasets.sources import Source, Upstream
 
 DEFAULT_INDEX_DIR = Path.home() / ".config" / "biohack-gateway" / "index"
@@ -410,23 +410,86 @@ def _put_object(store: ObjectStore, key: str, body: bytes, extension: str) -> st
         The object does not read back as written.
     """
     content_type = CONTENT_TYPES[extension]
-    existing = store.head(key)
+    try:
+        existing = store.head(key)
+    except ObjectUnreadable:
+        # A private bucket cannot say "absent" without `ListBucket`, so existence is settled
+        # by a conditional create, which succeeds only if the key is really free.
+        existing = None
     if existing is None:
-        etag = store.put(key, body, content_type=content_type, cache_control=CACHE_CONTROL)
-        action = "uploaded"
-    elif _already_correct(existing, body, content_type):
-        etag = existing.etag
-        action = "skipped"
-    elif existing.size != len(body):
+        try:
+            etag = store.put(
+                key,
+                body,
+                content_type=content_type,
+                cache_control=CACHE_CONTROL,
+                if_none_match=True,
+            )
+        except AlreadyExists:
+            action, etag = _settle_existing(store, key, body, content_type)
+        else:
+            action = "uploaded"
+    else:
+        action, etag = _settle_existing(store, key, body, content_type, existing)
+    _verify(store, key, len(body), etag, content_type)
+    return action
+
+
+def _settle_existing(
+    store: ObjectStore,
+    key: str,
+    body: bytes,
+    content_type: str,
+    existing: ObjectInfo | None = None,
+) -> tuple[str, str]:
+    """Decide what to do with a key that already holds an object.
+
+    Parameters
+    ----------
+    store : ObjectStore
+        Destination bucket.
+    key : str
+        Object key.
+    body : bytes
+        Bytes this run would write.
+    content_type : str
+        Type this run would write.
+    existing : ObjectInfo, optional
+        What the bucket already reported. Read afresh when omitted, which is the case after
+        a conditional create lost the race.
+
+    Returns
+    -------
+    tuple of (str, str)
+        The action, and the entity tag of the object as it now stands.
+
+    Raises
+    ------
+    ObjectConflict
+        The key holds a different number of bytes, or it exists while `GetObject` is denied,
+        so the comparison cannot be made.
+    """
+    if existing is None:
+        try:
+            existing = store.head(key)
+        except ObjectUnreadable as error:
+            raise ObjectConflict(
+                f"{key}: the object exists but HEAD is denied;"
+                " the policy needs s3:GetObject on the prefix"
+            ) from error
+    if existing is None:
+        raise ObjectConflict(
+            f"{key}: a conditional create was refused but the key reads back as absent"
+        )
+    if _already_correct(existing, body, content_type):
+        return "skipped", existing.etag
+    if existing.size != len(body):
         raise ObjectConflict(
             f"{key}: bucket holds {existing.size} bytes, this publish would write {len(body)};"
             " a changed object is a new dataset id or a deliberate wipe, never an overwrite"
         )
-    else:
-        etag = store.put(key, body, content_type=content_type, cache_control=CACHE_CONTROL)
-        action = "repaired"
-    _verify(store, key, len(body), etag, content_type)
-    return action
+    etag = store.put(key, body, content_type=content_type, cache_control=CACHE_CONTROL)
+    return "repaired", etag
 
 
 def _already_correct(existing: ObjectInfo, body: bytes, content_type: str) -> bool:
