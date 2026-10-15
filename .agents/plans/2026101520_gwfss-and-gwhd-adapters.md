@@ -57,7 +57,7 @@ and the offline test suite pins every shape without the Hub.
 - `publish.py` — loads the palette from the cache and passes `classes` to the index.
 - `cli.py` — catches the two new provisioning errors.
 - `sources.yaml` — the pinned URL, and a corrected comment.
-- docs: `docs/data-layout.md`, `docs/examples/label_masks.py`, `.agents/rules/datasets.md`,
+- docs: `docs/content/data-layout.md`, `docs/content/examples/label_masks.py`, `.agents/rules/datasets.md`,
   `README.md`.
 
 ## Tests

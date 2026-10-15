@@ -2,23 +2,27 @@
 # Pages, and the hand steps behind the domain — the repository's Pages settings and the DNS record —
 # are in deploy/README.md §6.
 #
-# This file sits at the repository root rather than in docs/ because Zensical resolves `docs_dir` and
-# `site_dir` relative to the config file, and .gitignore already ignores the `site/` that the second
-# one produces. Content stays in docs/, and every file there is site material: the runbook that would
-# otherwise be a second README lives in deploy/README.md instead.
+# This file sits at the repository root because Zensical resolves `docs_dir` and `site_dir` relative
+# to the config file, and .gitignore already ignores the `site/` that the second one produces.
+#
+# docs_dir points at docs/content and not at docs on purpose: docs/ is the subproject, so it holds
+# this site's pyproject.toml, its uv.lock, and its .venv. A virtualenv anywhere under docs_dir stops
+# the build emitting site/assets entirely — the pages come out unstyled and nothing warns — which is
+# why the content root holds site material and nothing else. The runbook that would otherwise be a
+# second README lives in deploy/README.md.
 
 [project]
 site_url = "https://docs.global-wheat.com/"
 site_name = "Global Wheat BioHackathon API"
 site_description = "Dataset and model API for the global wheat BioHackathon, Göttingen, 7-11 December 2026."
 
-# Both relative to this file, which is why the site is never built from a config inside docs/.
-docs_dir = "docs"
+# Both relative to this file, which is why the site is never built from a config inside docs/content.
+docs_dir = "docs/content"
 site_dir = "site"
 
 repo_url = "https://github.com/UTokyo-FieldPhenomics-Lab/gwhs-biohackathon-api-gateway"
 repo_name = "UTokyo-FieldPhenomics-Lab/gwhs-biohackathon-api-gateway"
-edit_uri = "edit/main/docs/"
+edit_uri = "edit/main/docs/content/"
 
 # The interactive reference is an external link rather than a generated section: it is FastAPI's own
 # Swagger UI on the API host, which needs no renderer here and cannot be a static page.
@@ -68,11 +72,10 @@ toggle.icon = "lucide/moon"
 toggle.name = "Switch to system preference"
 
 [project.plugins]
-# Zensical copies every non-markdown file it finds under docs_dir, and this subproject keeps its
-# pyproject.toml and uv.lock beside its content, so both would otherwise be published as assets. The
-# examples' .py/.js/.kt files are deliberately NOT excluded: the examples page links to them so a
-# reader can download the snippet it shows.
-exclude = { glob = ["pyproject.toml", "uv.lock", "**/__pycache__/**"] }
+# Zensical copies every non-markdown file under docs_dir into the site, so a cache that appears there
+# is published as an asset. The examples' .py/.js/.kt files are deliberately NOT excluded: the
+# examples page links to them so a reader can download the snippet it shows.
+exclude = { glob = ["**/__pycache__/**"] }
 
 [project.markdown_extensions]
 abbr = {}
