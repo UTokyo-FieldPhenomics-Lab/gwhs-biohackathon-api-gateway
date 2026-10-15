@@ -22,6 +22,12 @@ Wants=network-online.target
 [Service]
 User=admin
 EnvironmentFile=/home/admin/.config/biohack-gateway/env
+# The publisher's directory: its environment and the access-key CSV that environment points at. The
+# service and the publisher run as the same user, so file modes alone cannot separate them;
+# this makes the whole directory genuinely unreadable by the service rather than merely absent from
+# its environment. Excluding the directory, not the files, is what keeps a file added there later
+# from being readable by accident (.agents/rules/deploy.md).
+InaccessiblePaths=%h/.config/biohack-gateway/publish
 ExecStart=/opt/gwhs-biohackathon-api-gateway/gateway/.venv/bin/uvicorn biohack_gateway.app:app --host 127.0.0.1 --port 8000
 Restart=on-failure
 RestartSec=2

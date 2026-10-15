@@ -219,6 +219,12 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Upstream files fetched by biohack-datasets-fetch: a local, disposable cache, not source.
+# Upstream files fetched by `biohack-datasets fetch`: a local, disposable cache, not source.
 # Named after the tool that fills it, like .mypy_cache, .pytest_cache, and .ruff_cache.
 datasets/.hf_cache/
+
+# The AWS console's key download. A backstop, not a licence: it holds the publish secret in
+# plaintext, so it is never committed; deploy/README.md §5 places it at
+# ~/.config/biohack-gateway/publish/awsAccessKeys.csv, outside the checkout.
+biohack-publish_accessKeys.csv
+awsAccessKeys.csv
