@@ -1,0 +1,5 @@
+[submodule "models"]
+	path = models
+	url = https://github.com/UTokyo-FieldPhenomics-Lab/gwhs-biohackathon-models-container.git
+	branch = main
+	update = none
