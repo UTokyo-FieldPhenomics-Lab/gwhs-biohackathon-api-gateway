@@ -160,3 +160,32 @@ only sets the height it is told, so nothing there changed.
 **Lesson:** when a child reports its own size to a parent frame, measure the *content container*, not
 the document. `scrollHeight` answers "how much is there to scroll", and a document that is already
 taller than its frame keeps answering the same number after the content shrinks.
+
+### The other five pixels: an inline iframe has a baseline
+
+With the reporter fixed, a strip still appeared beside the frame, "about 5 px short". It is not the
+child at all: an `<iframe>` is an inline-level box, so it sits on the text baseline and leaves the
+descender height — exactly 5 px in this browser — inside its container. Measured in the harness with
+a real Chromium, both cases side by side:
+
+| the frame's `display` | the frame's own box | its container's box | gap under it |
+|---|---|---|---|
+| `inline` (default) | 1534 px | 1539 px | **5 px** |
+| `block` | 1577 px | 1577 px | **0 px** |
+
+`docs/content/interactive.md` now sets `display: block` on the frame.
+
+Two more things came out of the same measurements:
+
+- **Collapsing now shrinks the frame** — 1534 px to the injected height, against 1534 px staying put
+  with the old reporter.
+- **A framed page never scrolls.** The reporter hides its own scrollbar while it is framed, because a
+  scrollbar inside the frame narrows the viewport, reflows the text a few pixels taller, and keeps
+  itself alive; the site around the frame owns the height. Opened directly, nothing is hidden.
+
+**How to measure this rather than guess:** the `chrome-devtools` MCP in this workspace runs
+`npx chrome-devtools-mcp@latest` with no arguments, so it drives a *local* Chromium — which reaches
+`docs.global-wheat.com` but not `api.*` from the campus network, so the live frame still cannot be
+inspected from here. Pointing it at the machine that can reach the API host is a one-line change: run
+Chromium there with `--remote-debugging-port=9222`, tunnel it (`ssh -N -L 9222:127.0.0.1:9222 <host>`),
+and pass `--browser-url http://127.0.0.1:9222` to the MCP.
