@@ -228,3 +228,6 @@ datasets/.hf_cache/
 # ~/.config/biohack-gateway/publish/awsAccessKeys.csv, outside the checkout.
 biohack-publish_accessKeys.csv
 awsAccessKeys.csv
+
+# OpenChamber's own state: the screenshots and session data it keeps while working in this checkout.
+/.openchamber
