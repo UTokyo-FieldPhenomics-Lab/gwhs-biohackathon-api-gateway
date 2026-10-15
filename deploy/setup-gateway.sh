@@ -109,9 +109,9 @@ install -d -m 0700 -o "$TARGET_USER" -g "$TARGET_USER" "$STATE_DIR/publish"
 if [[ ! -e "$STATE_DIR/env" ]]; then
   install -m 0600 -o "$TARGET_USER" -g "$TARGET_USER" /dev/null "$STATE_DIR/env"
   cat > "$STATE_DIR/env" <<'EOF'
-# Settings for biohack-gateway.service, read by systemd through EnvironmentFile= and by nothing else.
-# One VARIABLE=value per line, unquoted. The variable names arrive with the gateway's settings
-# layer, whose names — never values — are recorded in the committed gateway/.env.example.
+# Settings for biohack-gateway.service. systemd hands this over through EnvironmentFile=; the gateway
+# reads no setting from it, so it is here mainly so a missing state file fails the start rather than
+# letting the service run with defaults. One VARIABLE=value per line, unquoted.
 EOF
 fi
 

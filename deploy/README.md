@@ -193,12 +193,12 @@ and re-run, rather than editing anything under `/etc`.
 
 ### Where the gateway's settings and tokens live
 
-The service reads its settings from `~/.config/biohack-gateway/env` on the host, outside the checkout:
-the directory is 0700 and owned by the user the service runs as, the file is 0600, and systemd hands it
+The service's host state lives in `~/.config/biohack-gateway/` on the host, outside the checkout: the
+directory is 0700 and owned by the user the service runs as, `env` is 0600, and systemd hands that file
 to the process through `EnvironmentFile=`.
 
 `setup-gateway.sh` creates both once — the file with a header and no values — and a re-run never
-overwrites them, so values are added by hand and survive. Settings take effect at process start:
+overwrites them. When a setting exists, it is added by hand and takes effect at process start:
 
 ```bash
 ssh admin@<host>
@@ -206,17 +206,17 @@ ssh admin@<host>
 sudo systemctl restart biohack-gateway
 ```
 
-Two settings are read from it today: `BIOHACK_INDEX_DIR`, the directory of `<dataset>.db` files the
-dataset surface answers from, and `BIOHACK_DATA_BASE_URL`, the distribution its image addresses point
-at. Both default to this environment's values, so `env` may stay empty and is worth editing only when
-a second environment appears. The names — never the values — are recorded in
+The gateway reads no setting from it today. Its index directory and image base URL are `create_app`
+parameters whose defaults already hold this environment's values, so `env` stays empty and systemd
+needs the file only to exist. A second environment moves those two by code rather than by an edit
+here; the names — never values — would then be recorded in
 [`../gateway/.env.example`](../gateway/.env.example).
 
 The directory holds four things, and which of them the gateway can read is the point:
 
 ```
 ~/.config/biohack-gateway/          0700, owned by the user the service runs as
-├── env                             gateway settings (systemd EnvironmentFile=); 0600
+├── env                             systemd EnvironmentFile=; must exist, read by nothing today; 0600
 ├── tokens.json                     participant token pool; 0600
 ├── index/                          <dataset>.db per published dataset; read by the gateway
 └── publish/                        0700; excluded from the service as a whole directory
@@ -450,7 +450,7 @@ Parameter Store fits the rules already — and in whatever infrastructure notes 
 | OAC id, distribution id | the next person to edit this distribution |
 | Certificate ARN | renewals |
 | Distribution domain name | the `CNAME` in 2.5 |
-| `https://data.global-wheat.com` | the gateway's `BIOHACK_DATA_BASE_URL` — **and only this**: the gateway never carries bytes and never touches the bucket, so the base URL is the whole interface it needs |
+| `https://data.global-wheat.com` | the base URL the gateway addresses images from — **and only this**: the gateway never carries bytes and never touches the bucket, so the base URL is the whole interface it needs |
 | Index directory (`~/.config/biohack-gateway/index`) | written by a publish, read by the gateway at startup |
 | Access-key CSV (`publish/awsAccessKeys.csv`) | the publisher, named by `BIOHACK_ACCESS_KEYS_CSV` in `publish/env` (§5) |
 

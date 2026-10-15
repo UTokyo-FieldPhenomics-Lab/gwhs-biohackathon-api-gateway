@@ -75,8 +75,17 @@ single command and was removed by its `trap`; the index is host state and stays 
 ## Next
 
 - Nothing in this item. The plan's next trigger is a second environment, which would want its own
-  bucket, distribution, and `BIOHACK_DATA_BASE_URL` — and, per `.agents/rules/project.md`, never a
-  prefix inside the live one.
+  bucket, distribution, and image base URL — and, per `.agents/rules/project.md`, never a prefix
+  inside the live one.
 - The `gwfss` and `gwhd` index files do not exist yet, so their description shapes are pinned only by
   the gateway's synthetic fixture. The publisher adapter for each is the item that turns that into a
   measurement.
+
+## Correction (2026-10-15)
+
+The two names were never read. `create_app` takes `index_dir` and `data_base_url` as parameters with
+literal defaults, and no module in `gateway/src` touched the environment, so the host could set
+`BIOHACK_INDEX_DIR` or `BIOHACK_DATA_BASE_URL` and nothing changed; the live environment worked only
+because the defaults already matched it. The mutable documentation now states that both are
+`create_app` defaults, and `gateway/.env.example` records no name because none is read. The frozen
+plan keeps its original wording.

@@ -28,9 +28,9 @@ repeated here.
   geometry is RLE or boxes, whether a mask exists, and which row fields a response carries are facts
   about the published artifact, so a new dataset needs no gateway change and no dataset is
   special-cased in code. A response field is present when the index holds one — one model family with
-  `response_model_exclude_unset=True`, never a model per dataset. The two settings that move the
-  surface (`BIOHACK_INDEX_DIR`, `BIOHACK_DATA_BASE_URL`) are host environment whose defaults already
-  match the live environment.
+  `response_model_exclude_unset=True`, never a model per dataset. The surface's two settings — the
+  index directory and the base URL images are addressed from — are `create_app` defaults, not host
+  environment; moving either is a code change.
 - **One geometry encoding across both surfaces.** The model surface returns the same object shape
   and the same COCO RLE for masks as the dataset surface (`{bbox, category?, score?, rle?}`), so a
   participant writes one decoder that serves ground truth and model output alike.
