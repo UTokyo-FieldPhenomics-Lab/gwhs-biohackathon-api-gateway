@@ -24,7 +24,10 @@ Two planes joined only by a frozen contract, plus the compute the model surface 
   and will route inference work to GPU backends. Its region is environment configuration: the host
   runs in `eu-central-1`. A backend is any Docker-capable GPU resource reachable over an
   authenticated, non-public link — a lab machine, a GPU VPS, or a rented GPU container; the provider
-  is a deployment choice, not a fixed route.
+  is a deployment choice, not a fixed route. The backends' containers live in a **private**
+  repository that this one links as the submodule at `models/`, so the containers and the weights
+  they load stay private while the contract stays public;
+  [`rules/models.md`](.agents/rules/models.md) is what that link must and must not do.
 - **Contract plane** — this repository: the OpenAPI surface, the data layout, examples, and the
   participant-facing site at <https://docs.global-wheat.com>.
 
@@ -55,6 +58,7 @@ of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-layout.md
 ├── gateway/               FastAPI gateway: the request gate and the dataset surface
 │   └── src/biohack_gateway/  installed app package (app, auth, tokens, dataset surface, CLI)
 ├── datasets/              upstream parquet cache + publisher CLI: parquet → image objects in S3 + metadata index
+├── models/                submodule: the private container repository the GPU backends run
 ├── deploy/                host bring-up, the dataset bucket and its CDN, bootstrap scripts
 └── .github/workflows/     docs.yml builds and publishes the site
 ```
@@ -87,10 +91,12 @@ of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-layout.md
 
 - **`rules/` — constraints, and nothing else.** `project.md` holds repo-wide invariants,
   `design-philosophy.md` holds the process for deciding what to build, and one short file per
-  package (`gateway.md`, `datasets.md`, `docs.md`, `deploy.md`) holds package-specific
+  package (`gateway.md`, `datasets.md`, `docs.md`, `deploy.md`, `models.md`) holds package-specific
   constraints. A rule states what must hold and why it was identified; it never contains
   history, log output, anecdotes, or "we tried X". If it cannot be stated in a few lines, it
-  is a note, not a rule, and belongs in `references/`.
+  is a note, not a rule, and belongs in `references/`. `models.md` is the one file describing a
+  directory that is not part of this repository's own tree: `models/` is a submodule, and the rules
+  for operating it are still this repository's to keep.
 - **`references/` — detail, decisions, and lessons.** Every non-trivial session writes one
   file named `YYYYMMDDHH_<topic>.md` recording what was done, the commands run, the observed
   results, what broke, and what to do differently next time. This is the only place for
@@ -103,6 +109,9 @@ of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-layout.md
 
 - Binding constraints for this repo: [`.agents/rules/project.md`](.agents/rules/project.md)
 - Per-package constraints: [`.agents/rules/`](.agents/rules)
+- The containers behind the GPU backends, and the link to their private repository:
+  [`.agents/rules/models.md`](.agents/rules/models.md) — what `models/` is for, and the constraints
+  that keep it inert for this repository's own build and tests.
 - Execution records and lessons: [`.agents/references/`](.agents/references)
 - A host that answers from elsewhere but not from this machine:
   [`references/2026101513_host-unreachable-from-the-utokyo-network.md`](.agents/references/2026101513_host-unreachable-from-the-utokyo-network.md)

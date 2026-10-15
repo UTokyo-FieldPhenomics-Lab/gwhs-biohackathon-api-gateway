@@ -29,6 +29,11 @@ Two planes joined only by a frozen contract:
 Metadata is the one deliberate exception to static-first: it lives in the gateway's memory so a
 republish takes effect immediately and no client has to hold a copy.
 
+The compute plane's containers live in a private repository that this one links as the submodule at
+`models/`, so the containers and the weights they load stay private while the contract stays public.
+A clone without access to that repository still succeeds and simply finds `models/` empty; what the
+link may and may not do is in [`.agents/rules/models.md`](.agents/rules/models.md).
+
 The bucket and the host that publishes into it share a region, so the publisher reads a row's bytes
 out of its cached parquet and PUTs them in one request: nothing is staged on disk, and a publish
 moves no bytes between regions. How the bucket, the distribution, the certificate, and the domain
