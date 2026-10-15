@@ -243,16 +243,3 @@ class MemoryObjectStore:
             raise AlreadyExists(f"{key}: already exists")
         self.objects[key] = (bytes(body), content_type, cache_control)
         return hashlib.md5(body).hexdigest()
-
-    def tamper(self, key: str, body: bytes) -> None:
-        """Replace an object's bytes behind the publisher's back.
-
-        Parameters
-        ----------
-        key : str
-            Object to replace.
-        body : bytes
-            New bytes, same length as the old ones so only the entity tag changes.
-        """
-        _, content_type, cache_control = self.objects[key]
-        self.objects[key] = (bytes(body), content_type, cache_control)

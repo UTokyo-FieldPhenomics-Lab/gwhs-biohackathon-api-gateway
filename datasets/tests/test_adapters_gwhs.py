@@ -15,7 +15,8 @@ import pyarrow.parquet as pq
 import pytest
 
 from biohack_datasets.adapters import AdapterNotImplemented, get_adapter
-from biohack_datasets.adapters.gwhs import AdapterError, GwhsAdapter
+from biohack_datasets.adapters.common import AdapterError
+from biohack_datasets.adapters.gwhs import GwhsAdapter
 from biohack_datasets.formats import UnknownImageFormat
 
 JPEG = b"\xff\xd8\xff\xe0payload"

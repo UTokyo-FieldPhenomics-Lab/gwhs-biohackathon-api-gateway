@@ -47,6 +47,19 @@ def test_publish_dry_run_prints_the_bucket_and_writes_nothing(
     assert not index_dir.exists()
 
 
+def test_a_limit_below_one_is_a_usage_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """The count is refused where it arrives, before any dataset is read."""
+    monkeypatch.setattr(cli, "load_sources", lambda: {"demo": _source()})
+
+    with pytest.raises(SystemExit) as exit_info:
+        cli.main(["publish", "--dataset", "demo", "--limit", "0", "--index-dir", str(tmp_path)])
+
+    assert exit_info.value.code == 2
+    assert "at least 1" in capsys.readouterr().err
+
+
 def test_an_unimplemented_adapter_exits_one_and_names_it(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:

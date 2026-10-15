@@ -272,21 +272,21 @@ SWAGGER_KEY_BAR_SCRIPT = """
       describe();
     });
 
-    // The specification arrives after the page does, and Swagger restores a remembered key when it
-    // mounts, so the state is read again for a few seconds rather than once. It reads one boolean.
-    let reads = 0;
+    // Placed, and kept placed: anything Swagger re-renders inside its container can take this node
+    // with it, and putting it back is two selectors and a comparison. The same observation keeps
+    // the state line true, because the two things that change it are re-renders of this container —
+    // the specification arriving, and Swagger restoring a remembered key when it mounts. `load`
+    // covers a restore that lands without one, so nothing here has to poll for either.
     const settle = () => {
       place();
       describe();
-      if (++reads < 20) setTimeout(settle, 250);
     };
-    settle();
-    // Placed, and kept placed: anything Swagger re-renders inside its container can take this node
-    // with it, and putting it back is two selectors and a comparison.
-    new MutationObserver(place).observe(document.querySelector("#swagger-ui"), {
+    new MutationObserver(settle).observe(document.querySelector("#swagger-ui"), {
       childList: true,
       subtree: true,
     });
+    window.addEventListener("load", describe);
+    settle();
     document.documentElement.classList.add("key-bar-ready");
   })();
 </script>

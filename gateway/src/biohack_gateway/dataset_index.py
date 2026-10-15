@@ -23,7 +23,11 @@ DEFAULT_INDEX_DIR = Path.home() / ".config" / "biohack-gateway" / "index"
 """Where the gateway looks for `<dataset>.db` unless the host names another directory."""
 
 _ROW_METADATA = ("domain", "country", "location", "development_stage")
-"""The optional per-row fields a dataset may offer as filters, in the order facets are built."""
+"""The optional per-row fields a dataset may offer as filters, in the order facets are built.
+
+Each name is an :class:`ImageRow` field, so a lookup is ``getattr(row, key)`` and no second mapping
+from key to field has to stay in step with the dataclass.
+"""
 
 _SQL_DATASET = "SELECT id, revision, rules, license, mask_kind, generated_at FROM dataset"
 _SQL_CLASSES = "SELECT id, name, color FROM classes ORDER BY id"
@@ -251,7 +255,8 @@ class Dataset:
         if key == "split":
             return row.split == value
         if key in _ROW_METADATA:
-            return row_metadata(row)[key] == value
+            # Keyed by the field name, so no second mapping can drift; the fields are `str | None`.
+            return bool(getattr(row, key) == value)
         if key == "tags":
             return value in self.tags.get(row.row, ())
         if key == "category":
@@ -261,27 +266,6 @@ class Dataset:
         if key == "class":
             return value in self.row_classes.get(row.row, ())
         return False
-
-
-def row_metadata(row: ImageRow) -> dict[str, str | None]:
-    """Name the optional per-row fields by the filter key that reaches each.
-
-    Parameters
-    ----------
-    row : ImageRow
-        The row to describe.
-
-    Returns
-    -------
-    dict of str to str or None
-        One entry per key in `_ROW_METADATA`, in that order.
-    """
-    return {
-        "domain": row.domain,
-        "country": row.country,
-        "location": row.location,
-        "development_stage": row.development_stage,
-    }
 
 
 def load_datasets(directory: Path) -> dict[str, Dataset]:
@@ -415,7 +399,7 @@ def _read(connection: sqlite3.Connection, path: Path) -> Dataset:
         geometry="rle" if rles else ("boxes" if frozen_objects else None),
         image_id_present=any(row.image_id is not None for row in rows),
         metadata_keys=tuple(
-            key for key in _ROW_METADATA if any(row_metadata(row)[key] is not None for row in rows)
+            key for key in _ROW_METADATA if any(getattr(row, key) is not None for row in rows)
         ),
         row_index={row.row: row for row in rows},
     )
@@ -570,7 +554,7 @@ def _facets(
     for key in _ROW_METADATA:
         field_counts: dict[str, int] = defaultdict(int)
         for row in rows:
-            field_value = row_metadata(row)[key]
+            field_value = getattr(row, key)
             if field_value is not None:
                 field_counts[field_value] += 1
         if field_counts:

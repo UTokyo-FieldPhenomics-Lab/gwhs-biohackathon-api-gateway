@@ -5,10 +5,12 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
+from conftest import read_back
 
-from biohack_datasets.index import IndexValidationError, build, commit, read_back
+from biohack_datasets.index import IndexValidationError, build, commit
 from biohack_datasets.model import Annotation, Rle, Row
 from biohack_datasets.sources import Source, Upstream
 
@@ -23,10 +25,10 @@ SOURCE = Source(
 GENERATED_AT = "2026-10-15T09:00:00Z"
 
 
-def _row(row: int = 0, **overrides: object) -> Row:
+def _row(**overrides: Any) -> Row:
     """Return one valid neutral row, with fields overridable for a refusal test."""
-    values: dict[str, object] = {
-        "row": row,
+    values: dict[str, Any] = {
+        "row": 0,
         "split": "train",
         "image_ext": "jpg",
         "width": 4,
@@ -46,7 +48,7 @@ def _row(row: int = 0, **overrides: object) -> Row:
         ),
     }
     values.update(overrides)
-    return Row(**values)  # type: ignore[arg-type]
+    return Row(**values)
 
 
 def _build(tmp_path: Path, rows: Iterator[Row] | list[Row] | tuple[Row, ...]) -> Path:
@@ -91,7 +93,7 @@ def test_an_area_the_upstream_does_not_publish_stays_null(tmp_path: Path) -> Non
 def test_a_non_contiguous_row_is_refused_and_named(tmp_path: Path) -> None:
     """Rows are the identity, so a gap is a build failure, not a sorting problem."""
     with pytest.raises(IndexValidationError, match="row 1"):
-        _build(tmp_path, [_row(0), _row(2)])
+        _build(tmp_path, [_row(row=0), _row(row=2)])
 
 
 @pytest.mark.parametrize(
