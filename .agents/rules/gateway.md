@@ -49,8 +49,11 @@ repeated here.
 - **Every endpoint requires a key, and the gate is closed by default.** One request gate checks the
   `X-API-Key` header against the token pool before routing, so an endpoint added later is protected by
   existing rather than by remembering a decorator, and a path that does not exist is refused too. The
-  exceptions are named in the code — `/health` and the generated documentation pages, which carry no
-  data and could not be opened in a browser if the page itself needed a header. An absent pool is a
+  exceptions are named in the code — `/health`, and the reference page the documentation site frames,
+  which carry no data and could not be opened in a browser if the page itself needed a header. That
+  page is registered by this application rather than by FastAPI's default so it can carry two things
+  the framed reader needs: a reporter that posts its own height, and a dark palette that follows the
+  site's. Opened directly it behaves as Swagger UI always did. An absent pool is a
   closed gateway rather than an open one, and a pool that has never parsed answers `503 unavailable`
   until it does. Images reach clients through the public `data.*` plane, so nothing has to be anonymous.
 - **Liveness is a route, not a probe loop.** `/health` answers without a key so a monitor and the

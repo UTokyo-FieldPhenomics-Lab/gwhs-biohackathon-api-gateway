@@ -26,8 +26,8 @@ Two planes, joined only by a frozen contract:
   Docker-capable GPU resource reachable over an authenticated, non-public link — a lab
   machine, a GPU VPS, or a rented GPU container; the provider is a deployment choice, not a
   fixed route.
-- **Contract plane** — this repository: the OpenAPI surface, the data layout, examples,
-  and skills.
+- **Contract plane** — this repository: the OpenAPI surface, the data layout, examples, skills, and
+  the participant-facing site that publishes part of them at <https://docs.global-wheat.com>.
 - **Domains** — `data.*` serves static images through CloudFront (no auth, long cache);
   `api.*` hits the gateway directly and always requires a key, images included, because
   clients display images from `data.*` rather than through the API. They are deliberately
@@ -53,16 +53,18 @@ number of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-la
 ├── zensical.toml          docs site config: docs/content → site/, published to GitHub Pages
 ├── docs/                  documentation subproject (Zensical)
 │   ├── data-layout.md     internal contract: object layout, addressing, index fields — unpublished
+│   ├── scripts/           make_figures.py: every figure the pages show, built from published rows
 │   └── content/           the site's pages and assets: the only thing Zensical builds
-│       ├── api/           API reference markdown, generated and committed
-│       ├── notebooks/     tutorial sources (markdown is the source, .ipynb is derived)
+│       ├── api/           the frame's two files: hides the page's heading, sizes and themes the frame
+│       ├── notebooks/     empty; a tutorial would start here as markdown
 │       └── post-processing/  palette masks and RLE geometry, in three languages
 ├── gateway/               FastAPI gateway: model surface (auth, quota, gate, routing)
 │   ├── src/biohack_gateway/  installed app package (app, models, routing, dataset surface)
-│   └── scripts/           contract projections, e.g. gen_api_docs.py
+│   └── scripts/           contract projections, if the reference ever needs a written copy
 ├── datasets/              upstream parquet cache + publisher CLI: parquet → image objects in S3 + metadata index
 ├── deploy/                host bring-up, the dataset bucket and its CDN, bootstrap scripts
-└── .github/workflows/     planned: secret scan, contract guard, tests, lock, docs
+└── .github/workflows/     docs.yml builds and publishes the site; secret scan, contract guard,
+                           tests, and lock are planned
 ```
 
 ## Tech Stack
