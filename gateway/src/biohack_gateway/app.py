@@ -21,7 +21,8 @@ from typing import Literal
 
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import RequestResponseEndpoint
@@ -53,6 +54,24 @@ OPEN_PATHS = frozenset({"/health", "/docs", "/redoc", "/openapi.json"})
 Both entries earn the exception the same way: they say nothing about the data and exist for someone
 who has no key yet, and the documentation pages cannot be reached from a browser at all if the page
 itself needs a header. Every other path — including ones that do not exist — is behind the gate.
+"""
+
+SWAGGER_FRAME_REPORTER = """
+<script>
+  // The documentation site frames this page, and a cross-origin frame cannot be measured from
+  // outside: the page reports its own height so the frame grows to it and the reader scrolls one
+  // page instead of two nested ones. Nothing here reads or sends anything but that number.
+  const report_height = () => window.parent.postMessage(
+    {docsHeight: document.documentElement.scrollHeight}, "https://docs.global-wheat.com");
+  new ResizeObserver(report_height).observe(document.documentElement);
+  window.addEventListener("load", report_height);
+</script>
+"""
+"""Injected into the Swagger UI page so `docs.global-wheat.com` can size the frame around it.
+
+The alternative — a fixed height, or a scrollbar inside the frame — is what this replaces. It is a
+same-origin-free mechanism: a message with a number, addressed to one origin, ignored by everyone
+else, and the page works exactly as before when nothing listens.
 """
 
 
@@ -204,9 +223,25 @@ def create_app(
             "Global Wheat dataset and model API for the BioHackathon. "
             "Guides and examples: https://docs.global-wheat.com"
         ),
+        docs_url=None,  # registered below instead, so the page can carry the frame reporter
     )
     authenticator = Authenticator(tokens_path)
     app.include_router(create_dataset_router(load_datasets(index_dir), data_base_url))
+
+    @app.get("/docs", include_in_schema=False)
+    async def swagger_ui() -> HTMLResponse:
+        """Answer the interactive reference, with the script the documentation site's frame needs.
+
+        Returns
+        -------
+        HTMLResponse
+            FastAPI's own Swagger UI page, plus one script that reports this page's height to the
+            site that frames it. The page is otherwise untouched, and a reader who opens `/docs`
+            directly sees no difference.
+        """
+        page = get_swagger_ui_html(openapi_url="/openapi.json", title=f"{app.title} — reference")
+        html = bytes(page.body).decode().replace("</body>", f"{SWAGGER_FRAME_REPORTER}</body>")
+        return HTMLResponse(html)
 
     @app.middleware("http")
     async def require_key(request: Request, call_next: RequestResponseEndpoint) -> Response:
