@@ -96,6 +96,14 @@ out to have a mechanism worth writing down.
   so a re-render can drop it; a `MutationObserver` on `#swagger-ui` puts it back. Verified by
   expanding an operation, running Try it out, and finding the field still in the band with the
   request carrying the key.
+- **The row sits in the page's column, not the band's edge.** Prepending into the band put the field
+  20 px left of the title and the calls: the band is full-bleed, while everything else lives in
+  `.wrapper` (`max-width: 1460px; margin: 0 auto; padding: 0 20px`). So the row wears that class —
+  the alignment is Swagger's own rule rather than a number of ours, and it holds on a wide screen
+  where the column is centred. Measured: label, title, group heading and first call all at x=28.
+  The two buttons are one flex item, because one of them alone on a second line reads as a mistake;
+  on a phone they wrap together under the field, which is what the reader's screenshot asked for.
+  The state line is what stays ours, since Swagger has no equivalent.
 - **The styling stopped being ours.** The input is a plain `input[type=password]` under Swagger's own
   rules, the buttons carry Swagger's `btn authorize` and `btn` classes, and only layout is left in
   our block. Measured against a real Swagger parameter input: same border, radius, padding, font, and
