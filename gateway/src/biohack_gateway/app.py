@@ -151,9 +151,10 @@ message.
 
 SWAGGER_KEY_BAR = """
 <style>
-  /* Layout only: the type, the input, and the buttons are Swagger UI's own, so this row cannot
-     drift from the page it sits in. The one thing Swagger has no equivalent for is the state
-     line. */
+  /* Layout only: the type, the input, and the buttons are Swagger UI's own, and so is the column
+     below — `wrapper` is the class the framework puts its own content in, which is what keeps this
+     row lined up with the title and the calls rather than flush to the band it sits in. The one
+     thing Swagger has no equivalent for is the state line. */
   #key-bar form {
     display: flex;
     flex-wrap: wrap;
@@ -162,6 +163,9 @@ SWAGGER_KEY_BAR = """
   }
   #key-bar label { margin: 0; font-size: 14px; font-weight: 700; }
   #key-bar input { flex: 1 1 14rem; min-width: 0; margin: 0; }
+  /* The two buttons wrap together or not at all: one of them alone on a second line reads as a
+     mistake, and on a phone they belong on their own line under the field. */
+  #key-bar .key-buttons { display: inline-flex; flex-wrap: wrap; gap: 0.5rem; }
   #key-bar .key-state { display: block; margin-top: 0.5rem; color: #6b7280; }
   #key-bar .key-state[data-set="yes"] { color: #1f7a4d; }
   html[data-scheme="dark"] #key-bar .key-state { color: #9aa4b2; }
@@ -170,7 +174,7 @@ SWAGGER_KEY_BAR = """
      button instead would meet a dialog that opens at the centre of a frame as tall as the page. */
   html.key-bar-ready .swagger-ui .auth-wrapper { display: none; }
 </style>
-<div id="key-bar" hidden>
+<div id="key-bar" class="wrapper" hidden>
   <form id="key-form" autocomplete="off">
     <label for="key-input">Your key</label>
     <input
@@ -182,8 +186,10 @@ SWAGGER_KEY_BAR = """
       placeholder="__HEADER__"
       aria-describedby="key-state"
     />
-    <button type="submit" class="btn authorize">Use key</button>
-    <button id="key-forget" type="button" class="btn">Forget</button>
+    <span class="key-buttons">
+      <button type="submit" class="btn authorize">Use key</button>
+      <button id="key-forget" type="button" class="btn">Forget</button>
+    </span>
   </form>
   <span id="key-state" class="key-state" role="status"></span>
 </div>
