@@ -12,9 +12,7 @@ The cache lives at ``datasets/.hf_cache/<dataset_id>/`` and is ignored by git.
 
 from __future__ import annotations
 
-import argparse
-import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import pyarrow
@@ -23,7 +21,7 @@ from huggingface_hub import snapshot_download
 from huggingface_hub.file_download import DryRunFileInfo
 from huggingface_hub.utils.tqdm import disable_progress_bars
 
-from biohack_datasets.sources import Source, Upstream, load_sources
+from biohack_datasets.sources import Source, Upstream
 
 DEFAULT_CACHE_DIR = Path(__file__).resolve().parents[2] / ".hf_cache"
 """``datasets/.hf_cache``, resolved from the package so the working directory does not matter.
@@ -31,7 +29,7 @@ DEFAULT_CACHE_DIR = Path(__file__).resolve().parents[2] / ".hf_cache"
 Named after the tool that fills it, like ``.mypy_cache``, ``.pytest_cache``, and ``.ruff_cache``.
 """
 
-DEFAULT_CONCURRENCY = 8
+DEFAULT_CONCURRENCY = 16
 """Parallel downloads when the caller names no other number."""
 
 
@@ -145,34 +143,54 @@ def verify(paths: Sequence[Path]) -> dict[Path, int]:
     return rows
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Run the ``biohack-datasets-fetch`` CLI.
+def fetch_datasets(
+    sources: dict[str, Source],
+    dataset_ids: Sequence[str],
+    *,
+    cache_dir: Path,
+    dry_run: bool,
+    concurrency: int,
+    emit: Callable[[str], None] = print,
+) -> int:
+    """Fetch every selected dataset into the cache.
 
     Parameters
     ----------
-    argv : list of str, optional
-        Argument list to parse, excluding the program name. Defaults to ``sys.argv[1:]``.
+    sources : dict of str to Source
+        The provenance record.
+    dataset_ids : sequence of str
+        Datasets to handle; empty means every dataset with a pinned upstream.
+    cache_dir : pathlib.Path
+        Root of the cache. It is resolved so the plan's paths are absolute even when the
+        caller passes a relative directory.
+    dry_run : bool
+        Report the plan and download nothing.
+    concurrency : int
+        Parallel downloads.
+    emit : callable, optional
+        Report sink, one line at a time.
 
     Returns
     -------
     int
-        ``0`` when every selected dataset is cached and verifies; ``1`` when a file in the
+        Zero when every selected dataset is cached and verifies; one when a file in the
         cache is unreadable.
     """
-    sources = load_sources()
-    args = _parse_args(argv, sorted(sources))
-    cache_dir = Path(args.cache_dir) if args.cache_dir else DEFAULT_CACHE_DIR
-
-    try:
-        for dataset_id in args.dataset or sorted(sources):
-            _fetch_one(sources[dataset_id], cache_dir, args)
-    except CacheVerificationError as error:
-        print(f"error: {error}", file=sys.stderr)
-        return 1
+    root = cache_dir.expanduser().resolve()
+    selected = list(dataset_ids) if dataset_ids else sorted(sources)
+    for dataset_id in selected:
+        _fetch_one(sources[dataset_id], root, dry_run=dry_run, concurrency=concurrency, emit=emit)
     return 0
 
 
-def _fetch_one(source: Source, cache_dir: Path, args: argparse.Namespace) -> None:
+def _fetch_one(
+    source: Source,
+    cache_dir: Path,
+    *,
+    dry_run: bool,
+    concurrency: int,
+    emit: Callable[[str], None],
+) -> None:
     """Report, and unless dry-running fetch, the files of one dataset.
 
     Parameters
@@ -181,78 +199,35 @@ def _fetch_one(source: Source, cache_dir: Path, args: argparse.Namespace) -> Non
         Dataset to handle; one without a pinned revision is reported and skipped.
     cache_dir : pathlib.Path
         Root of the cache, holding one directory per dataset.
-    args : argparse.Namespace
-        Parsed switches; ``dry_run`` and ``concurrency`` are read.
+    dry_run : bool
+        Report the plan and download nothing.
+    concurrency : int
+        Parallel downloads.
+    emit : callable
+        Report sink.
     """
     if source.upstream is None:
-        print(f"{source.dataset_id}: skipped, no upstream revision pinned yet")
+        emit(f"{source.dataset_id}: skipped, no upstream revision pinned yet")
         return
 
     local_dir = cache_dir / source.dataset_id
     files = plan(source.upstream, local_dir)
     to_download = [file for file in files if file.will_download]
     planned = sum(file.file_size or 0 for file in files)
-    print(
+    emit(
         f"{source.dataset_id}: {len(files)} selected, {_size(planned)} total, "
         f"{len(to_download)} to download -> {local_dir}"
     )
     for file in files:
         state = "cached" if file.is_cached else "to download"
-        print(f"    {file.filename}  {_size(file.file_size or 0)}  {state}")
+        emit(f"    {file.filename}  {_size(file.file_size or 0)}  {state}")
 
-    if args.dry_run:
+    if dry_run:
         return
 
-    download(source.upstream, local_dir, args.concurrency)
+    download(source.upstream, local_dir, concurrency)
     for path, rows in verify([Path(file.local_path) for file in files]).items():
-        print(f"    {path.relative_to(local_dir)}  {rows} rows")
-
-
-def _parse_args(argv: list[str] | None, dataset_ids: list[str]) -> argparse.Namespace:
-    """Parse the command line, with dataset ids validated against the provenance record.
-
-    Parameters
-    ----------
-    argv : list of str or None
-        Arguments to parse, excluding the program name.
-    dataset_ids : list of str
-        Ids accepted by ``--dataset``.
-
-    Returns
-    -------
-    argparse.Namespace
-        The parsed switches.
-    """
-    parser = argparse.ArgumentParser(
-        prog="biohack-datasets-fetch",
-        description=(
-            "Download the pinned upstream files of every dataset into datasets/.hf_cache. "
-            "Only the files each dataset selects are fetched; nothing is published."
-        ),
-    )
-    parser.add_argument(
-        "--dataset",
-        nargs="+",
-        choices=dataset_ids,
-        metavar="ID",
-        help="datasets to fetch; omit for all of them",
-    )
-    parser.add_argument(
-        "--cache-dir",
-        help=f"where the cache is written; default {DEFAULT_CACHE_DIR}",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="print the plan and download nothing",
-    )
-    parser.add_argument(
-        "--concurrency",
-        type=int,
-        default=DEFAULT_CONCURRENCY,
-        help=f"parallel downloads; default {DEFAULT_CONCURRENCY}",
-    )
-    return parser.parse_args(argv)
+        emit(f"    {path.relative_to(local_dir)}  {rows} rows")
 
 
 def _size(nbytes: int) -> str:
@@ -277,7 +252,3 @@ def _size(nbytes: int) -> str:
     if nbytes >= 1_000_000:
         return f"{nbytes / 1e6:.1f} MB"
     return f"{nbytes} B"
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

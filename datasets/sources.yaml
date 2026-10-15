@@ -10,7 +10,12 @@
 # never renumbers an address that is already in use. `adapter` names the reader for a schema,
 # not a dataset: `gwhs` and `gwhs-temp` share one.
 #
-# `include` selects what `biohack-datasets-fetch` downloads from the pinned revision, as glob
+# `labels` pins an upstream class vocabulary as `<repo>@<sha>#<path>`, where the upstream
+# publishes one next to its data. The palette and class names of a mask annotation are
+# provenance read from there, never a constant in code and never a colour read off a paper
+# figure.
+#
+# `include` selects what `biohack-datasets fetch` downloads from the pinned revision, as glob
 # patterns over repository-relative paths. The default, used when the key is absent, is
 # `data/*.parquet`. Upstreams keep archives and cards at the repository root; no pattern here
 # reaches them, and that is the whole reason the key exists.
@@ -24,12 +29,13 @@ datasets:
     adapter: gwfss         # image + semantic mask annotations
     upstream: GlobalWheat/GWFSS_v1.0@d32eb4a70811fa4107000e0b8821e892df710830
     include: ["data/labelled-*.parquet"]   # its all/full files are byte-identical to labelled
+    labels: GlobalWheat/GWFSS_Segformer_b0@485865aa6c67ec78a2400e3dfd888d8847186c49#class.json
     license: cc-by-4.0     # as declared by the upstream dataset card
   gwhs-temp:
     adapter: gwhs          # development-only sample of the GWHS schema
     upstream: GWHS/sample_dataset@655118534e9ad980b6f7c0dd6566a406d5a29a27
-    license: null          # TODO: the sample's card declares no license
+    license: null          # development-only rehearsal of 10 rows; the sample's card declares no license
   gwhs:
     adapter: gwhs          # image + object-level RLE and labels
     upstream: null         # TODO: pin when the full annotation is released
-    license: null          # TODO: redistribution terms to verify
+    license: null          # TODO: redistribution terms to verify; publishing is gated on clearing this
