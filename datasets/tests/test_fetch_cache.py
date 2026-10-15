@@ -10,8 +10,8 @@ import pyarrow.parquet as pq
 import pytest
 from huggingface_hub.file_download import DryRunFileInfo
 
-from biohack_datasets import fetch_cache
-from biohack_datasets.fetch_cache import CacheVerificationError, download, main, plan, verify
+from biohack_datasets import cli, fetch_cache
+from biohack_datasets.fetch_cache import CacheVerificationError, download, plan, verify
 from biohack_datasets.sources import Source, Upstream
 
 UPSTREAM = Upstream(
@@ -85,9 +85,9 @@ def test_dry_run_reports_the_plan_and_fetches_nothing(
     tmp_path: Path,
 ) -> None:
     """`--dry-run` prints what would be fetched and issues no download."""
-    monkeypatch.setattr(fetch_cache, "load_sources", lambda: {"gwhd": Source("gwhd", UPSTREAM)})
+    monkeypatch.setattr(cli, "load_sources", lambda: {"gwhd": Source("gwhd", UPSTREAM)})
 
-    assert main(["--dry-run", "--cache-dir", str(tmp_path)]) == 0
+    assert cli.main(["fetch", "--dry-run", "--cache-dir", str(tmp_path)]) == 0
 
     assert "1 to download" in capsys.readouterr().out
     assert [call.get("dry_run") for call in hub] == [True]
@@ -97,9 +97,9 @@ def test_a_dataset_without_a_pinned_revision_is_skipped(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`gwhs` is in the record but not in the run."""
-    monkeypatch.setattr(fetch_cache, "load_sources", lambda: {"gwhs": Source("gwhs", None)})
+    monkeypatch.setattr(cli, "load_sources", lambda: {"gwhs": Source("gwhs", None)})
 
-    assert main(["--dataset", "gwhs"]) == 0
+    assert cli.main(["fetch", "--dataset", "gwhs"]) == 0
 
     assert "skipped" in capsys.readouterr().out
 

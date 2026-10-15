@@ -13,13 +13,17 @@ datasets:
   gwhd:
     adapter: gwhd
     upstream: Etienne-David/GlobalWheatHeadDataset2021@d223a227ee21fca3dbab9605d3fbcdcc2e33abc5
+    license: cc-by-4.0
   gwfss:
     adapter: gwfss
     upstream: GlobalWheat/GWFSS_v1.0@d32eb4a70811fa4107000e0b8821e892df710830
     include: ["data/labelled-*.parquet"]
+    labels: GlobalWheat/GWFSS_Segformer_b0@485865aa6c67ec78a2400e3dfd888d8847186c49#class.json
+    license: cc-by-4.0
   gwhs:
     adapter: gwhs
     upstream: null
+    license: null
 """
 
 
@@ -82,3 +86,57 @@ def test_the_shipped_record_pins_commits_and_stays_under_data() -> None:
     for upstream in pinned.values():
         assert upstream.include
         assert all(pattern.startswith("data/") for pattern in upstream.include)
+
+
+def test_optional_provenance_fields_parse(tmp_path: Path) -> None:
+    """Adapter, license, and the pinned labels reference are read, not ignored."""
+    sources = load_sources(_write(tmp_path, RECORD))
+    assert sources["gwfss"].adapter == "gwfss"
+    assert sources["gwfss"].license == "cc-by-4.0"
+    labels = sources["gwfss"].labels
+    assert labels is not None
+    assert (labels.repo, labels.revision, labels.path) == (
+        "GlobalWheat/GWFSS_Segformer_b0",
+        "485865aa6c67ec78a2400e3dfd888d8847186c49",
+        "class.json",
+    )
+    assert str(labels) == (
+        "GlobalWheat/GWFSS_Segformer_b0@485865aa6c67ec78a2400e3dfd888d8847186c49#class.json"
+    )
+
+
+def test_a_null_license_is_allowed(tmp_path: Path) -> None:
+    """A rehearsal may publish with no license; only public distribution may not."""
+    sources = load_sources(_write(tmp_path, RECORD))
+    assert sources["gwhs"].license is None
+    assert sources["gwhs"].upstream is None
+
+
+def test_a_pinned_upstream_without_an_adapter_is_rejected(tmp_path: Path) -> None:
+    """Without an adapter name, the pinned bytes have no reader to name."""
+    record = (
+        "datasets:\n  x:\n    upstream: 'owner/repo@d223a227ee21fca3dbab9605d3fbcdcc2e33abc5'\n"
+    )
+    with pytest.raises(ValueError, match="adapter"):
+        load_sources(_write(tmp_path, record))
+
+
+@pytest.mark.parametrize(
+    "labels",
+    [
+        "GlobalWheat/GWFSS_Segformer_b0@main#class.json",
+        "GlobalWheat/GWFSS_Segformer_b0#class.json",
+        "GlobalWheat/GWFSS_Segformer_b0@485865aa6c67ec78a2400e3dfd888d8847186c49",
+        "GlobalWheat/GWFSS_Segformer_b0@485865aa6c67ec78a2400e3dfd888d8847186c49#",
+    ],
+)
+def test_a_labels_reference_that_is_not_pinned_and_pathed_is_rejected(
+    tmp_path: Path, labels: str
+) -> None:
+    """The vocabulary is provenance only if it names a commit and a file."""
+    record = (
+        "datasets:\n  x:\n    adapter: gwfss\n    upstream: 'owner/repo@"
+        f"d223a227ee21fca3dbab9605d3fbcdcc2e33abc5'\n    labels: '{labels}'\n"
+    )
+    with pytest.raises(ValueError, match="labels"):
+        load_sources(_write(tmp_path, record))

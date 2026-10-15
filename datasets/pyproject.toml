@@ -13,7 +13,6 @@ dependencies = [
 
 [project.scripts]
 biohack-datasets = "biohack_datasets.cli:main"
-biohack-datasets-fetch = "biohack_datasets.fetch_cache:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -50,6 +49,12 @@ files = ["src"]
 # parquet footer, so the missing types cost nothing worth a stub package.
 [[tool.mypy.overrides]]
 module = ["pyarrow", "pyarrow.*"]
+ignore_missing_imports = true
+
+# boto3 and botocore ship no py.typed marker either. The surface used here is one client
+# with two calls, so an untyped library costs nothing worth a stub package.
+[[tool.mypy.overrides]]
+module = ["boto3", "boto3.*", "botocore", "botocore.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
