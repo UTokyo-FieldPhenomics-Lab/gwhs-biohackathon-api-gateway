@@ -131,3 +131,32 @@ compiled and run.
 **Lesson:** check the tools already on the machine before installing one. Android Studio is a full
 IntelliJ, so it carries a Kotlin compiler, a JVM, and a Gradle distribution; the same is true of the
 other JetBrains IDEs.
+
+## The framed reference, and the height that only grew
+
+The interactive page frames `api.global-wheat.com/docs`, and the frame has to be as tall as the
+Swagger UI inside it — a cross-origin frame cannot be measured from outside, so the API host measures
+itself and posts the number to `docs.global-wheat.com`, which sets the frame's height.
+
+The first version reported `documentElement.scrollHeight` and observed `documentElement`.
+**Expanding a section in the Swagger UI grew the frame; collapsing one did not shrink it.** A
+document's box does not shrink back to its content while the frame around it stays tall, so the
+observer never fired again and no message arrived.
+
+Reproduced in a local harness — a parent page framing a mock reference page with one collapsible
+section, both files under `/tmp/opencode/frame-test/`, served by `python3 -m http.server` — so the fix
+could be measured rather than guessed:
+
+| reporter | after expanding | after collapsing |
+|---|---|---|
+| `documentElement.scrollHeight` + observer on `documentElement` | 1536 px | **1536 px — no shrink** |
+| the UI container's bottom edge + observer on the container | 1536 px | **602 px** |
+
+The shipped version measures `#swagger-ui`'s bottom edge (`getBoundingClientRect().bottom +
+window.scrollY`), observes that container, and also watches class and style changes in the body —
+which is what a collapse looks like to the DOM. `docs/content/javascripts/frame.js` on the other side
+only sets the height it is told, so nothing there changed.
+
+**Lesson:** when a child reports its own size to a parent frame, measure the *content container*, not
+the document. `scrollHeight` answers "how much is there to scroll", and a document that is already
+taller than its frame keeps answering the same number after the content shrinks.
