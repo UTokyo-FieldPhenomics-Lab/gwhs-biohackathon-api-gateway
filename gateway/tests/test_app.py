@@ -17,7 +17,12 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from biohack_gateway.app import create_app
+from biohack_gateway.app import (
+    API_KEY_HEADER,
+    API_KEY_SCHEME,
+    DOCS_PARENT_ORIGIN,
+    create_app,
+)
 from biohack_gateway.tokens import TokenPool
 
 TEAM = "gw-01"
@@ -194,3 +199,80 @@ def test_an_authenticated_request_is_attributed_to_its_team(
 
     assert f"team={TEAM}" in caplog.text
     assert TOKEN not in caplog.text
+
+
+def test_the_contract_declares_the_key_the_gate_demands(client: TestClient) -> None:
+    """The reference cannot send a header it was never told about: the scheme is what tells it."""
+    scheme = client.get("/openapi.json").json()["components"]["securitySchemes"][API_KEY_SCHEME]
+
+    assert scheme == {"type": "apiKey", "in": "header", "name": API_KEY_HEADER}
+
+
+def test_every_operation_but_liveness_is_declared_to_need_the_key(client: TestClient) -> None:
+    """Declare the key operation by operation.
+
+    Swagger UI attaches a credential per operation, so the requirement is written on each one rather
+    than left to be inherited — an operation without it is tried without a key.
+    """
+    operations = {
+        (method, path): operation.get("security")
+        for path, item in client.get("/openapi.json").json()["paths"].items()
+        for method, operation in item.items()
+    }
+
+    assert operations, "the document has no operations to check"
+    assert {
+        where: needed for where, needed in operations.items() if needed != [{API_KEY_SCHEME: []}]
+    } == {("get", "/health"): []}
+
+
+def test_the_document_root_declares_the_requirement_too(client: TestClient) -> None:
+    """Someone reading the raw document should not have to infer the key from the description."""
+    assert client.get("/openapi.json").json()["security"] == [{API_KEY_SCHEME: []}]
+
+
+def test_the_reference_page_carries_a_key_field(client: TestClient) -> None:
+    """The reference page carries its own field for the key.
+
+    The frame cannot show Swagger UI's own dialog where the reader is looking — the dialog centres
+    on a frame that is as tall as the page — so a field at the top is how a key gets in.
+    """
+    page = client.get("/docs").text
+
+    assert 'id="key-bar"' in page
+    assert f'"{API_KEY_SCHEME}"' in page
+    assert "preauthorizeApiKey" in page
+    assert page.count('<div id="swagger-ui">') == 1  # the field is inserted before it, not over it
+
+
+def test_the_reference_page_remembers_the_key_it_was_given(client: TestClient) -> None:
+    """Ask Swagger UI to remember the key.
+
+    A key is good for the whole event, and re-pasting it on every visit is friction a participant
+    does not need.
+    """
+    assert '"persistAuthorization": true' in client.get("/docs").text
+
+
+def test_the_reference_page_may_only_be_framed_by_the_site(client: TestClient) -> None:
+    """A field for a secret belongs in a page that only one site may frame."""
+    response = client.get("/docs")
+
+    assert response.headers["content-security-policy"] == f"frame-ancestors {DOCS_PARENT_ORIGIN}"
+    assert f'"{DOCS_PARENT_ORIGIN}"' in response.text
+
+
+def test_the_parent_origin_is_a_setting(tmp_path: Path) -> None:
+    """The header and the reporter name one origin, so a harness can frame what it develops."""
+    parent = "http://127.0.0.1:8080"
+    with TestClient(
+        create_app(
+            tokens_path=_pool(tmp_path / "tokens.json"),
+            index_dir=tmp_path / "index",
+            docs_parent_origin=parent,
+        )
+    ) as client:
+        response = client.get("/docs")
+
+    assert response.headers["content-security-policy"] == f"frame-ancestors {parent}"
+    assert f'"{parent}"' in response.text

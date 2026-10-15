@@ -66,6 +66,12 @@ html[data-scheme="dark"] .swagger-ui .model-title__type {
   color: #6aa9ff;
 }
 
+/* The servers block: a white strip with its own shadow, which reads as a hole in the page */
+html[data-scheme="dark"] .swagger-ui .scheme-container {
+  background: #1e2129;
+  box-shadow: none;
+}
+
 /* Secondary text */
 html[data-scheme="dark"] .swagger-ui .opblock-summary-description,
 html[data-scheme="dark"] .swagger-ui .model .property.primitive,
