@@ -58,6 +58,8 @@ An address is `(dataset, row)`. The row number alone is ambiguous, because every
 its rows from zero.
 
 - `row` is the absolute row number of the pinned upstream revision, not a position in any view.
+- A selection missing a shard cannot produce valid addresses, so the publisher refuses one:
+  `{row}` is defined by the whole file list, and a gap would silently move every later row.
 - A position inside a filtered result — what a client gets after applying `?country=` and friends
   — is a **cursor**. It is valid only next to the filter that produced it and is never persisted
   or published.
@@ -133,10 +135,18 @@ CREATE TABLE rles (               -- cold: no list query ever touches it
   identity across machines is not claimed, because SQLite's page layout is version-dependent; the
   check is a canonical ordered read-back.
 - **The class vocabulary is provenance.** Where a dataset has one, the palette and names are pinned
-  in `sources.yaml` as `<repo>@<sha>#<path>` (for `gwfss`,
-  `GlobalWheat/GWFSS_Segformer_b0@485865a…`'s `class.json`) and read into `classes` and
+  in `sources.yaml` as an `https://` URL naming a full commit — for `gwfss`, the `resolve/<sha>/`
+  URL of `GlobalWheat/GWFSS_Segformer_b0`'s `class.json`, which lives in the model repository that
+  published the annotation rather than beside the data — and read into `classes` and
   `row_classes`. It is not a constant in code, and it is not the colours of a paper figure: the
-  stored palette is the only authority.
+  stored palette is the only authority. The class the palette names `background` is **not** recorded
+  in `row_classes`: the background is the absence of an annotation, so recording it would put every
+  row in the `class` facet and say nothing.
+- **`gwhd` and `gwfss` publish no `width` or `height`.** Their `rows.width` and `rows.height` are
+  read from the image's own header — the only thing the publisher reads out of the pixels, with the
+  bytes still copied verbatim. A `gwfss` mask whose size differs from its image is refused, because
+  the annotation would not lie over the photo and every class recorded for that row would be recorded
+  for the wrong pixels.
 - **The RLE is verbatim.** `rles.counts` is the upstream's compressed string, never re-encoded, and
   `rles.height`/`rles.width` are its `[h, w]` `size` copied as published. The client decodes it
   with a COCO RLE decoder; the API never decodes.

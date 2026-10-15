@@ -161,8 +161,7 @@ name and has no S3 client — so the publisher carries its own credential, scope
 an IAM user whose access-key CSV and environment live together in
 `~/.config/biohack-gateway/publish/`, a directory the gateway's service is configured not to be able to
 read. Preparing it once, in the console, is [`deploy/README.md`](deploy/README.md) §5; the variable
-names alone are recorded in [`datasets/.env.example`](datasets/.env.example). Nothing needs it until the
-publisher lands.
+names alone are recorded in [`datasets/.env.example`](datasets/.env.example).
 
 Upstream files are not committed and not shipped: they are fetched into a local, disposable cache
 by a separate step, which reads the pinned revisions in `sources.yaml` and downloads only the
@@ -181,6 +180,10 @@ The cache is 1.88 GB for all three datasets, holds upstream bytes verbatim under
 `datasets/.hf_cache/<dataset_id>/`, and is rebuilt from the pinned revision rather than preserved.
 `HF_TOKEN` raises the Hub rate limits and is used when it is set; nothing needs it today.
 
+A mask dataset also pins the palette its annotation was painted with, and `fetch` downloads that one
+file too, into `datasets/.hf_cache/<dataset_id>/labels/`. A publish without it stops rather than
+building an index whose classes are silently empty.
+
 ```bash
 uv run biohack-datasets publish --dataset gwhs-temp --dry-run                # the plan, including the bucket
 uv run biohack-datasets publish --dataset gwhs-temp --index-dir ./build     # build locally, no upload
@@ -190,7 +193,9 @@ uv run pytest -m network                         # the Hub is reachable: pinned 
 ```
 
 A publish never downloads: it reads the cache `fetch` filled, and when that cache is missing it
-exits non-zero naming `biohack-datasets fetch`. The index is host state rather than checkout
+exits non-zero naming `biohack-datasets fetch`. A cache holding only part of a dataset is refused
+the same way, because a missing shard would give every later row an address that is not its own.
+The index is host state rather than checkout
 content — `~/.config/biohack-gateway/index/<dataset>.db`, override with `--index-dir` — and
 `gwhs-temp` is the rehearsal target the whole path is proven on. The publishing credential is
 [`deploy/README.md`](deploy/README.md) §5.

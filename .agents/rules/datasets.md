@@ -67,9 +67,11 @@ repeated here.
   reader never sees a half-written file. The index file travels, the images never do, and how it
   reaches the gateway is a deployment detail.
 - **A class vocabulary is provenance.** Where a mask annotation has named classes and a palette,
-  they are pinned in `sources.yaml` as `<repo>@<sha>#<path>` and read from there into the index.
-  Never a constant in code, and never a colour read off a paper figure: the stored palette is the
-  only authority.
+  they are pinned in `sources.yaml` as an `https://` URL naming a full commit — in practice a
+  `resolve/<sha>/` URL in the model repository that published the annotation — and read from there
+  into the index. Never a constant in code, and never a colour read off a paper figure: the stored
+  palette is the only authority. The class it names `background` is not recorded as present, because
+  the background is the absence of an annotation and would otherwise sit in every row's classes.
 - **One artifact per purpose.** Never publish the same bytes twice; an upstream release that
   ships a redundant archive beside its data is not republished in kind.
 - **Deterministic output.** Fixed insert order, fixed float formatting, and fixed iteration
@@ -87,7 +89,10 @@ repeated here.
 - **The cache is fetched, never hand-placed.** `datasets/.hf_cache/<dataset_id>/` is produced by
   `biohack-datasets fetch` from the pinned revision in `sources.yaml`, holds upstream bytes
   verbatim, is disposable and machine-local, never enters git, and is rebuilt rather than
-  preserved. Nothing is copied into it by hand.
+  preserved. Nothing is copied into it by hand, and **a publishable cache is the whole selection,
+  not part of it**: a selection missing a shard is refused by name, because the row numbers would
+  not be the dataset's. Fetching all of it — about 1.9 GB across the three datasets — is therefore
+  what a local cache holds, and what makes a full test possible off the host.
 - **`include` decides what leaves an upstream.** Only files matching a dataset's patterns are
   fetched, and the patterns stay under `data/`: an upstream that keeps an archive or a card
   beside its data has it fetched never, because its bytes are already there once. A dataset

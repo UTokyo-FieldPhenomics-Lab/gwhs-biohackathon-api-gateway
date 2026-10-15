@@ -1,9 +1,9 @@
 """Turn a GWFSS mask image into one boolean array per class.
 
 GWFSS ships a semantic mask: one image per row, three RGB channels, every pixel one of four
-colors. The palette below is the upstream's own, published next to the dataset in
-`GlobalWheat/GWFSS_Segformer_b0@485865aa6c67ec78a2400e3dfd888d8847186c49#class.json` and pinned
-in `datasets/sources.yaml`. A paper figure's colors are a rendering and are not this palette.
+colors. The palette below is the upstream's own, published in the model repository as
+`GlobalWheat/GWFSS_Segformer_b0`'s `class.json` and pinned by commit in `datasets/sources.yaml`.
+A paper figure's colors are a rendering and are not this palette.
 
 The function is generic over palettes; the constant is the GWFSS one. Hand it a decoded image and
 index the result by class name:
