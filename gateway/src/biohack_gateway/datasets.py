@@ -22,7 +22,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
-from biohack_gateway.dataset_index import Dataset, ImageObject, ImageRow, row_metadata
+from biohack_gateway.dataset_index import Dataset, ImageObject, ImageRow
 
 DEFAULT_DATA_BASE_URL = "https://data.global-wheat.com"
 """The public distribution the image addresses point at, until the host names another."""
@@ -559,9 +559,8 @@ def _extras(dataset: Dataset, row: ImageRow) -> dict[str, Any]:
     payload: dict[str, Any] = {}
     if dataset.image_id_present and row.image_id is not None:
         payload["image_id"] = row.image_id
-    metadata = row_metadata(row)
     for key in dataset.metadata_keys:
-        payload[key] = metadata[key]
+        payload[key] = getattr(row, key)
     return payload
 
 

@@ -8,20 +8,19 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+from conftest import read_back
 
 from biohack_datasets.formats import CACHE_CONTROL, CONTENT_TYPES
-from biohack_datasets.index import read_back
 from biohack_datasets.publish import (
     IncompleteCache,
     MissingCache,
     ObjectConflict,
-    PublishError,
     VerificationError,
     missing_shards,
     parse_bucket,
     publish_dataset,
 )
-from biohack_datasets.s3 import AlreadyExists, MemoryObjectStore, ObjectUnreadable
+from biohack_datasets.s3 import AlreadyExists, MemoryObjectStore, ObjectInfo, ObjectUnreadable
 from biohack_datasets.sources import Source, Upstream
 
 REVISION = "655118534e9ad980b6f7c0dd6566a406d5a29a27"
@@ -205,7 +204,9 @@ def test_an_object_with_different_bytes_stops_and_names_the_key(tmp_path: Path) 
     """A key that already holds other bytes is a new dataset id or a deliberate wipe."""
     store = MemoryObjectStore()
     _publish(tmp_path, store)
-    store.tamper("demo/images/00000000.jpg", JPEG + b"more")
+    key = "demo/images/00000000.jpg"
+    body, content_type, cache_control = store.objects[key]
+    store.objects[key] = (body + b"more", content_type, cache_control)
 
     with pytest.raises(ObjectConflict, match="demo/images/00000000.jpg"):
         _publish(tmp_path, store)
@@ -276,7 +277,7 @@ def test_github_style_bucket_references_parse_to_a_name() -> None:
 class _DeniedWhenAbsent(MemoryObjectStore):
     """A bucket that grants GetObject but not ListBucket: a missing key answers 403."""
 
-    def head(self, key: str) -> object:
+    def head(self, key: str) -> ObjectInfo | None:
         info = super().head(key)
         if info is None:
             raise ObjectUnreadable(f"{key}: denied")
@@ -389,9 +390,3 @@ def test_a_full_publish_skips_the_prefix_a_rehearsal_wrote(tmp_path: Path) -> No
     assert summary.uploaded == 1  # type: ignore[attr-defined]
     assert summary.skipped == 1  # type: ignore[attr-defined]
     assert set(store.objects) == {"demo/images/00000000.jpg", "demo/images/00000001.png"}
-
-
-def test_a_limit_below_one_is_refused(tmp_path: Path) -> None:
-    """A count that is not a count is a mistake, not an empty publish."""
-    with pytest.raises(PublishError, match="at least 1"):
-        _publish(tmp_path, None, limit=0)

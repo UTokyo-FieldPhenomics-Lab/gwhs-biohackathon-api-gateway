@@ -8,7 +8,7 @@ reader never sees a half-written file.
 Counts are queries, not stored facts, and there is no manifest: the single `dataset` row
 carries the provenance a manifest used to hold, and every other number is derived from the
 rows. Determinism is content, not bytes: SQLite's page layout is version-dependent, so the
-guarantee is a canonical ordered read-back.
+guarantee is a canonical ordered read-back, which the tests perform (``tests/conftest.py``).
 """
 
 from __future__ import annotations
@@ -19,7 +19,6 @@ import tempfile
 from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 from biohack_datasets.formats import EXTENSIONS
 from biohack_datasets.model import Row
@@ -81,7 +80,7 @@ TABLES = (
     "object_attributes",
     "rles",
 )
-"""Every table of the index, in the order :func:`read_back` reads them."""
+"""Every table of the index, in the order :func:`biohack_datasets.index.build` writes them."""
 
 
 class IndexValidationError(RuntimeError):
@@ -193,44 +192,6 @@ def commit(temporary: Path, destination: Path) -> None:
         Final path. `os.replace` makes the swap atomic within one filesystem.
     """
     os.replace(temporary, destination)
-
-
-def read_back(path: Path) -> dict[str, list[tuple[Any, ...]]]:
-    """Read every table in a canonical order, for comparison and tests.
-
-    Parameters
-    ----------
-    path : pathlib.Path
-        Index to read.
-
-    Returns
-    -------
-    dict of str to list of tuple
-        One entry per table, rows ordered by primary key. Two indexes built from the same
-        revision with the same `generated_at` read back identically.
-    """
-    queries = {
-        "dataset": (
-            "SELECT id, revision, rules, license, mask_kind, generated_at FROM dataset ORDER BY id"
-        ),
-        "classes": "SELECT id, name, color FROM classes ORDER BY id",
-        "rows": (
-            "SELECT row, split, image_ext, mask_ext, width, height, image_id, domain, country,"
-            " location, development_stage FROM rows ORDER BY row"
-        ),
-        "row_classes": "SELECT row, class_id FROM row_classes ORDER BY row, class_id",
-        "tags": "SELECT row, tag FROM tags ORDER BY row, tag",
-        "objects": "SELECT row, idx, category, x, y, w, h, area FROM objects ORDER BY row, idx",
-        "object_attributes": (
-            "SELECT row, idx, attribute FROM object_attributes ORDER BY row, idx, attribute"
-        ),
-        "rles": "SELECT row, idx, height, width, counts FROM rles ORDER BY row, idx",
-    }
-    connection = sqlite3.connect(path)
-    try:
-        return {table: connection.execute(queries[table]).fetchall() for table in TABLES}
-    finally:
-        connection.close()
 
 
 def _insert_rows(connection: sqlite3.Connection, rows: Iterable[Row]) -> None:

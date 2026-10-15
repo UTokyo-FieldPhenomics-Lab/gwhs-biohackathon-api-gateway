@@ -234,8 +234,6 @@ def publish_dataset(
     VerificationError
         An uploaded object does not read back as written.
     """
-    if limit is not None and limit < 1:
-        raise PublishError(f"{source.dataset_id}: limit must be at least 1, got {limit}")
     if source.upstream is None:
         emit(f"{source.dataset_id}: skipped, no upstream revision pinned yet")
         return None
