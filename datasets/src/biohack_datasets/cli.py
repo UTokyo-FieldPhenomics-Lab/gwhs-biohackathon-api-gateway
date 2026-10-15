@@ -15,11 +15,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from biohack_datasets.adapters import AdapterNotImplemented
+from biohack_datasets.adapters import AdapterNotImplemented, MissingVocabulary
 from biohack_datasets.credentials import CredentialError, read_access_keys_csv
 from biohack_datasets.fetch_cache import (
     DEFAULT_CACHE_DIR,
     DEFAULT_CONCURRENCY,
+    CacheFetchError,
     CacheVerificationError,
     fetch_datasets,
 )
@@ -59,7 +60,14 @@ def main(argv: list[str] | None = None) -> int:
                 concurrency=args.concurrency,
             )
         return _publish(args, sources)
-    except (AdapterNotImplemented, CacheVerificationError, CredentialError, PublishError) as error:
+    except (
+        AdapterNotImplemented,
+        CacheFetchError,
+        CacheVerificationError,
+        CredentialError,
+        MissingVocabulary,
+        PublishError,
+    ) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
 

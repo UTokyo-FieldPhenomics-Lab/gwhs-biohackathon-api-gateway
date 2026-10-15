@@ -51,7 +51,7 @@ def test_an_unimplemented_adapter_exits_one_and_names_it(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
     """A missing reader is a hard error, never a silent skip."""
-    monkeypatch.setattr(cli, "load_sources", lambda: {"demo": _source("gwfss")})
+    monkeypatch.setattr(cli, "load_sources", lambda: {"demo": _source("nonesuch")})
 
     code = cli.main(
         [
@@ -66,7 +66,7 @@ def test_an_unimplemented_adapter_exits_one_and_names_it(
     )
 
     assert code == 1
-    assert "gwfss" in capsys.readouterr().err
+    assert "nonesuch" in capsys.readouterr().err
 
 
 def test_a_missing_cache_exits_one_and_names_fetch(

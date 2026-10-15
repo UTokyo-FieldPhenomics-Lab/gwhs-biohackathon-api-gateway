@@ -20,16 +20,16 @@ from typing import Any
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from biohack_datasets.formats import UnknownImageFormat, sniff_image_ext
+from biohack_datasets.adapters.common import (
+    BATCH_SIZE,
+    AdapterError,
+    image_extension,
+    object_bytes,
+    split_of,
+)
 from biohack_datasets.model import Annotation, Rle, Row
 
 _HUGGINGFACE_METADATA = b"huggingface"
-_BATCH_SIZE = 8
-"""Rows decoded at a time. Images make a default batch of 64k rows unbounded."""
-
-
-class AdapterError(RuntimeError):
-    """An upstream file does not match the GWHS schema; the row is named."""
 
 
 @dataclass(frozen=True)
@@ -80,29 +80,13 @@ class GwhsAdapter:
         """
         row_number = 0
         for path in files:
-            split = _split_of(path)
+            split = split_of(path)
             parquet = pq.ParquetFile(path)
             vocabulary = _vocabulary_of(parquet.schema_arrow, path)
-            for batch in parquet.iter_batches(batch_size=_BATCH_SIZE):
+            for batch in parquet.iter_batches(batch_size=BATCH_SIZE):
                 for record in batch.to_pylist():
                     yield _row_from(record, row_number, split, vocabulary, path)
                     row_number += 1
-
-
-def _split_of(path: Path) -> str:
-    """Read an upstream split name from a parquet file name.
-
-    Parameters
-    ----------
-    path : pathlib.Path
-        A file such as `data/train-00000-of-00001.parquet`.
-
-    Returns
-    -------
-    str
-        The part before the first dash, `train` in the example.
-    """
-    return path.name.split("-", 1)[0]
 
 
 def _vocabulary_of(schema: pa.Schema, path: Path) -> Vocabulary:
@@ -173,18 +157,13 @@ def _row_from(
     UnknownImageFormat
         The image magic is neither JPEG nor PNG.
     """
-    image = record.get("image")
-    body = image.get("bytes") if isinstance(image, dict) else None
-    if not body:
-        raise AdapterError(f"{path}: row {row_number} has no image bytes")
+    where = f"{path}: row {row_number}"
+    body = object_bytes(record, "image", where=where)
     width = record.get("width")
     height = record.get("height")
     if width is None or height is None:
-        raise AdapterError(f"{path}: row {row_number} has no width or height")
-    try:
-        image_ext = sniff_image_ext(body)
-    except UnknownImageFormat as error:
-        raise UnknownImageFormat(f"{path}: row {row_number}: {error}") from error
+        raise AdapterError(f"{where}: no width or height")
+    image_ext = image_extension(body, where=where)
 
     return Row(
         row=row_number,

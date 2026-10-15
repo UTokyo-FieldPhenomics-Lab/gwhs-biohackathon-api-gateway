@@ -23,6 +23,9 @@ DEFAULT_INCLUDE = ("data/*.parquet",)
 
 _COMMIT = re.compile(r"[0-9a-f]{40}")
 
+_BLOB_MARKER = "/blob/"
+"""A Hub URL segment that serves a file's HTML viewer page instead of its bytes."""
+
 
 @dataclass(frozen=True)
 class Upstream:
@@ -47,25 +50,21 @@ class Upstream:
 
 @dataclass(frozen=True)
 class Labels:
-    """A pinned upstream class vocabulary, recorded as ``<repo>@<sha>#<path>``.
+    """A pinned upstream class vocabulary, recorded as an immutable URL.
 
-    The palette and the class names of a mask annotation are published by an upstream
-    repository next to its dataset. Reading them from here, rather than from a constant in
-    code, is what makes the mapping provenance: it can be re-derived from the record.
+    The palette and the class names of a mask annotation are published upstream, next to the model
+    that produced the annotation rather than next to the dataset, so they are named by a URL that
+    points straight at the file. Reading them from here, rather than from a constant in code, is
+    what makes the mapping provenance: it can be re-derived from the record.
 
     Attributes
     ----------
-    repo : str
-        Hub repository that publishes the vocabulary.
-    revision : str
-        Full commit sha of that repository.
-    path : str
-        File inside the repository, for example ``class.json``.
+    url : str
+        HTTPS URL of the file. It must name a full commit sha rather than a branch, because the
+        legend a published release was built with may not move under it.
     """
 
-    repo: str
-    revision: str
-    path: str
+    url: str
 
     def __str__(self) -> str:
         """Return the reference in the form the record writes it.
@@ -73,9 +72,9 @@ class Labels:
         Returns
         -------
         str
-            ``<repo>@<sha>#<path>``.
+            The URL, verbatim.
         """
-        return f"{self.repo}@{self.revision}#{self.path}"
+        return self.url
 
 
 @dataclass(frozen=True)
@@ -122,8 +121,7 @@ def load_sources(path: Path = SOURCES_PATH) -> dict[str, Source]:
     ------
     ValueError
         An ``upstream`` is not ``<repo>@<40-character commit sha>``, a pinned upstream
-        names no ``adapter``, or a ``labels`` reference is not
-        ``<repo>@<40-character commit sha>#<path>``.
+        names no ``adapter``, or a ``labels`` URL does not name an immutable commit.
     """
     document: dict[str, Any] = yaml.safe_load(path.read_text(encoding="utf-8"))
     return {
@@ -228,7 +226,7 @@ def _parse_upstream(dataset_id: str, declared: Any, include: Any) -> Upstream:
 
 
 def _parse_labels(dataset_id: str, declared: Any) -> Labels | None:
-    """Parse a pinned ``<repo>@<sha>#<path>`` class-vocabulary reference.
+    """Parse a pinned class-vocabulary URL.
 
     Parameters
     ----------
@@ -245,16 +243,20 @@ def _parse_labels(dataset_id: str, declared: Any) -> Labels | None:
     Raises
     ------
     ValueError
-        The reference is not ``<repo>@<40-character commit sha>#<path>``.
+        The reference is not an ``https://`` URL naming a 40-character commit, or it names a
+        file's viewer page rather than the file's bytes.
     """
     if declared is None:
         return None
-    reference = str(declared)
-    repo, _, rest = reference.partition("@")
-    revision, separator, path = rest.partition("#")
-    if not repo or not separator or not path or not _COMMIT.fullmatch(revision):
+    url = str(declared).strip()
+    if not url.startswith("https://") or not _COMMIT.search(url):
         raise ValueError(
-            f"{dataset_id}: labels must be '<repo>@<40-character commit sha>#<path>', "
-            f"got {reference!r}"
+            f"{dataset_id}: labels must be an 'https://' URL naming a 40-character commit, "
+            f"got {url!r}"
         )
-    return Labels(repo, revision, path)
+    if _BLOB_MARKER in url:
+        raise ValueError(
+            f"{dataset_id}: labels must name the file's bytes, not its viewer page: replace "
+            f"{_BLOB_MARKER!r} with '/resolve/' in {url!r}"
+        )
+    return Labels(url)

@@ -18,7 +18,7 @@ datasets:
     adapter: gwfss
     upstream: GlobalWheat/GWFSS_v1.0@d32eb4a70811fa4107000e0b8821e892df710830
     include: ["data/labelled-*.parquet"]
-    labels: GlobalWheat/GWFSS_Segformer_b0@485865aa6c67ec78a2400e3dfd888d8847186c49#class.json
+    labels: https://huggingface.co/GlobalWheat/GWFSS_Segformer_b0/resolve/485865aa6c67ec78a2400e3dfd888d8847186c49/class.json
     license: cc-by-4.0
   gwhs:
     adapter: gwhs
@@ -95,14 +95,11 @@ def test_optional_provenance_fields_parse(tmp_path: Path) -> None:
     assert sources["gwfss"].license == "cc-by-4.0"
     labels = sources["gwfss"].labels
     assert labels is not None
-    assert (labels.repo, labels.revision, labels.path) == (
-        "GlobalWheat/GWFSS_Segformer_b0",
-        "485865aa6c67ec78a2400e3dfd888d8847186c49",
-        "class.json",
+    assert labels.url == (
+        "https://huggingface.co/GlobalWheat/GWFSS_Segformer_b0/resolve/"
+        "485865aa6c67ec78a2400e3dfd888d8847186c49/class.json"
     )
-    assert str(labels) == (
-        "GlobalWheat/GWFSS_Segformer_b0@485865aa6c67ec78a2400e3dfd888d8847186c49#class.json"
-    )
+    assert str(labels) == labels.url
 
 
 def test_a_null_license_is_allowed(tmp_path: Path) -> None:
@@ -110,6 +107,15 @@ def test_a_null_license_is_allowed(tmp_path: Path) -> None:
     sources = load_sources(_write(tmp_path, RECORD))
     assert sources["gwhs"].license is None
     assert sources["gwhs"].upstream is None
+
+
+def test_the_shipped_vocabulary_is_pinned_by_commit() -> None:
+    """The real file: gwfss's class vocabulary names a revision, so its legend cannot move."""
+    labels = load_sources()["gwfss"].labels
+
+    assert labels is not None
+    assert "/resolve/" in labels.url
+    assert "485865aa6c67ec78a2400e3dfd888d8847186c49" in labels.url
 
 
 def test_a_pinned_upstream_without_an_adapter_is_rejected(tmp_path: Path) -> None:
@@ -124,16 +130,18 @@ def test_a_pinned_upstream_without_an_adapter_is_rejected(tmp_path: Path) -> Non
 @pytest.mark.parametrize(
     "labels",
     [
-        "GlobalWheat/GWFSS_Segformer_b0@main#class.json",
-        "GlobalWheat/GWFSS_Segformer_b0#class.json",
-        "GlobalWheat/GWFSS_Segformer_b0@485865aa6c67ec78a2400e3dfd888d8847186c49",
-        "GlobalWheat/GWFSS_Segformer_b0@485865aa6c67ec78a2400e3dfd888d8847186c49#",
+        "GlobalWheat/GWFSS_Segformer_b0@485865aa6c67ec78a2400e3dfd888d8847186c49#class.json",
+        "https://huggingface.co/GlobalWheat/GWFSS_Segformer_b0/resolve/main/class.json",
+        "http://huggingface.co/GlobalWheat/GWFSS_Segformer_b0/resolve/"
+        "485865aa6c67ec78a2400e3dfd888d8847186c49/class.json",
+        "https://huggingface.co/GlobalWheat/GWFSS_Segformer_b0/blob/"
+        "485865aa6c67ec78a2400e3dfd888d8847186c49/class.json",
     ],
 )
-def test_a_labels_reference_that_is_not_pinned_and_pathed_is_rejected(
+def test_a_labels_reference_that_is_not_an_immutable_url_is_rejected(
     tmp_path: Path, labels: str
 ) -> None:
-    """The vocabulary is provenance only if it names a commit and a file."""
+    """The vocabulary is provenance only if it names a commit over TLS and serves its bytes."""
     record = (
         "datasets:\n  x:\n    adapter: gwfss\n    upstream: 'owner/repo@"
         f"d223a227ee21fca3dbab9605d3fbcdcc2e33abc5'\n    labels: '{labels}'\n"

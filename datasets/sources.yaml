@@ -10,10 +10,12 @@
 # never renumbers an address that is already in use. `adapter` names the reader for a schema,
 # not a dataset: `gwhs` and `gwhs-temp` share one.
 #
-# `labels` pins an upstream class vocabulary as `<repo>@<sha>#<path>`, where the upstream
-# publishes one next to its data. The palette and class names of a mask annotation are
-# provenance read from there, never a constant in code and never a colour read off a paper
-# figure.
+# `labels` pins an upstream class vocabulary as an `https://` URL naming a full commit — in
+# practice the `resolve/<sha>/` URL of a file in the model repository that produced the
+# annotation, since a Hub `class.json` is published beside a model rather than beside the data.
+# A `blob/` URL is refused: it serves an HTML viewer page, not the file. The palette and class
+# names of a mask annotation are provenance read from there, never a constant in code and never
+# a colour read off a paper figure.
 #
 # `include` selects what `biohack-datasets fetch` downloads from the pinned revision, as glob
 # patterns over repository-relative paths. The default, used when the key is absent, is
@@ -29,7 +31,7 @@ datasets:
     adapter: gwfss         # image + semantic mask annotations
     upstream: GlobalWheat/GWFSS_v1.0@d32eb4a70811fa4107000e0b8821e892df710830
     include: ["data/labelled-*.parquet"]   # its all/full files are byte-identical to labelled
-    labels: GlobalWheat/GWFSS_Segformer_b0@485865aa6c67ec78a2400e3dfd888d8847186c49#class.json
+    labels: https://huggingface.co/GlobalWheat/GWFSS_Segformer_b0/resolve/485865aa6c67ec78a2400e3dfd888d8847186c49/class.json
     license: cc-by-4.0     # as declared by the upstream dataset card
   gwhs-temp:
     adapter: gwhs          # development-only sample of the GWHS schema
@@ -38,4 +40,4 @@ datasets:
   gwhs:
     adapter: gwhs          # image + object-level RLE and labels
     upstream: null         # TODO: pin when the full annotation is released
-    license: null          # TODO: redistribution terms to verify; publishing is gated on clearing this
+    license: cc-by-4.0     # the same terms as gwfss

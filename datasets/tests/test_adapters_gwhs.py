@@ -189,9 +189,9 @@ def test_a_file_without_class_label_metadata_is_refused(tmp_path: Path) -> None:
         list(GwhsAdapter().iter_rows([path]))
 
 
-def test_the_registry_returns_gwhs_and_names_an_unimplemented_adapter() -> None:
+def test_the_registry_names_an_unimplemented_adapter() -> None:
     """An unimplemented adapter is a hard error naming it, never a silent skip."""
     assert get_adapter("gwhs").mask_kind is None
 
-    with pytest.raises(AdapterNotImplemented, match="gwfss"):
-        get_adapter("gwfss")
+    with pytest.raises(AdapterNotImplemented, match="nonesuch"):
+        get_adapter("nonesuch")
