@@ -1,6 +1,6 @@
 # Dataset publisher: `gwhs-temp` first, with the `gwhs` adapter
 
-Status: **implemented locally, host acceptance pending** (2026-10-15) — see
+Status: done — implemented and accepted on the host on 2026-10-15 — see
 [`../references/2026101512_dataset-publisher.md`](../references/2026101512_dataset-publisher.md)
 Owner files: `datasets/src/biohack_datasets/*`, `datasets/sources.yaml`, `datasets/tests/*`,
 `docs/data-layout.md`, `docs/examples/*`, `deploy/README.md`, `deploy/systemd/biohack-gateway.service`,
