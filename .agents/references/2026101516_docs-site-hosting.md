@@ -25,7 +25,7 @@ the gateway host, which is on demand and whose Elastic IP one measured network a
 1. `zensical.toml` at the repository root, from `zensical new` in a scratch directory with only the
    project fields edited. The nav links Swagger as an external URL, which `--strict` accepts.
 2. `docs/index.md` — the landing page: what answers today, how to get a token, the calls, the
-   datasets. Every claim is from `README.md` or `docs/content/data-layout.md`; the token process is
+   datasets. Every claim is from `README.md` or the live API; the token process is
    deliberately not invented.
 3. `.github/workflows/docs.yml`: `uv sync --locked --project docs`, `zensical build --strict`,
    `upload-pages-artifact`, `deploy-pages`; pull requests build without deploying. Verified action

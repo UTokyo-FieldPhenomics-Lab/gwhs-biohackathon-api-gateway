@@ -107,7 +107,7 @@ Rules state what must hold and why. Execution logs, decisions, and lessons learn
 ## Contract sources
 
 - Only two handwritten *contract* sources exist: the Pydantic models in `gateway/` (API) and
-  `docs/content/data-layout.md` (data layout). Reference pages, policy prose, and examples are also
+  `docs/data-layout.md` (data layout). Reference pages, policy prose, and examples are also
   written by hand, but anything schema-shaped is a projection of those two.
 - The generated API markdown is committed. The drift check regenerates it in the gateway
   environment — the only one that can import the app — and runs `git diff --exit-code`.

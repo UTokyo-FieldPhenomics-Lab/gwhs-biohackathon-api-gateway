@@ -51,9 +51,9 @@ number of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-la
 │   ├── references/        detailed execution records and lessons learned
 │   └── skills/            packaged agent skills (planned: API + data layout)
 ├── zensical.toml          docs site config: docs/content → site/, published to GitHub Pages
-├── docs/                  documentation site subproject (Zensical)
+├── docs/                  documentation subproject (Zensical)
+│   ├── data-layout.md     internal contract: object layout, addressing, index fields — unpublished
 │   └── content/           the site's pages and assets: the only thing Zensical builds
-│       ├── data-layout.md handwritten contract: object layout, addressing, index fields
 │       ├── api/           API reference markdown, generated and committed
 │       ├── notebooks/     tutorial sources (markdown is the source, .ipynb is derived)
 │       └── examples/      curl / python / js snippets, executed in CI
