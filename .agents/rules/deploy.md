@@ -11,8 +11,10 @@ repeated here.
   only for the scripts that need one.
 - **Host-private state lives outside the checkout**, in `$TARGET_HOME/.config/biohack-gateway/`, mode
   0700 and owned by the service user: `env` there is what the gateway's systemd unit reads through
-  `EnvironmentFile=`, and `setup-gateway.sh` creates the directory and the file once, never
-  overwriting either. Never inside the git working tree, because the one irreversible failure in this
+  `EnvironmentFile=`, the token pool is `tokens.json` beside it, the per-dataset index lives in
+  `index/`, and the publisher's own directory is `publish/` — its `env` and the console's
+  access-key CSV. `setup-gateway.sh` creates the directory, `publish/`, and `env` once, never
+  overwriting anything that exists. Never inside the git working tree, because the one irreversible failure in this
   repository is a secret reaching git history, and `.gitignore` is a promise rather than a boundary —
   `git add -f`, an edited ignore rule, `git clean -fdx`, or archiving the checkout all walk past it.
   The checkout is also the thing that gets copied around; the state directory is read only by the host
@@ -63,7 +65,16 @@ repeated here.
   hidden — terminating the instance voids every participant's token — so a copy is refreshed off-host
   after any change, and that is one `scp`.
 - **The S3 write grant is scoped to one dataset prefix.** The instance role stays read-only, and
-  publishing is the only thing that writes.
+  publishing is the only thing that writes. The publisher is an IAM user scoped to the dataset
+  prefixes, and its credential is the console's access-key CSV at
+  `~/.config/biohack-gateway/publish/awsAccessKeys.csv` (0600), with the three names it needs —
+  `BIOHACK_BUCKET`, `AWS_REGION`, `BIOHACK_ACCESS_KEYS_CSV` — in `publish/env` beside it, sourced by
+  the operator. The publisher reads that CSV itself, because an SDK cannot, and hands the pair to its
+  boto3 session, so the secret never enters the environment. It is **never** in the gateway's `env`,
+  and the unit excludes
+  the whole `publish/` directory with `InaccessiblePaths=`, so the service cannot read the key even
+  though the two run as the same user. The secret stays out of the environment because the
+  environment is the leaky surface: `/proc/<pid>/environ`, logs, crash dumps, and child processes.
 - **The bucket is private and CloudFront is the only reader.** Block Public Access stays on and
   the only policy statement names the distribution through its origin access control. No object is
   ever made public: a public bucket would be a second path to the same bytes and a second cache to
