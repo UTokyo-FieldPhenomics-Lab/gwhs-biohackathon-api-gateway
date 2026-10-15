@@ -50,11 +50,13 @@ number of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-la
 │   ├── rules/             short, binding constraints (project.md + design-philosophy.md + one per package)
 │   ├── references/        detailed execution records and lessons learned
 │   └── skills/            packaged agent skills (planned: API + data layout)
-├── docs/                  documentation site sources (Zensical)
-│   ├── data-layout.md     handwritten contract: object layout, addressing, index fields
-│   ├── api/               API reference markdown, generated and committed
-│   ├── notebooks/         tutorial sources (markdown is the source, .ipynb is derived)
-│   └── examples/          curl / python / js snippets, executed in CI
+├── zensical.toml          docs site config: docs/content → site/, published to GitHub Pages
+├── docs/                  documentation site subproject (Zensical)
+│   └── content/           the site's pages and assets: the only thing Zensical builds
+│       ├── data-layout.md handwritten contract: object layout, addressing, index fields
+│       ├── api/           API reference markdown, generated and committed
+│       ├── notebooks/     tutorial sources (markdown is the source, .ipynb is derived)
+│       └── examples/      curl / python / js snippets, executed in CI
 ├── gateway/               FastAPI gateway: model surface (auth, quota, gate, routing)
 │   ├── src/biohack_gateway/  installed app package (app, models, routing, dataset surface)
 │   └── scripts/           contract projections, e.g. gen_api_docs.py
@@ -70,7 +72,8 @@ number of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-la
 - **Gateway**: FastAPI + uvicorn + Pydantic v2; an installed package (`src/biohack_gateway`),
   deployed with systemd, not Docker.
 - **Datasets**: pyarrow + Pillow + boto3, exposed as the `biohack-datasets` CLI.
-- **Docs**: Zensical (pinned) + markdown-exec, published to GitHub Pages.
+- **Docs**: Zensical (pinned) + markdown-exec, built from `docs/content/` and published to
+  <https://docs.global-wheat.com> by `.github/workflows/docs.yml`.
 - **Quality gates**: `pytest` for tests, `mypy` (strict) for types, `ruff` for lint and
   format. Run each with `uv run` inside the subproject directory.
 

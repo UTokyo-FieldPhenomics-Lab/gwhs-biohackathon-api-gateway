@@ -1,8 +1,10 @@
 # Docs site: publish Zensical output on GitHub Pages at `docs.global-wheat.com`
 
-Status: planned, ready to execute. Phase 1 is the pipeline proof and the only blocking work;
-Phase 2 is content, cross-linking, and the documents that describe both. The hand steps (repo
-Settings, お名前.com panel) are marked and are the only external dependency.
+Status: Phase 1 done and live on 2026-10-15 at <https://docs.global-wheat.com>; Phase 2 partly done.
+Execution record: [`../references/2026101516_docs-site-hosting.md`](../references/2026101516_docs-site-hosting.md).
+The pipeline proof took one real failure to get right — a build that emitted no `site/assets/` — and
+the cause and the fix are recorded below and in that file. Remaining work is listed under
+[Result](#result-2026-10-15).
 
 ## Goal and acceptance
 
@@ -51,7 +53,7 @@ Measurements taken on 2026-10-15, so execution does not re-derive them:
 | Host: GitHub Pages | Zero infrastructure, free on a public repo, no secret in CI, and independent of the on-demand EC2 host and of the EIP that one measured network already drops. `data.*` is write-once and must never need invalidation; the site is rewritten on every push, so it must not share that plane. |
 | Domain: `docs.global-wheat.com`, `CNAME` → `utokyo-fieldphenomics-lab.github.io` | One hand record in the same panel that already holds `api` and `data`, in exchange for a printable, rename-proof URL. A subdomain takes `CNAME`; the value never includes the repository name. |
 | Publishing source: an Actions workflow, artifact-based | Bypasses Jekyll, needs no `gh-pages` branch, and keeps the build reproducible from `docs/uv.lock`. |
-| Config lives at the repository root as `zensical.toml`, `docs_dir = "docs"`, `site_dir = "site"` | Zensical resolves both relative to the config file, and `.gitignore` already ignores root `/site`. Content stays in `docs/`. |
+| Config lives at the repository root as `zensical.toml`, `docs_dir = "docs/content"`, `site_dir = "site"` | Zensical resolves both relative to the config file, and `.gitignore` already ignores root `/site`. The content root is `docs/content/` and not `docs/` because a virtualenv under `docs_dir` makes the build emit no `site/assets/` at all — measured, and the reason Phase 1 initially shipped an unstyled site. |
 | No `docs/README.md` | Anything under `docs_dir` is site material; the runbook belongs in `deploy/README.md` beside the bucket and CDN procedures. |
 | The site is public, so nothing secret may ever enter `docs/` | The repository is public and the artifact is world-readable. |
 | `api.*/docs` is untouched | It is the interactive reference and an already-published surface; the curated site is a separate artifact. |
@@ -176,28 +178,28 @@ git status --porcelain                             # empty: site/ is ignored
 
 ## Phase 2 — content, cross-linking, and the documents
 
-- `README.md`: the "Documentation site" section gains the URL and drops "The docs site configuration
-  is not committed yet"; the repository-layout tree gains `zensical.toml`.
-- `AGENTS.md`: add `zensical.toml` to the tree, and state that the site is published to GitHub Pages
-  by an Actions workflow rather than built from a branch.
-- **Cross-linking.** `docs/index.md` already links to Swagger. In the other direction, add one line to
-  the `description` in `gateway/src/biohack_gateway/app.py:200` pointing at
-  `https://docs.global-wheat.com`; it is additive metadata in `openapi.json`, touches no endpoint, and
-  is the only gateway file this plan edits. Then set the repository's homepage field (currently
-  `https://api.global-wheat.com/docs`) to `https://docs.global-wheat.com` once check 1 passes — the
-  field in the repository's About panel, or `gh repo edit --homepage`; `gh` is not installed on this
-  workstation today.
+- `README.md`: **done** — the "Documentation site" section carries the URL, the three commands run
+  from the repository root, and the invariant that keeps `site/assets/` in the output; the layout tree
+  gained `zensical.toml` and `docs/content/`.
+- `AGENTS.md`: **done** — the tree and the stack line.
+- **Cross-linking. OPEN.** `docs/index.md` links to Swagger. In the other direction, one line in the
+  `description` of `create_app` (`gateway/src/biohack_gateway/app.py:200`) pointing at
+  `https://docs.global-wheat.com` is still to write; it is additive metadata in `openapi.json` and
+  touches no endpoint. The repository's homepage field (currently `https://api.global-wheat.com/docs`)
+  is also still to change — a repository setting, not a file, so it needs the About panel or
+  `gh repo edit --homepage`; `gh` is not installed on this workstation today.
 - `deploy/README.md`: **written on 2026-10-15** — new §6 "The documentation site" carries the hand
-  steps above, the CNAME and TXT values as they must be entered, the verification commands, and the
-  disposal note below. This is the same class of resource as §2's bucket, distribution, and
-  certificate: created by hand, once. It is the only documentation this plan needs before the console
-  work starts.
-- `.agents/rules/docs.md` gains two constraints: hosting is GitHub Pages at `docs.global-wheat.com`,
-  published from an Actions artifact on `main` with `--strict`; and disabling the site means removing
-  the `docs` CNAME as well, or keeping the domain verified, because an unverified `CNAME` pointing at
-  GitHub Pages with no site behind it is a takeover path.
-- `.agents/references/2026101521_docs-site-hosting.md`: the execution record — commands run, what the
-  panel looked like, how long the certificate took, what broke.
+  steps above, the CNAME value as it must be entered, the verification commands, and the disposal note
+  below. This is the same class of resource as §2's bucket, distribution, and certificate: created by
+  hand, once.
+- `.agents/rules/docs.md`: **written on 2026-10-15** — hosting is GitHub Pages at
+  `docs.global-wheat.com`, published from an Actions artifact on `main` with `--strict`; the content
+  root holds site material only, because a virtualenv under it silently drops `site/assets/`; and
+  disabling the site means removing the `docs` CNAME as well, or keeping the domain verified, because
+  an unverified `CNAME` pointing at GitHub Pages with no site behind it is a takeover path.
+- `.agents/references/2026101516_docs-site-hosting.md`: **written on 2026-10-15** — decisions and the
+  measurements behind them, the missing-stylesheet failure with the six probes that isolated it, the
+  post-fix verification, and the lessons.
 
 ## Verification (record the output in the reference file)
 
@@ -219,12 +221,35 @@ The site is disposable by rule. Disabling it is Settings → Pages → Unpublish
 name cannot be claimed by someone else. Reverting the plan's files removes the site's content and
 nothing else depends on it.
 
+## Result (2026-10-15)
+
+Live at <https://docs.global-wheat.com>. Both workflow runs are green
+(`38697853053`, `38698235228`); the second published the complete site after the fix below.
+
+| Check | Result |
+|---|---|
+| `uv run --project docs zensical build --strict`, from the repository root | exit 0, 8 asset files, `git status --porcelain` empty |
+| `https://docs.global-wheat.com/` | `200`, `server: GitHub.com`, certificate `CN=docs.global-wheat.com` |
+| The three asset URLs the page references | all `200` |
+| Rendered page | nav, tables, code blocks with copy buttons, search, `On this page` all correct |
+| `dns.google` CNAME for `docs.global-wheat.com` | `utokyo-fieldphenomics-lab.github.io` |
+
+One failure on the way: the first deploy published every page and no `site/assets/`, so the site was
+unstyled, and `--strict` reported nothing. A virtualenv under `docs_dir` — `uv sync --project docs`
+creates `docs/.venv` — stops the theme assets being written; the pages moved to `docs/content/` and
+`docs_dir` follows. See the reference file for the probes that isolated it.
+
+Still open when this was written: `Enforce HTTPS` is unticked although the certificate now exists, the
+repository homepage still points at `api.*/docs`, the one-line cross-link in `create_app`'s
+`description` is unwritten, and a participant's token hand-out is still undocumented beyond "ask the
+organisers".
+
 ## Open items
 
 - `.agents/rules/docs.md` still says the API reference is generated markdown committed under
-  `docs/api/` and rendered by the site, and that `docs/` only renders it. The user's decision that
-  `gen_api_docs.py` is internal operations material contracts that. The rule is left unchanged here
-  rather than silently rewritten: it needs an explicit call before the generator is written.
+  `docs/content/api/` and rendered by the site, and that `docs/` only renders it. The user's decision
+  that `gen_api_docs.py` is internal operations material contracts that. The rule is left unchanged
+  here rather than silently rewritten: it needs an explicit call before the generator is written.
 - How a participant receives a token is not written down anywhere. **Deferred by decision on
   2026-10-15**: it belongs in the docs later, in the form "ask the organisers by email", and until
   then the landing page links to `README.md` and states no process of its own. Nothing blocks the
