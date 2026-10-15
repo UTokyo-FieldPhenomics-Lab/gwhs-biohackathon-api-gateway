@@ -162,6 +162,9 @@ of booleans per object. NumPy removes both, which is why the Python files here a
 ones. JavaScript's typed arrays already do that work, so there the packed-colour lookup is *slower*
 than four integer comparisons — a table that beats them would need 2²⁴ entries.
 
+All three ports were run against the same two fixtures — a real 512×512 mask and a real object of a
+2509×592 image — and they agree pixel for pixel.
+
 Neither number is what your program will spend its time on: fetching and decoding an image costs tens
 of milliseconds, whatever you do afterwards. Profile before optimizing — but in Python, avoid the
 version that loops over pixels, which is what these files did before they were measured.
