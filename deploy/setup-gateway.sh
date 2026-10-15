@@ -95,13 +95,17 @@ sudo -u "$TARGET_USER" -H "$UV" --directory "$REPO_DIR/gateway" sync --frozen
 
 # The state the unit reads, outside the checkout, owned by the user it runs as: settings in `env`,
 # created here, and whatever the gateway keeps beside it later — the participant key pool above all
-# (.agents/rules/deploy.md). Only the directory and `env` are created, and nothing that exists is
-# overwritten: re-running this must never touch a value that is already there.
+# (.agents/rules/deploy.md). The directory, `publish/`, and `env` are created, and nothing that
+# exists is overwritten: re-running this must never touch a value that is already there.
 STATE_DIR="$TARGET_HOME/.config/biohack-gateway"
 if [[ ! -d "$TARGET_HOME/.config" ]]; then
   install -d -m 0755 -o "$TARGET_USER" -g "$TARGET_USER" "$TARGET_HOME/.config"
 fi
 install -d -m 0700 -o "$TARGET_USER" -g "$TARGET_USER" "$STATE_DIR"
+# The unit excludes this directory with InaccessiblePaths=, and systemd refuses a unit whose excluded
+# path does not exist. Creating it up front makes the exclusion hold from the first start, before
+# §5's credential exists — and excluding an empty directory is the safe default.
+install -d -m 0700 -o "$TARGET_USER" -g "$TARGET_USER" "$STATE_DIR/publish"
 if [[ ! -e "$STATE_DIR/env" ]]; then
   install -m 0600 -o "$TARGET_USER" -g "$TARGET_USER" /dev/null "$STATE_DIR/env"
   cat > "$STATE_DIR/env" <<'EOF'

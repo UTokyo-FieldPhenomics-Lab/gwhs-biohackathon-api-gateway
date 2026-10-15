@@ -86,10 +86,18 @@ export CHECKOUT=/opt/gwhs-biohackathon-api-gateway
 cd "$CHECKOUT"   # go to github repo path
 ```
 
-Then, from the checkout, `cd datasets && uv sync && uv run biohack-datasets-fetch` — the dataset
-cache is fetched on this same host, because it is where a publish runs: 1.88 GB into
-`datasets/.hf_cache/`, rebuilt from the pinned revision rather than preserved. The gateway's own
-environment is synced, and installed behind TLS as a service, in §1.5.
+Then, from the checkout, fetch the dataset cache and rehearse a publish. Both run on this same
+host, because this is where a publish reads from and writes to the bucket's region:
+
+```bash
+cd datasets && uv sync
+uv run biohack-datasets fetch                                   # 1.88 GB into datasets/.hf_cache/
+uv run biohack-datasets publish --dataset gwhs-temp --dry-run    # the plan: bucket, index path, rows
+```
+
+The cache is rebuilt from the pinned revision rather than preserved. A real publish also needs the
+credential in §5. The gateway's own environment is synced, and installed behind TLS as a service,
+in §1.5.
 
 ## 1.3 Optional: put it on the tailnet
 
@@ -200,6 +208,24 @@ sudo systemctl restart biohack-gateway
 
 Nothing reads `env` yet: the variables arrive with the surfaces that need one, and the names — never
 the values — are recorded in a committed `gateway/.env.example` when they do.
+
+The directory holds four things, and which of them the gateway can read is the point:
+
+```
+~/.config/biohack-gateway/          0700, owned by the user the service runs as
+├── env                             gateway settings (systemd EnvironmentFile=); 0600
+├── tokens.json                     participant token pool; 0600
+├── index/                          <dataset>.db per published dataset; read by the gateway
+└── publish/                        0700; excluded from the service as a whole directory
+    ├── env                         BIOHACK_BUCKET, AWS_REGION, BIOHACK_ACCESS_KEYS_CSV; 0600
+    └── awsAccessKeys.csv           the console's access-key download; 0600
+```
+
+`setup-gateway.sh` creates the directory, `publish/`, and `env`, and nothing else: `tokens.json`
+appears with the first issued token, `index/` with the first publish, and `publish/` is filled in §5.
+`InaccessiblePaths=` names the whole `publish/` directory rather than individual files, so a file added
+there later is excluded by default — and it is created up front because systemd refuses a unit whose
+excluded path does not exist.
 
 The participant token pool is `tokens.json` in that same directory, and it is **the one thing in this
 repository that is authoritative on the host** rather than kept outside it. Issuing a token from the
@@ -417,8 +443,177 @@ Parameter Store fits the rules already — and in whatever infrastructure notes 
 
 | Value | Needed by |
 |---|---|
-| Bucket name | the publisher |
+| Bucket name | the publisher, and `BIOHACK_BUCKET` in its `publish/env` (§5) |
 | OAC id, distribution id | the next person to edit this distribution |
 | Certificate ARN | renewals |
 | Distribution domain name | the `CNAME` in 2.5 |
 | `https://data.global-wheat.com` | the gateway — **and only this**: the gateway never carries bytes and never touches the bucket, so the base URL is the whole interface it needs |
+| Index directory (`~/.config/biohack-gateway/index`) | written by a publish, read by the gateway at startup |
+| Access-key CSV (`publish/awsAccessKeys.csv`) | the publisher, named by `BIOHACK_ACCESS_KEYS_CSV` in `publish/env` (§5) |
+
+---
+
+# 5. The publish credential
+
+Publishing writes into the bucket and **the gateway never does** — it does not know the bucket name
+and has no S3 client. So this credential belongs to the publisher alone, is scoped to the dataset
+prefixes rather than to the bucket, and lives in a file the gateway's service cannot read.
+
+Run this with your own admin session: five minutes, and it never deletes anything.
+
+## 5.1 Create the policy
+
+**AWS console** → IAM → Policies → Create policy → JSON.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PublishDatasetPrefixes",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:GetObject"],
+      "Resource": [
+        "arn:aws:s3:::<bucket>/gwhd/*",
+        "arn:aws:s3:::<bucket>/gwfss/*",
+        "arn:aws:s3:::<bucket>/gwhs/*",
+        "arn:aws:s3:::<bucket>/gwhs-temp/*"
+      ]
+    }
+  ]
+}
+```
+
+- `<bucket>` is the name recorded in §4. Nothing else is substituted.
+- **`s3:GetObject` is the `HEAD`.** There is no separate `s3:HeadObject` action, and the publisher's
+  idempotency check *is* a `HEAD` — that is why the read action is granted at all.
+- **No `s3:DeleteObject`**: the publisher never deletes. No `s3:ListBucket` either: nothing enumerates
+  the bucket on a routine run.
+- **One ARN per dataset prefix, and that list is the authorisation point.** A dataset id that is not
+  listed here cannot be published into, so a new release — `gwhs` when its annotation lands — costs one
+  deliberate edit rather than arriving by accident.
+
+## 5.2 Create the user
+
+**AWS console** → IAM → Users → Create user → name it `biohack-publish`, **no console access** →
+Attach policies directly → the policy from 5.1.
+
+## 5.3 Create its access key
+
+**AWS console** → that user → Security credentials → Create access key → **Application running outside
+AWS** → Other. The secret is displayed once; it is never retrievable again.
+
+The console also offers **Download .csv**, and that download **is** the credential record — §5.4
+places it as-is. Its columns are exactly `Access key ID` and `Secret access key`, with one data row
+(the first column's header carries a byte-order mark). `.gitignore` names the console's download
+(`<user>_accessKeys.csv`) as a backstop, not a licence: an unencrypted secret is never committed and
+never copied into the checkout.
+
+## 5.4 Put the key where the publisher looks
+
+```bash
+ssh admin@<host>
+install -d -m 700 ~/.config/biohack-gateway/publish
+```
+
+Then place the console's download there, under the name §5.5 points at:
+
+```bash
+# on the workstation, where the browser put it
+scp ~/Downloads/biohack-publish_accessKeys.csv admin@<host>:/tmp/awsAccessKeys.csv
+
+# on the host
+ssh admin@<host>
+install -m 600 /tmp/awsAccessKeys.csv ~/.config/biohack-gateway/publish/awsAccessKeys.csv
+rm /tmp/awsAccessKeys.csv
+```
+
+That CSV **is** the credential record — nothing transcribes it, and there is no `credentials` file to
+keep in step with it:
+
+- **Its columns are the two values.** `Access key ID` and `Secret access key`, one data row. The
+  publisher reads exactly that shape (`biohack_datasets.credentials`); the header's byte-order mark
+  and a browser's CRLF endings are handled there.
+- **AWS SDKs cannot read it themselves.** A shared-credentials file is INI, so pointing
+  `AWS_SHARED_CREDENTIALS_FILE` at a CSV fails; the publisher reads the two values and hands them to
+  its boto3 session directly instead.
+- **The secret never enters the environment.** The pair goes from the file into the session object,
+  so `/proc/<pid>/environ`, logs, crash dumps and child processes never see it.
+- **Why not the default `~/.aws/credentials`.** Everything the publisher owns goes under `publish/`,
+  which the unit excludes as a whole directory (§1.5), so the key is not merely unreferenced by the
+  gateway — it is unreadable by it. In the standard location the service *could* read it: the two run
+  as the same user and 0600 does not separate them, so it would be safe by convention only.
+- **Never commit it.** `.gitignore` names the console's download as a backstop, not a licence. Mode
+  0600, outside the checkout, not backed up anywhere else; a replacement instance means a new key
+  (§5.6).
+
+## 5.5 Point the publisher at it
+
+```bash
+install -m 600 /dev/null ~/.config/biohack-gateway/publish/env
+```
+
+Then edit `~/.config/biohack-gateway/publish/env`:
+
+```bash
+BIOHACK_BUCKET=s3://<bucket>
+AWS_REGION=eu-central-1
+BIOHACK_ACCESS_KEYS_CSV=/home/admin/.config/biohack-gateway/publish/awsAccessKeys.csv
+```
+
+- **Three names, no secret.** The bucket, the bucket's region, and the path to the CSV. The key
+  itself stays in the CSV, because anything in the environment shows up in `/proc/<pid>/environ`, in
+  crash dumps and in child processes.
+- **`BIOHACK_ACCESS_KEYS_CSV` is how the publisher finds the key.** Unset, boto3's standard chain
+  applies instead — which is what a laptop uses, and why the variable is optional.
+- **`AWS_REGION` must be the bucket's region** (`eu-central-1`), so no publish pays for a
+  cross-region redirect.
+- **It is a separate file from the gateway's `env`.** That one is handed to the service through
+  systemd's `EnvironmentFile=`, so putting these in it would give the gateway process a credential
+  that can write the bucket — the one thing it must never hold.
+- **The publisher sources it; nothing else does.** The unit excludes the whole `publish/` directory,
+  so the service can read neither this file nor the CSV beside it. Prefer a one-word function over an
+  unconditional `~/.bashrc` export:
+
+  ```bash
+  # ~/.bashrc on the host
+  gwpublish() { set -a; . ~/.config/biohack-gateway/publish/env; set +a; cd "$CHECKOUT/datasets"; }
+  ```
+
+- The variable **names** are recorded, and only the names, in the committed
+  [`datasets/.env.example`](../datasets/.env.example).
+
+## 5.6 Verify it, and rotate it
+
+The publisher itself is the check that matters:
+
+```bash
+gwpublish                                              # sources publish/env, enters the checkout
+uv run biohack-datasets publish --dataset gwhs-temp --dry-run   # the plan; touches no credential
+uv run biohack-datasets publish --dataset gwhs-temp --bucket s3://<bucket>
+```
+
+A credential error names the file, never a value. For a read-only spot-check with the AWS CLI —
+which, unlike the publisher, cannot read the CSV — export the pair for that one command:
+
+```bash
+gwpublish
+export AWS_ACCESS_KEY_ID=$(awk -F, 'NR==2 { print $1 }' $BIOHACK_ACCESS_KEYS_CSV | tr -d '\r')
+export AWS_SECRET_ACCESS_KEY=$(awk -F, 'NR==2 { print $2 }' $BIOHACK_ACCESS_KEYS_CSV | tr -d '\r')
+aws sts get-caller-identity                       # the key is valid, and the right account
+aws s3api head-object --bucket <bucket> --key <any key that exists>
+```
+
+`get-caller-identity` proves the key is valid. The `head-object` proves the read half of the policy
+against a real object, if one exists yet — on a fresh bucket there is none, and skipping it proves
+nothing either way. The export is for the CLI alone; the publisher never needs it.
+
+**The write half is proven by the first publish**, which fails with `AccessDenied` naming the missing
+action if the policy is wrong. That is deliberate: proving it by hand means writing a throwaway
+object into a dataset prefix, and the publisher has no `DeleteObject` to remove it with — the cleanup
+would need your own credentials.
+
+**Rotation** is create-then-replace-then-delete: create a second access key for the same user,
+replace the CSV at `publish/awsAccessKeys.csv`, confirm with `get-caller-identity`, then delete the
+first key in the console. Replacing the instance means the same three steps on the new host.
+
