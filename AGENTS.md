@@ -109,5 +109,8 @@ number of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-la
 - Binding constraints for this repo: [`.agents/rules/project.md`](.agents/rules/project.md)
 - Per-package constraints: [`.agents/rules/`](.agents/rules)
 - Execution records and lessons: [`.agents/references/`](.agents/references)
+- A host that answers from elsewhere but not from this machine:
+  [`references/2026101523_reaching-the-api-host-from-the-utokyo-network.md`](.agents/references/2026101523_reaching-the-api-host-from-the-utokyo-network.md)
+  — the campus-perimeter workaround; try it before concluding the service is down.
 - Data layout contract: [`docs/data-layout.md`](docs/data-layout.md)
 - Architecture discussion and decision log (SiYuan note, external): "黑客松API服务架构设计"
