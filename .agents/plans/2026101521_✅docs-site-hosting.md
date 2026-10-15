@@ -1,4 +1,8 @@
-# Docs site: publish Zensical output on GitHub Pages at `docs.global-wheat.com`
+Status: done — the site is live at <https://docs.global-wheat.com> with four participant-facing
+pages, the reference framed and themed, and the rules brought in line. Execution record:
+[`../references/2026101516_docs-site-hosting.md`](../references/2026101516_docs-site-hosting.md).
+It took two failures to get right — a build that emitted no `site/assets/`, and a frame that grew but
+never shrank — and both are recorded there and in `.agents/rules/docs.md`.
 
 Status: Phase 1 done and live on 2026-10-15 at <https://docs.global-wheat.com>; Phase 2 partly done.
 Execution record: [`../references/2026101516_docs-site-hosting.md`](../references/2026101516_docs-site-hosting.md).
@@ -258,10 +262,13 @@ reaches the live Swagger only after the checkout there is pulled and the unit re
 
 ## Open items
 
-- `.agents/rules/docs.md` still says the API reference is generated markdown committed under
-  `docs/content/api/` and rendered by the site, and that `docs/` only renders it. The user's decision
-  that `gen_api_docs.py` is internal operations material contracts that. The rule is left unchanged
-  here rather than silently rewritten: it needs an explicit call before the generator is written.
+- **Resolved on 2026-10-15.** `.agents/rules/docs.md` said the API reference was generated markdown
+  committed under `docs/content/api/` and rendered by the site, which the decision that
+  `gen_api_docs.py` is internal operations material contradicted. The rule now says what the project
+  does: FastAPI's own `/docs` is the reference, `interactive.md` frames it, and there is no written
+  copy of the contract to keep in step. A documentation pass the same day swept the other stale
+  bullets too — notebooks that nothing derives, examples that "run in CI" when the build has no NumPy
+  and no token, and a `gen_api_docs.py` the file tree still promised.
 - How a participant receives a token is not written down anywhere. **Deferred by decision on
   2026-10-15**: it belongs in the docs later, in the form "ask the organisers by email", and until
   then the landing page links to `README.md` and states no process of its own. Nothing blocks the

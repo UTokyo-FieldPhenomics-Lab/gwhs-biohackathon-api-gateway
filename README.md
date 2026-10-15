@@ -61,16 +61,18 @@ is released — `gwhs`; `gwhs-temp` is a development-only sample.
 ├── zensical.toml          docs site config: docs/content → site/, published to GitHub Pages
 ├── docs/                  documentation subproject (Zensical)
 │   ├── data-layout.md     internal contract: object layout, addressing, index fields — unpublished
+│   ├── scripts/           make_figures.py: every figure the pages show, built from published rows
 │   └── content/           the site's pages and assets: the only thing Zensical builds
-│       ├── api/           API reference markdown, generated and committed
-│       ├── notebooks/     tutorial sources (markdown is the source, .ipynb is derived)
+│       ├── api/           the frame's two files: hides the page's heading, sizes and themes the frame
+│       ├── notebooks/     empty; a tutorial would start here as markdown
 │       └── post-processing/  palette masks and RLE geometry, in three languages
 ├── gateway/               FastAPI gateway: the request gate, and the model and dataset surfaces
 │   ├── src/biohack_gateway/  installed package: app, auth, tokens, dataset surface, and the CLI
-│   └── scripts/           contract projections, e.g. gen_api_docs.py (planned)
+│   └── scripts/           contract projections, if the reference ever needs a written copy
 ├── datasets/              upstream parquet cache + publisher CLI: parquet → image objects in S3 + metadata index
 ├── deploy/                host bring-up, the dataset bucket and its CDN, bootstrap scripts
-└── .github/workflows/     planned: secret scan, contract guard, tests, lock, docs
+└── .github/workflows/     docs.yml builds and publishes the site; secret scan, contract guard,
+                           tests, and lock are planned
 ```
 
 Each Python subproject is independent: its own `pyproject.toml` and `uv.lock`, no root

@@ -230,6 +230,12 @@ The directory holds four things, and which of them the gateway can read is the p
 
 `setup-gateway.sh` creates the directory, `publish/`, and `env`, and nothing else: `tokens.json`
 appears with the first issued token, `index/` with the first publish, and `publish/` is filled in §5.
+
+**What `index/` holds today:** `gwhd.db`, `gwfss.db`, and `gwhs-temp.db` — the first ten rows of each
+dataset, published on 2026-10-15 so that all three answer while the full sets are still being prepared.
+The two published datasets are the ten-row prefix of their release, which is what the documentation
+site tells a participant; the full publish runs the same command without `--limit`, writes the same
+three files, and the service picks them up on its next restart.
 `InaccessiblePaths=` names the whole `publish/` directory rather than individual files, so a file added
 there later is excluded by default — and it is created up front because systemd refuses a unit whose
 excluded path does not exist.
