@@ -115,44 +115,21 @@ out to have a mechanism worth writing down.
 ## The live framed page, finally driven end to end
 
 The one thing never verified from here was the real frame at <https://docs.global-wheat.com/interactive/>:
-the campus network resolves `api.*` to its public address and that path is dropped, so the frame came up
-empty in every earlier attempt. Three findings, in the order they mattered.
+this campus network drops the path that resolves `api.*` to its public address, so the frame came up
+empty in every earlier attempt. How it was reached from here belongs to that network and is written
+down separately, as a workaround rather than a practice:
+[`2026101523_reaching-the-api-host-from-the-utokyo-network.md`](2026101523_reaching-the-api-host-from-the-utokyo-network.md).
+What matters for this reference page is what the live page then did, against the deployed `951ff40`:
 
-- **Reaching the host is a client-resolution problem, not a code problem.** Chromium with
-  `--host-resolver-rules="MAP api.global-wheat.com 100.88.197.115"` reaches the API host over the tailnet
-  address, and a direct load of `/docs` works immediately. No host change was needed.
-- **Chrome then refused to let the site frame it**, with
-  `net::ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`: a public site may not load a frame from a private
-  address. That is entirely an artifact of the tailnet address — production `api.*` is public, where the
-  check does not apply — and the harness disables it with
-  `--disable-features=LocalNetworkAccessChecks,PrivateNetworkAccessChecks,...`. Worth knowing before
-  blaming the frame: a blank frame from a private address is Chrome's judgement, not the page's.
-- **A real browser can wait, and reach into the frame.** `--virtual-time-budget` and `--dump-dom` could
-  not see the child at all (virtual time expires the parent while the cross-origin child is still
-  loading, so the height never arrives — even though the same flags show it for a localhost harness).
-  Playwright does it properly, and can drive the cross-origin frame:
+| check | result |
+|---|---|
+| the site sized the frame from the child's report | `2093px`, not the `90vh` fallback |
+| the field's row | in `scheme-container`, label / title / group / first call all at x=28 |
+| groups | `['liveness', 'datasets']` |
+| a token pasted into the live field | "a key is in use — paste another to replace it" |
+| a call from inside the frame | `GET /datasets` answered with the live datasets |
+| collapse | frame `4000px → 2093px` — it shrinks on the live page, which was the oldest open question |
+| the theme channel from the site's origin | `light → dark`, framed page background `rgb(30, 33, 41)` |
 
-  ```python
-  # uv run --with playwright python <this>; the system Chromium is enough, no download
-  browser = p.chromium.launch(executable_path="/usr/bin/chromium",
-                              args=["--host-resolver-rules=MAP api.global-wheat.com 100.88.197.115",
-                                    "--disable-features=LocalNetworkAccessChecks,PrivateNetworkAccessChecks"])
-  page = browser.new_page(viewport={"width": 390, "height": 844})
-  page.goto("https://docs.global-wheat.com/interactive/", wait_until="load")
-  frame = page.frame_locator("#reference-frame iframe")   # cross-origin access, which is the point
-  ```
-
-  What it reported, against the deployed `951ff40`:
-
-  | check | result |
-  |---|---|
-  | the site sized the frame from the child's report | `2093px`, not the `90vh` fallback |
-  | the field's row | in `scheme-container`, label / title / group / first call all at x=28 |
-  | groups | `['liveness', 'datasets']` |
-  | a token pasted into the live field | "a key is in use — paste another to replace it" |
-  | a call from inside the frame | `GET /datasets` answered with the live datasets |
-  | collapse | frame `4000px → 2093px` — it shrinks on the live page, which was the oldest open question |
-  | the theme channel from the site's origin | `light → dark`, framed page background `rgb(30, 33, 41)` |
-
-  The only console entry is the site's own request for repository facts from `api.github.com`, which
-  404s — a pre-existing cosmetic thing in the site config, nothing to do with the reference.
+The only console entry is the site's own request for repository facts from `api.github.com`, which
+404s — a pre-existing cosmetic thing in the site config, nothing to do with the reference.
