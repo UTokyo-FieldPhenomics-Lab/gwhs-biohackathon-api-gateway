@@ -118,8 +118,8 @@ rule. Then two things in the Tailscale admin console → Machines:
 2. **Tag the node and narrow the access policy.** The tailnet carries other owners' devices, and the
    gateway's internal surface inherits that audience — its token has to be a second lock.
 
-If a room then cannot reach the host, the three checks and the failure this step caused on 2026-10-14
-are in [`.agents/references/202610140230_tailnet-not-reachable-while-online.md`](../.agents/references/202610140230_tailnet-not-reachable-while-online.md);
+If a room then cannot reach the host, the two checks and the cause are in
+[`.agents/references/2026101513_host-unreachable-from-the-utokyo-network.md`](../.agents/references/2026101513_host-unreachable-from-the-utokyo-network.md);
 the constraint behind them is in [`../.agents/rules/deploy.md`](../.agents/rules/deploy.md).
 
 ## 1.4 Bind the API domain
@@ -656,8 +656,8 @@ Three facts behind that:
   invalidated, while this site is rewritten on every push: §2's long TTL is right for one and wrong
   for the other.
 - **It must not share the API's failure domain.** The gateway host is on demand, and one measured
-  network already drops its Elastic IP
-  ([`../.agents/references/2026101513_campus-path-blocks-the-eip.md`](../.agents/references/2026101513_campus-path-blocks-the-eip.md))
+  network cannot reach it at all
+  ([`../.agents/references/2026101513_host-unreachable-from-the-utokyo-network.md`](../.agents/references/2026101513_host-unreachable-from-the-utokyo-network.md))
   — not a property a reader should inherit.
 - **It is public.** The repository is public, so Pages needs no plan change and the site is
   world-readable: nothing secret and nothing participant-specific may enter `docs/`.

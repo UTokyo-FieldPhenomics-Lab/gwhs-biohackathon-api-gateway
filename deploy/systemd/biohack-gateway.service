@@ -4,8 +4,9 @@
 # this file as /etc/systemd/system/biohack-gateway.service. Edit it here rather than there, or the
 # next run of that script overwrites the change.
 #
-# One worker, deliberately: the authentication and concurrency gates keep their counters in process
-# memory, so a second worker would enforce them per worker instead of globally.
+# One worker: the surface is network-bound and holds one small index in memory. The per-key rate and
+# concurrency gates are not implemented yet; when they are, their counters are per-process state, so
+# they will need either this single worker or shared storage (.agents/rules/gateway.md).
 #
 # Host state lives in the state directory, not in this file: `env` exists for `EnvironmentFile=` and
 # holds one VARIABLE=value per line when a setting reads one; the participant key pool lives beside

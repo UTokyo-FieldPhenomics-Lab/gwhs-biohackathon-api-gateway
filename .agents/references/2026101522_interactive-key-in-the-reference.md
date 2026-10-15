@@ -118,7 +118,7 @@ The one thing never verified from here was the real frame at <https://docs.globa
 this campus network drops the path that resolves `api.*` to its public address, so the frame came up
 empty in every earlier attempt. How it was reached from here belongs to that network and is written
 down separately, as a workaround rather than a practice:
-[`2026101523_reaching-the-api-host-from-the-utokyo-network.md`](2026101523_reaching-the-api-host-from-the-utokyo-network.md).
+[`2026101513_host-unreachable-from-the-utokyo-network.md`](2026101513_host-unreachable-from-the-utokyo-network.md).
 What matters for this reference page is what the live page then did, against the deployed `951ff40`:
 
 | check | result |

@@ -1,6 +1,7 @@
 # Caddy, ACME, and systemd on the gateway host
 
-2026-10-14. The first real run of `deploy/setup-gateway.sh`, on the host as it is today — Debian 13
+Date: 2026-10-14.
+Topic: the first real run of `deploy/setup-gateway.sh`, on the host as it is today — Debian 13
 trixie, `t3.small`, Elastic IP `52.28.155.227`, reached over the tailnet because port 22 on the
 Elastic IP is not reachable from this workstation. Constraints this run produced are in
 [`../rules/deploy.md`](../rules/deploy.md); the plan it verifies is in
