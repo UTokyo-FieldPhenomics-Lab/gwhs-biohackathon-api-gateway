@@ -6,8 +6,9 @@ this repository anyway. Everything else, including paths that do not exist, need
 token, because the people this serves are somewhere else on the internet and nothing but that token
 stands between them and the host.
 
-Key authentication, the error contract, and liveness live here. The dataset and model surfaces
-arrive on top of them, and inherit the gate by adding a route rather than by remembering to.
+Key authentication, the error contract, and liveness live here. The dataset surface is included
+from here, and the model surface will arrive the same way: both inherit the gate by adding a route
+rather than by remembering to.
 """
 
 from __future__ import annotations
@@ -26,6 +27,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import RequestResponseEndpoint
 
 from biohack_gateway.auth import Authenticator
+from biohack_gateway.dataset_index import DEFAULT_INDEX_DIR, load_datasets
+from biohack_gateway.datasets import DEFAULT_DATA_BASE_URL, create_dataset_router
 from biohack_gateway.tokens import DEFAULT_TOKENS_FILE, TokenPoolError
 
 logger = logging.getLogger(__name__)
@@ -169,16 +172,25 @@ def _error(status_code: int, code: ErrorCode, message: str) -> JSONResponse:
     return JSONResponse(status_code=status_code, content=payload.model_dump(mode="json"))
 
 
-def create_app(tokens_path: Path = DEFAULT_TOKENS_FILE) -> FastAPI:
+def create_app(
+    tokens_path: Path = DEFAULT_TOKENS_FILE,
+    index_dir: Path = DEFAULT_INDEX_DIR,
+    data_base_url: str = DEFAULT_DATA_BASE_URL,
+) -> FastAPI:
     """Build the application.
 
-    The pool is a parameter rather than a global so that a test can point an app at a throwaway
-    file, and so that nothing in this module depends on the host's layout.
+    Every host setting is a parameter rather than a global so that a test can point an app at
+    throwaway files, and so that nothing in this module depends on the host's layout. The dataset
+    index is loaded here, once, which is what makes a republish arrive as a restart.
 
     Parameters
     ----------
     tokens_path : Path, optional
         The participant token pool to authenticate against.
+    index_dir : Path, optional
+        The directory of `<dataset>.db` files the dataset surface answers from. It need not exist.
+    data_base_url : str, optional
+        The public distribution the image addresses point at.
 
     Returns
     -------
@@ -191,6 +203,7 @@ def create_app(tokens_path: Path = DEFAULT_TOKENS_FILE) -> FastAPI:
         description="Global Wheat dataset and model API for the BioHackathon.",
     )
     authenticator = Authenticator(tokens_path)
+    app.include_router(create_dataset_router(load_datasets(index_dir), data_base_url))
 
     @app.middleware("http")
     async def require_key(request: Request, call_next: RequestResponseEndpoint) -> Response:

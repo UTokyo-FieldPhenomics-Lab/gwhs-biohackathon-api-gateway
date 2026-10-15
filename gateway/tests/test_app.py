@@ -49,10 +49,15 @@ def pool_path(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def client(pool_path: Path) -> Iterator[TestClient]:
-    """Give a client for an app reading that pool, which answers errors instead of raising them."""
+def client(pool_path: Path, tmp_path: Path) -> Iterator[TestClient]:
+    """Give a client for an app reading that pool, which answers errors instead of raising them.
+
+    The index directory is a throwaway that does not exist: these tests are about the gate, and
+    reading the host's real index would couple them to whatever has been published on this machine.
+    """
     with TestClient(
-        create_app(tokens_path=pool_path), raise_server_exceptions=False
+        create_app(tokens_path=pool_path, index_dir=tmp_path / "index"),
+        raise_server_exceptions=False,
     ) as test_client:
         yield test_client
 
@@ -155,7 +160,8 @@ def test_an_unhandled_error_keeps_the_shape(client: TestClient, routes: FastAPI)
 def test_a_missing_pool_closes_the_gate(tmp_path: Path) -> None:
     """Before the first token is issued nobody gets in, which is the safe direction to fail in."""
     with TestClient(
-        create_app(tokens_path=tmp_path / "absent.json"), raise_server_exceptions=False
+        create_app(tokens_path=tmp_path / "absent.json", index_dir=tmp_path / "index"),
+        raise_server_exceptions=False,
     ) as client:
         assert client.get("/", headers=KEY).status_code == 401
         assert client.get("/health").status_code == 200
@@ -166,7 +172,9 @@ def test_an_unreadable_pool_is_unavailable_and_heals(tmp_path: Path) -> None:
     path = tmp_path / "tokens.json"
     path.write_text("{]. not json", encoding="utf-8")
 
-    with TestClient(create_app(tokens_path=path), raise_server_exceptions=False) as client:
+    with TestClient(
+        create_app(tokens_path=path, index_dir=tmp_path / "index"), raise_server_exceptions=False
+    ) as client:
         response = client.get("/", headers=KEY)
 
         assert response.status_code == 503
