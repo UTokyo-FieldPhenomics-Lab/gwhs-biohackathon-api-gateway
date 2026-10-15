@@ -14,6 +14,10 @@ repeated here.
   because a virtualenv anywhere under the content root stops the build emitting `site/assets/`
   entirely: the pages publish unstyled and the build reports no problem. The subproject's
   `pyproject.toml`, `uv.lock`, and `.venv` therefore sit outside it.
+- **Every published page is written for a participant.** The site answers what the API offers, how to
+  call it, what comes back, and what the examples are. Internal material — index fields and tables,
+  the object-key layout, upstream provenance, and the development sample — stays outside
+  `docs/content/`, which is why `data-layout.md` sits beside the subproject rather than inside it.
 - **Locked like the rest.** `docs/` commits a `uv.lock` like every other subproject:
   `requires-python` is a floor and the lock pins the rest. Re-run `uv lock` whenever
   `pyproject.toml` changes.

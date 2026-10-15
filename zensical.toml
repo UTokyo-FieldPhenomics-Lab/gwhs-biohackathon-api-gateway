@@ -25,10 +25,11 @@ repo_name = "UTokyo-FieldPhenomics-Lab/gwhs-biohackathon-api-gateway"
 edit_uri = "edit/main/docs/content/"
 
 # The interactive reference is an external link rather than a generated section: it is FastAPI's own
-# Swagger UI on the API host, which needs no renderer here and cannot be a static page.
+# Swagger UI on the API host, which needs no renderer here and cannot be a static page. Every page
+# here is written for a participant — the internal contract (index fields, S3 layout) lives outside
+# docs/content and is never published.
 nav = [
   { "Start here" = "index.md" },
-  { "Data layout" = "data-layout.md" },
   { "Examples" = "examples/index.md" },
   { "Interactive API reference" = "https://api.global-wheat.com/docs" },
 ]

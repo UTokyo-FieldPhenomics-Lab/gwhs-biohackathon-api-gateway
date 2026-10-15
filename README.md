@@ -24,7 +24,7 @@ Two planes joined only by a frozen contract:
 | Image | Serves images (and masks) | S3 (private, `eu-central-1`) behind CloudFront with OAC — written once at publish, no server, never down, and nothing mutable: a change is a new path, not an invalidation |
 | Metadata | Serves metadata, annotations, facets, and addressing | The publisher generates one index per dataset from a pinned upstream revision; the gateway loads it at startup and answers from memory |
 | Compute | Authenticates, enforces quota and a concurrency gate, routes work | One FastAPI gateway on an EC2 host (region per environment) routing to Docker-capable GPU backends over an authenticated, non-public link — a lab machine, a GPU VPS, or a rented GPU container |
-| Contract | Defines the API surface and the data layout | This repository: OpenAPI models, `docs/content/data-layout.md`, examples, skills |
+| Contract | Defines the API surface and the data layout | This repository: OpenAPI models, `docs/data-layout.md`, examples, skills |
 
 Metadata is the one deliberate exception to static-first: it lives in the gateway's memory so a
 republish takes effect immediately and no client has to hold a copy.
@@ -58,11 +58,10 @@ is released — `gwhs`; `gwhs-temp` is a development-only sample.
 │   ├── rules/             short, binding constraints (project.md + design-philosophy.md + one per package)
 │   ├── references/        detailed execution records and lessons learned
 │   └── skills/            packaged agent skills (planned: API + data layout)
-├── zensical.toml          documentation site config: docs/content → site/, published by
-│                          .github/workflows/docs.yml to GitHub Pages
-├── docs/                  documentation site subproject (Zensical)
+├── zensical.toml          docs site config: docs/content → site/, published to GitHub Pages
+├── docs/                  documentation subproject (Zensical)
+│   ├── data-layout.md     internal contract: object layout, addressing, index fields — unpublished
 │   └── content/           the site's pages and assets: the only thing Zensical builds
-│       ├── data-layout.md handwritten contract: object layout, addressing, index fields
 │       ├── api/           API reference markdown, generated and committed
 │       ├── notebooks/     tutorial sources (markdown is the source, .ipynb is derived)
 │       └── examples/      curl / python / js snippets, executed in CI
@@ -148,7 +147,7 @@ curl -s -H "X-API-Key: <token>" localhost:8000/datasets/gwhs-temp/images/0   # o
 
 The gateway reads its index from the path above and addresses images at
 `https://data.global-wheat.com`; both are `create_app` defaults, and it reads no host environment.
-What the responses mean is [`docs/content/data-layout.md`](docs/content/data-layout.md).
+What the responses mean — the response fields themselves — is the [interactive API reference](https://api.global-wheat.com/docs); the internal contract behind them is `docs/data-layout.md`, which is not published on the site.
 
 ### Datasets
 

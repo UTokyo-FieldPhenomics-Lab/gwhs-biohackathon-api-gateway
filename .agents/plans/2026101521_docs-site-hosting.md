@@ -66,7 +66,9 @@ Measurements taken on 2026-10-15, so execution does not re-derive them:
 - Notebook derivation (jupytext) and executing examples during the build. Executing anything needs
   extra dependencies in `docs/` (`numpy`, `Pillow`) plus a token for the live snippets; it is a
   separate step with its own plan.
-- Any change to `docs/content/data-layout.md`, `docs/content/examples/*`, `docs/content/api/.gitkeep`, or `docs/content/notebooks/`.
+- Pages beyond the landing page and the examples: `docs/content/api/` and `docs/content/notebooks/`
+  stay empty, and the internal contract is not published at all — it sits at `docs/data-layout.md`,
+  outside the content root.
 
 ## Hand steps (blocking; this order)
 
@@ -104,8 +106,11 @@ Deliverables:
      relative to this file, so nobody moves the config into `docs/` later),
    - `repo_url`, `repo_name = "UTokyo-FieldPhenomics-Lab/gwhs-biohackathon-api-gateway"`,
      `edit_uri = "edit/main/docs/"`,
-   - `nav` = `Start here` (`index.md`), `Data layout` (`data-layout.md`), `Examples`
-     (`examples/index.md`), `Interactive API reference` (`https://api.global-wheat.com/docs`).
+   - `nav` = `Start here` (`index.md`), `Examples` (`examples/index.md`), `Interactive API reference`
+     (`https://api.global-wheat.com/docs`). **Corrected after review:** a `Data layout` entry pointed
+     at the internal contract, which lists index tables and the object-key layout; it moved out of the
+     content root on 2026-10-15 and participants read the response shapes from the interactive
+     reference instead.
    Keep the generated `[project.theme]` and `[project.markdown_extensions]` blocks as they are:
    they are the upstream defaults and inventing a subset has no benefit.
    If the external URL in `nav` warns under `--strict`, drop that entry and link Swagger from
@@ -113,7 +118,7 @@ Deliverables:
 2. **new `docs/index.md`.** Short landing page: what the API gives a participant, the two calls
    (fetch an image, get a model result), where images resolve (`data.global-wheat.com`), and links to
    the interactive reference, the data layout, and the examples. Every claim must come from
-   `README.md` or `docs/content/data-layout.md`; invent no numbers and no process. How a participant receives
+   `README.md` or the interactive reference; invent no numbers and no process. How a participant receives
    a token is **not** documented anywhere yet, so link to `README.md` and record the gap in the plan's
    Result rather than authoring a process.
 3. **new `.github/workflows/docs.yml`.** Shape, with the major versions confirmed on the marketplace
@@ -182,11 +187,11 @@ git status --porcelain                             # empty: site/ is ignored
   from the repository root, and the invariant that keeps `site/assets/` in the output; the layout tree
   gained `zensical.toml` and `docs/content/`.
 - `AGENTS.md`: **done** — the tree and the stack line.
-- **Cross-linking. OPEN.** `docs/index.md` links to Swagger. In the other direction, one line in the
-  `description` of `create_app` (`gateway/src/biohack_gateway/app.py:200`) pointing at
-  `https://docs.global-wheat.com` is still to write; it is additive metadata in `openapi.json` and
-  touches no endpoint. The repository's homepage field (currently `https://api.global-wheat.com/docs`)
-  is also still to change — a repository setting, not a file, so it needs the About panel or
+- **Cross-linking.** `docs/index.md` links to Swagger. The other direction is **done on 2026-10-15**:
+  the `description` of `create_app` (`gateway/src/biohack_gateway/app.py`) now ends with
+  "Guides and examples: https://docs.global-wheat.com", which is additive metadata in `openapi.json`
+  and touches no endpoint. The repository's homepage field (currently `https://api.global-wheat.com/docs`)
+  **still open** — a repository setting, not a file, so it needs the About panel or
   `gh repo edit --homepage`; `gh` is not installed on this workstation today.
 - `deploy/README.md`: **written on 2026-10-15** — new §6 "The documentation site" carries the hand
   steps above, the CNAME value as it must be entered, the verification commands, and the disposal note
@@ -239,10 +244,12 @@ unstyled, and `--strict` reported nothing. A virtualenv under `docs_dir` — `uv
 creates `docs/.venv` — stops the theme assets being written; the pages moved to `docs/content/` and
 `docs_dir` follows. See the reference file for the probes that isolated it.
 
-Still open when this was written: `Enforce HTTPS` is unticked although the certificate now exists, the
-repository homepage still points at `api.*/docs`, the one-line cross-link in `create_app`'s
-`description` is unwritten, and a participant's token hand-out is still undocumented beyond "ask the
-organisers".
+Still open when this was written: `Enforce HTTPS` was unticked (ticked on 2026-10-15 afterwards), the
+repository homepage still pointed at `api.*/docs`, and a participant's token hand-out is still
+undocumented beyond "ask the organisers". After a content review the same day, the internal contract
+left the site and the landing page was rewritten around what a participant needs: the calls, the
+responses, the addressing rules, and the datasets — no index tables, no object-key layout, and no
+development-only dataset.
 
 ## Open items
 
