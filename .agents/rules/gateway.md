@@ -65,6 +65,11 @@ repeated here.
   the page and does nothing else; that is also why only the site may frame it (`frame-ancestors`,
   configured per app), since a field for a secret in a page anything may embed is a field anything
   may overlay.
+- **The reference reads as one document.** Its field wears Swagger UI's own controls and lives in the
+  strip the framework already keeps for page-wide settings — between the description and the calls —
+  rather than in styling of our own. Its groups come out in the order of the paths in the document,
+  which is why `/health` is declared before the dataset surface: the one call that needs no key is
+  the one a reader can try first, in a group named for what it is.
 - **Liveness is a route, not a probe loop.** `/health` answers without a key so a monitor and the
   deploy script can ask it; nothing polls anything else. It is the one place a request is answered
   before authentication, and it reports the installed package version, which is how a host running

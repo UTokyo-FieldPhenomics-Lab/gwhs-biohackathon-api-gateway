@@ -13,8 +13,8 @@ GPU**. Two calls carry the whole experience: fetch one image, and get one model 
 
 Every route except `/health` needs your team's token in the `X-API-Key` header. Tokens are issued per
 team, so ask the organisers for yours. In the [interactive reference](interactive.md) you can paste it
-into the field at the top and try every call from there — the page sends the header for you and
-remembers the key in your browser.
+into the field above the call list and try every call from there — the page sends the header for you
+and remembers the key in your browser.
 
 ```bash
 export API=https://api.global-wheat.com
