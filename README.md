@@ -64,7 +64,7 @@ is released — `gwhs`; `gwhs-temp` is a development-only sample.
 │   └── content/           the site's pages and assets: the only thing Zensical builds
 │       ├── api/           API reference markdown, generated and committed
 │       ├── notebooks/     tutorial sources (markdown is the source, .ipynb is derived)
-│       └── examples/      curl / python / js snippets, executed in CI
+│       └── post-processing/  palette masks and RLE geometry, in three languages
 ├── gateway/               FastAPI gateway: the request gate, and the model and dataset surfaces
 │   ├── src/biohack_gateway/  installed package: app, auth, tokens, dataset surface, and the CLI
 │   └── scripts/           contract projections, e.g. gen_api_docs.py (planned)
@@ -205,8 +205,12 @@ content — `~/.config/biohack-gateway/index/<dataset>.db`, override with `--ind
 
 The curated documentation is live at <https://docs.global-wheat.com>, built by Zensical from
 `docs/content/` and published to GitHub Pages by [`.github/workflows/docs.yml`](.github/workflows/docs.yml)
-on every push to `main`. `api.global-wheat.com/docs` stays the interactive reference — FastAPI's own
-Swagger UI — and the site links to it rather than duplicating it.
+on every push to `main`. Four pages, all written for a participant: `index.md` (the calls and the
+dataset list), `datasets/` (what each dataset contains, with images, and how a response maps onto
+them), `post-processing/` (palette masks and RLE geometry, in Python, JavaScript, and Kotlin, with the
+snippets as downloadable files), and `interactive.md` (FastAPI's own Swagger UI, embedded in a frame,
+with a direct link for a network that cannot reach `api.*`). The internal contract, `data-layout.md`,
+is deliberately not published.
 
 ```bash
 uv sync --locked --project docs                    # from the repository root

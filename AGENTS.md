@@ -56,7 +56,7 @@ number of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-la
 │   └── content/           the site's pages and assets: the only thing Zensical builds
 │       ├── api/           API reference markdown, generated and committed
 │       ├── notebooks/     tutorial sources (markdown is the source, .ipynb is derived)
-│       └── examples/      curl / python / js snippets, executed in CI
+│       └── post-processing/  palette masks and RLE geometry, in three languages
 ├── gateway/               FastAPI gateway: model surface (auth, quota, gate, routing)
 │   ├── src/biohack_gateway/  installed app package (app, models, routing, dataset surface)
 │   └── scripts/           contract projections, e.g. gen_api_docs.py

@@ -5,14 +5,14 @@ GPU**. Two calls carry the whole experience: fetch one image, and get one model 
 
 | | |
 |---|---|
-| Dataset plane | **live** — the directory, one dataset's contract, its images, and one row's annotation |
+| Dataset plane | **live** — what each dataset holds, its images, and one row's annotation |
 | Image plane | **live** — `https://data.global-wheat.com`, no key, long cache |
 | Model plane | **not reachable yet** — routing an inference request to a GPU backend is still being wired |
 
 ## Call it
 
-Every request except `/health` needs your team's token in the `X-API-Key` header. Tokens are issued
-per team, so ask the organisers for yours.
+Every route except `/health` needs your team's token in the `X-API-Key` header. Tokens are issued per
+team, so ask the organisers for yours.
 
 ```bash
 export API=https://api.global-wheat.com
@@ -29,72 +29,27 @@ curl -s -H "X-API-Key: $GWHS_API_KEY" "$API/datasets/gwhd/images/0"
 |---|---|
 | `/health` | liveness and version — the one route that needs no key |
 | `/datasets` | every dataset, one line each |
-| `/datasets/gwhd` | one dataset's contract: its fields, filters, classes, and palette |
-| `/datasets/gwhd/images?limit=2` | a page of images |
-| `/datasets/gwhd/images/0` | row 0's annotation |
+| `/datasets/<id>` | that dataset's contract: its fields, filters, classes, and palette |
+| `/datasets/<id>/images` | a page of rows — addresses and counts, never the annotations themselves |
+| `/datasets/<id>/images/<row>` | one row's annotation |
 
-## What comes back
-
-A list of images carries addresses and counts, not annotations — a page stays small whatever the
-dataset:
-
-```json
-{
-  "dataset": "gwhd", "count": 2, "next_cursor": "eyJvIjoxMDB9",
-  "images": [
-    { "row": 0, "split": "train", "width": 1024, "height": 1024,
-      "image_url": "https://data.global-wheat.com/gwhd/images/00000000.jpg", "mask_url": null,
-      "statistics": { "objects": 47 } }
-  ]
-}
-```
-
-One row's annotation is one call, and its shape is the dataset's shape — a detection dataset returns
-boxes:
-
-```json
-{
-  "dataset": "gwhd", "row": 0, "split": "train", "width": 1024, "height": 1024,
-  "image_url": "https://data.global-wheat.com/gwhd/images/00000000.jpg", "mask_url": null,
-  "objects": [ { "idx": 0, "category": "0", "bbox": [936, 4, 41, 78] } ]
-}
-```
-
-A semantic dataset returns no objects at all: its annotation **is** an image, and `mask_url` is it.
-
-```json
-{
-  "dataset": "gwfss", "row": 0, "split": "labelled", "width": 512, "height": 512,
-  "image_url": "https://data.global-wheat.com/gwfss/images/00000000.png",
-  "mask_url": "https://data.global-wheat.com/gwfss/masks/00000000.png"
-}
-```
-
-`gwhs` adds object-level RLE geometry, tags, and attributes to that same detail call;
-[the examples](examples/index.md) decode one.
-
-## Reading an address
-
-- An address is `(dataset, row)` — `/datasets/<dataset>/images/<row>` — where the row is that
-  dataset's absolute row number. Row numbers repeat across datasets, so a row number alone means
-  nothing.
-- `image_url` and `mask_url` point at `https://data.global-wheat.com` and need no key: display them
-  directly. The API never returns image bytes.
-- Lists are paged with `limit` (default 100, at most 1,000) and `next_cursor`. Send the cursor back
-  unchanged; it is valid only beside the filters that produced it.
-- Which fields and filters a dataset offers, and the class names and palette of its annotation, come
-  from `GET /datasets/<dataset>`. Read them there instead of hard-coding a class list: fetch it once
-  per session and keep it.
+Every address is `(dataset, row)`, and rows repeat across datasets, so a row number on its own means
+nothing. A response's `image_url` and `mask_url` point at `https://data.global-wheat.com` and need no
+key, so display them directly: the API never carries image bytes.
 
 ## The datasets
 
-| id | one row is | published |
-|---|---|---|
-| `gwhd` | an image and its wheat-head bounding boxes, CC-BY-4.0 | live |
-| `gwfss` | an image and a semantic mask, painted in the upstream's four-colour palette, CC-BY-4.0 | live |
-| `gwhs` | an image and object-level RLE masks with tags and attributes, CC-BY-4.0 | when the full annotation is released |
+| id | one row is |
+|---|---|
+| `gwhd` | an image and its wheat-head bounding boxes — CC-BY-4.0 |
+| `gwfss` | an image and a semantic mask, one colour per class — CC-BY-4.0 |
+| `gwhs` | an image and object-level RLE masks with tags and attributes — CC-BY-4.0, released once the full annotation is |
+
+The API answers the **first ten rows** of each published dataset today, which is enough to build
+against. The full sets are published before the event, and the same calls then return every row.
 
 ## Next
 
-- [Examples](examples/index.md) — decoding an RLE, reading a palette mask
-- [Interactive API reference](https://api.global-wheat.com/docs) — every route, with a try-it button
+- [Datasets](datasets/index.md) — what each one holds, and how a response maps onto the image
+- [Post-processing](post-processing/index.md) — palette masks and RLE geometry, in three languages
+- [Interactive API reference](interactive.md) — every route, with a try-it button, without leaving this site

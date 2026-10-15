@@ -66,9 +66,10 @@ Measurements taken on 2026-10-15, so execution does not re-derive them:
 - Notebook derivation (jupytext) and executing examples during the build. Executing anything needs
   extra dependencies in `docs/` (`numpy`, `Pillow`) plus a token for the live snippets; it is a
   separate step with its own plan.
-- Pages beyond the landing page and the examples: `docs/content/api/` and `docs/content/notebooks/`
-  stay empty, and the internal contract is not published at all — it sits at `docs/data-layout.md`,
-  outside the content root.
+- Pages beyond the four the site now has: `docs/content/api/` and `docs/content/notebooks/` stay
+  empty, and the internal contract is not published at all — it sits at `docs/data-layout.md`,
+  outside the content root. `api/` waits on the generator, which the user has called internal
+  operations material rather than a page.
 
 ## Hand steps (blocking; this order)
 
@@ -107,10 +108,13 @@ Deliverables:
    - `repo_url`, `repo_name = "UTokyo-FieldPhenomics-Lab/gwhs-biohackathon-api-gateway"`,
      `edit_uri = "edit/main/docs/"`,
    - `nav` = `Start here` (`index.md`), `Examples` (`examples/index.md`), `Interactive API reference`
-     (`https://api.global-wheat.com/docs`). **Corrected after review:** a `Data layout` entry pointed
-     at the internal contract, which lists index tables and the object-key layout; it moved out of the
-     content root on 2026-10-15 and participants read the response shapes from the interactive
-     reference instead.
+     (`https://api.global-wheat.com/docs`). **Rewritten twice after review, same day:** the `Data
+     layout` entry pointed at the internal contract (index tables, object-key layout) and left the
+     content root; then the page set itself was reorganised for a participant — `Start here` keeps
+     only the calls and the dataset list, a new `Datasets` page carries each dataset's annotation with
+     images and the response-to-image mapping, `Examples` became `Post-processing` (palette masks and
+     RLE geometry in three languages, as downloadable files), and the interactive reference became a
+     page of this site, framed, with the direct link beside it.
    Keep the generated `[project.theme]` and `[project.markdown_extensions]` blocks as they are:
    they are the upstream defaults and inventing a subset has no benefit.
    If the external URL in `nav` warns under `--strict`, drop that entry and link Swagger from
@@ -262,3 +266,25 @@ reaches the live Swagger only after the checkout there is pulled and the unit re
   2026-10-15**: it belongs in the docs later, in the form "ask the organisers by email", and until
   then the landing page links to `README.md` and states no process of its own. Nothing blocks the
   launch on this.
+
+## Second review round (2026-10-15, later the same day)
+
+Four changes, all from a read of the published site:
+
+| Change | Why |
+|---|---|
+| `Start here` reduced to the basics — the calls, the dataset list, the links | It was carrying response bodies, addressing rules, and a models-not-live table a participant meets before knowing what the API is |
+| New `Datasets` page | Each dataset's annotation, with the image (and mask) loaded from `data.*`, the real row-0 values, and a table of how each field of a response maps onto what is displayed |
+| `Examples` → `Post-processing` with per-language tabs and downloads | The job is turning what the API returns into what a model consumes; the snippets are files with a `download` attribute, in Python, JavaScript, and Kotlin |
+| Interactive reference is a page of this site with the Swagger UI framed | A participant should not have to leave the documentation; the direct link stays beside the frame for a network that cannot reach `api.*` |
+
+Two supporting facts, both measured:
+
+- **The demo is ten rows per dataset, and the site says so.** The API answers rows 0-9 of `gwhd` and
+  `gwfss` today; the full sets are published before the event and the same calls then return every
+  row. `gwhs` is not published at all, which the page states rather than implying.
+- **The Python snippets are vectorized because the per-class and per-run versions were timed.** One
+  512x512 mask: 17.3 ms per class against 2.8 ms in one pass over packed colours. One 2509x592
+  object: 23.1 ms building a list of booleans against 4.5 ms with a single cumulative sum. The
+  JavaScript ports keep their per-class shape on purpose — the equivalent packed-colour lookup
+  measured *slower* there, 2.8 ms against 1.7 ms.

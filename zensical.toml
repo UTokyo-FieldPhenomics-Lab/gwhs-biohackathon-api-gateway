@@ -30,8 +30,9 @@ edit_uri = "edit/main/docs/content/"
 # docs/content and is never published.
 nav = [
   { "Start here" = "index.md" },
-  { "Examples" = "examples/index.md" },
-  { "Interactive API reference" = "https://api.global-wheat.com/docs" },
+  { "Datasets" = "datasets/index.md" },
+  { "Post-processing" = "post-processing/index.md" },
+  { "Interactive API reference" = "interactive.md" },
 ]
 
 [project.theme]

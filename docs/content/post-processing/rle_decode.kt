@@ -23,7 +23,7 @@ fun rleDecode(counts: String, height: Int, width: Int): BooleanArray {
     var position = 0
     for (run in runs.indices) {
         if (run % 2 == 1) {
-            for (j in position until position + runs[run]) mask[j] = true
+            mask.fill(true, position, position + runs[run])   // an array fill, not a per-pixel loop
         }
         position += runs[run]
     }
