@@ -200,7 +200,10 @@ def create_app(
     app = FastAPI(
         title="Global Wheat API",
         version=APP_VERSION,
-        description="Global Wheat dataset and model API for the BioHackathon.",
+        description=(
+            "Global Wheat dataset and model API for the BioHackathon. "
+            "Guides and examples: https://docs.global-wheat.com"
+        ),
     )
     authenticator = Authenticator(tokens_path)
     app.include_router(create_dataset_router(load_datasets(index_dir), data_base_url))
