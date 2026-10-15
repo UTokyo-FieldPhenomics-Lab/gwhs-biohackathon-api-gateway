@@ -7,9 +7,10 @@
 # One worker, deliberately: the authentication and concurrency gates keep their counters in process
 # memory, so a second worker would enforce them per worker instead of globally.
 #
-# Settings and secrets come from the host state directory, not from this file: `env` holds one
-# VARIABLE=value per line and the participant key pool lives beside it (.agents/rules/deploy.md).
-# `EnvironmentFile=` gets no `-` prefix, so a missing settings file is a startup failure rather than
+# Host state lives in the state directory, not in this file: `env` exists for `EnvironmentFile=` and
+# holds one VARIABLE=value per line when a setting reads one; the participant key pool lives beside
+# it (.agents/rules/deploy.md). `EnvironmentFile=` gets no `-` prefix, so a missing state file is a
+# startup failure rather than
 # a service that runs with defaults. deploy/setup-gateway.sh created `env` before installing this
 # unit, and rewrites both the User= and the EnvironmentFile= line below to the host it runs on, so a
 # rebuilt host with a different login needs no edit.

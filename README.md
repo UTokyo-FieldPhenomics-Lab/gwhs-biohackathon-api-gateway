@@ -143,10 +143,9 @@ curl -s -H "X-API-Key: <token>" 'localhost:8000/datasets/gwhs-temp/images?limit=
 curl -s -H "X-API-Key: <token>" localhost:8000/datasets/gwhs-temp/images/0   # one row's geometry
 ```
 
-Two settings move it — `BIOHACK_INDEX_DIR` and `BIOHACK_DATA_BASE_URL` — and both default to the live
-environment, so an empty host `env` is a working gateway. The names are in
-[`gateway/.env.example`](gateway/.env.example), and what the responses mean is
-[`docs/data-layout.md`](docs/data-layout.md).
+The gateway reads its index from the path above and addresses images at
+`https://data.global-wheat.com`; both are `create_app` defaults, and it reads no host environment.
+What the responses mean is [`docs/data-layout.md`](docs/data-layout.md).
 
 ### Datasets
 
