@@ -99,3 +99,35 @@ the fix is structural. The invariant is recorded in [`../rules/docs.md`](../rule
   `https://docs.global-wheat.com` — is not written yet.
 - How a participant receives a token is still undocumented; the landing page says to ask the
   organisers, which is the decision, and nothing more specific has been agreed.
+
+## Verifying the Kotlin ports, and what that costs
+
+Nothing has to be installed: Android Studio ships a complete Kotlin compiler at
+`/opt/android-studio/plugins/Kotlin/kotlinc/bin/kotlinc`, and its bundled runtime is the JVM to run it
+with. On this workstation that matters, because the system JDK is 26 and the compiler is happier on
+the older one it bundles:
+
+```bash
+cp docs/content/post-processing/label_masks.kt docs/content/post-processing/rle_decode.kt /tmp/opencode/kotlin/
+JAVA_HOME=/opt/android-studio/jbr /opt/android-studio/plugins/Kotlin/kotlinc/bin/kotlinc \
+  label_masks.kt rle_decode.kt main.kt -include-runtime -d verify.jar    # kotlinc-jvm 2.3.20, JRE 25
+JAVA_HOME=/opt/android-studio/jbr /opt/android-studio/jbr/bin/java -jar verify.jar
+```
+
+The harness feeds them the same fixtures the Python and JavaScript ports read — the real 512×512 GWFSS
+mask (row 0) as an ARGB `IntArray`, and one real object's counts string beside its area — and all
+three languages now agree exactly:
+
+| Port | palette split: background / head / stem / leaf | RLE: True pixels |
+|---|---|---|
+| Python | 146,817 / 0 / 1,920 / 113,407 | 12,074 = area |
+| JavaScript | 146,817 / 0 / 1,920 / 113,407 | 12,074 = area |
+| Kotlin | 146,817 / 0 / 1,920 / 113,407 | 12,074 = area |
+
+The harness stays outside the repository: only the snippets ship, and the Android glue the page shows
+around them (`BitmapFactory`, `JSONObject`) remains illustrative while the two functions themselves are
+compiled and run.
+
+**Lesson:** check the tools already on the machine before installing one. Android Studio is a full
+IntelliJ, so it carries a Kotlin compiler, a JVM, and a Gradle distribution; the same is true of the
+other JetBrains IDEs.
