@@ -231,6 +231,18 @@ def test_the_document_root_declares_the_requirement_too(client: TestClient) -> N
     assert client.get("/openapi.json").json()["security"] == [{API_KEY_SCHEME: []}]
 
 
+def test_the_reference_opens_on_the_call_that_needs_no_key(client: TestClient) -> None:
+    """The first group a reader meets is liveness, and it is first because of where it is declared.
+
+    Swagger UI orders its groups by the order of `paths` in this document — its tag sorter keeps
+    what it is given — so this test pins the reader's first impression, not a formatting preference.
+    """
+    paths = client.get("/openapi.json").json()["paths"]
+
+    assert next(iter(paths)) == "/health"
+    assert paths["/health"]["get"]["tags"] == ["liveness"]
+
+
 def test_the_reference_page_carries_a_key_field(client: TestClient) -> None:
     """The reference page carries its own field for the key.
 

@@ -151,58 +151,26 @@ message.
 
 SWAGGER_KEY_BAR = """
 <style>
-  #key-bar {
+  /* Layout only: the type, the input, and the buttons are Swagger UI's own, so this row cannot
+     drift from the page it sits in. The one thing Swagger has no equivalent for is the state
+     line. */
+  #key-bar form {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem 0.75rem;
     align-items: center;
-    padding: 0.75rem 1rem;
-    border-bottom: 1px solid #e5e7eb;
-    background: #fafafa;
-    color: #3b4151;
-    font-family: sans-serif;
-    font-size: 0.875rem;
   }
-  #key-bar label { font-weight: 600; }
-  #key-bar input {
-    flex: 1 1 18rem;
-    min-width: 12rem;
-    padding: 0.35rem 0.5rem;
-    border: 1px solid #c3c9d0;
-    border-radius: 4px;
-    background: #fff;
-    color: inherit;
-    font: inherit;
-  }
-  #key-bar button {
-    padding: 0.35rem 0.75rem;
-    border: 1px solid #c3c9d0;
-    border-radius: 4px;
-    background: #fff;
-    color: inherit;
-    font: inherit;
-    cursor: pointer;
-  }
-  #key-bar .key-state { flex: 1 1 100%; color: #6b7280; }
+  #key-bar label { margin: 0; font-size: 14px; font-weight: 700; }
+  #key-bar input { flex: 1 1 14rem; min-width: 0; margin: 0; }
+  #key-bar .key-state { display: block; margin-top: 0.5rem; color: #6b7280; }
   #key-bar .key-state[data-set="yes"] { color: #1f7a4d; }
-  html[data-scheme="dark"] #key-bar {
-    border-bottom-color: #3b4250;
-    background: #262b34;
-    color: #c3cbd8;
-  }
-  html[data-scheme="dark"] #key-bar input,
-  html[data-scheme="dark"] #key-bar button {
-    border-color: #3b4250;
-    background: #1e2129;
-    color: #e6ebf3;
-  }
-  html[data-scheme="dark"] #key-bar .key-state { color: #9aa5b4; }
+  html[data-scheme="dark"] #key-bar .key-state { color: #9aa4b2; }
   html[data-scheme="dark"] #key-bar .key-state[data-set="yes"] { color: #4ec07f; }
   /* One way in, and only once the field below has proved it works: a reader who found the standard
      button instead would meet a dialog that opens at the centre of a frame as tall as the page. */
   html.key-bar-ready .swagger-ui .auth-wrapper { display: none; }
 </style>
-<div id="key-bar">
+<div id="key-bar" hidden>
   <form id="key-form" autocomplete="off">
     <label for="key-input">Your key</label>
     <input
@@ -211,21 +179,22 @@ SWAGGER_KEY_BAR = """
       type="password"
       autocomplete="off"
       spellcheck="false"
-      placeholder="__HEADER__ — paste your team's token"
+      placeholder="__HEADER__"
       aria-describedby="key-state"
     />
-    <button type="submit">Use key</button>
-    <button id="key-forget" type="button">Forget</button>
+    <button type="submit" class="btn authorize">Use key</button>
+    <button id="key-forget" type="button" class="btn">Forget</button>
   </form>
   <span id="key-state" class="key-state" role="status"></span>
 </div>
 <div id="swagger-ui">
 """.replace("__HEADER__", API_KEY_HEADER)
-"""The field a participant puts their key into, and the styles it needs.
+"""The field a participant puts their key into, and the little styling it adds.
 
-It sits above Swagger UI's container rather than inside it, so the framework's own rendering cannot
-replace it. It is inserted where that container is, which is *before* Swagger's script, so the code
-that drives it is injected at the end of the body instead, where Swagger UI exists.
+It is injected hidden — it belongs inside Swagger UI's own servers band, between the description
+and the call list, and a field that appeared at the top of the page first would be a flash of the
+wrong thing. The script moves it there once the page has rendered, and takes it away entirely if it
+cannot: what this row shows, Swagger UI already styles.
 """
 
 SWAGGER_KEY_BAR_SCRIPT = """
@@ -234,7 +203,7 @@ SWAGGER_KEY_BAR_SCRIPT = """
     // The reference is read inside the documentation site's frame, and a framed page cannot show
     // Swagger UI's own Authorize dialog where the reader is looking: the frame is as tall as the
     // page, so a centred dialog opens somewhere below the fold. This field is where a key goes
-    // instead — it calls what the dialog calls, in a place that is always on screen.
+    // instead — it calls what the dialog calls, in the place a reader looks for page-wide settings.
     const SCHEME = "__SCHEME__";
     const bar = document.getElementById("key-bar");
     const form = document.getElementById("key-form");
@@ -245,6 +214,20 @@ SWAGGER_KEY_BAR_SCRIPT = """
       if (bar) bar.remove();
       return;
     }
+
+    // Swagger's servers band is the strip between the description and the call list, where a reader
+    // expects page-wide settings to live — and the band whose background makes this row part of the
+    // page rather than something laid over it. React renders that band and has never heard of this
+    // node, so a re-render can drop it; that is what the observer at the end is for.
+    const anchor = () =>
+      document.querySelector("#swagger-ui .scheme-container") ||
+      document.querySelector("#swagger-ui .information-container");
+    const place = () => {
+      const target = anchor();
+      if (!target) return;
+      if (bar.parentElement !== target) target.prepend(bar);
+      bar.hidden = false;
+    };
 
     // Read Swagger's state rather than keeping a copy: the key is stored by Swagger (the page asks
     // it to persist one), and one copy of a secret is enough. A failure here says nothing rather
@@ -287,10 +270,17 @@ SWAGGER_KEY_BAR_SCRIPT = """
     // mounts, so the state is read again for a few seconds rather than once. It reads one boolean.
     let reads = 0;
     const settle = () => {
+      place();
       describe();
       if (++reads < 20) setTimeout(settle, 250);
     };
     settle();
+    // Placed, and kept placed: anything Swagger re-renders inside its container can take this node
+    // with it, and putting it back is two selectors and a comparison.
+    new MutationObserver(place).observe(document.querySelector("#swagger-ui"), {
+      childList: true,
+      subtree: true,
+    });
     document.documentElement.classList.add("key-bar-ready");
   })();
 </script>
@@ -498,6 +488,29 @@ def create_app(
         ),
         docs_url=None,  # registered below instead, so the page can carry the frame reporter
     )
+
+    # Declared before the dataset surface on purpose. The reference groups its calls in the order
+    # the document lists its paths — Swagger UI's tag sorter keeps what it is given — so where this
+    # route is registered decides what a reader meets first: the one call that needs no key, in a
+    # group whose name says what it is rather than FastAPI's placeholder.
+    @app.get(
+        "/health",
+        response_model=HealthResponse,
+        summary="Liveness",
+        description="Answers without a key, so a monitor or the deploy script can ask it.",
+        tags=["liveness"],
+        openapi_extra={"security": []},  # the one operation the contract says needs no key
+    )
+    async def health() -> HealthResponse:
+        """Report that the process is serving.
+
+        Returns
+        -------
+        HealthResponse
+            The status and the version of the package that is answering.
+        """
+        return HealthResponse(status="ok", version=APP_VERSION)
+
     authenticator = Authenticator(tokens_path)
     app.include_router(create_dataset_router(load_datasets(index_dir), data_base_url))
 
@@ -591,23 +604,6 @@ def create_app(
         request.state.team_id = team_id
         logger.info("%s %s team=%s", request.method, request.url.path, team_id)
         return await call_next(request)
-
-    @app.get(
-        "/health",
-        response_model=HealthResponse,
-        summary="Liveness",
-        description="Answers without a key, so a monitor or the deploy script can ask it.",
-        openapi_extra={"security": []},  # the one operation the contract says needs no key
-    )
-    async def health() -> HealthResponse:
-        """Report that the process is serving.
-
-        Returns
-        -------
-        HealthResponse
-            The status and the version of the package that is answering.
-        """
-        return HealthResponse(status="ok", version=APP_VERSION)
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request: Request, exc: RequestValidationError) -> JSONResponse:
