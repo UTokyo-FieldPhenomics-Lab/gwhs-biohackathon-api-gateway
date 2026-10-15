@@ -64,7 +64,7 @@ is released — `gwhs`; `gwhs-temp` is a development-only sample.
 │   ├── notebooks/         tutorial sources (markdown is the source, .ipynb is derived)
 │   └── examples/          curl / python / js snippets, executed in CI
 ├── gateway/               FastAPI gateway: the request gate, and the model and dataset surfaces
-│   ├── src/biohack_gateway/  installed package: app, auth, tokens, and the biohack-gateway CLI
+│   ├── src/biohack_gateway/  installed package: app, auth, tokens, dataset surface, and the CLI
 │   └── scripts/           contract projections, e.g. gen_api_docs.py (planned)
 ├── datasets/              upstream parquet cache + publisher CLI: parquet → image objects in S3 + metadata index
 ├── deploy/                host bring-up, the dataset bucket and its CDN, bootstrap scripts
@@ -131,6 +131,22 @@ changing its id — what a leaked credential needs — and `--file` points any o
 instead of the default pool: a laptop, or the copy kept off the host. The exact flags are in
 `biohack-gateway tokens --help`; issuing tokens on the host during the event, and keeping that copy
 fresh: [`deploy/README.md`](deploy/README.md).
+
+The dataset surface is part of that same process and needs a key like everything else. It loads
+`~/.config/biohack-gateway/index/<dataset>.db` at startup and answers from memory, so a republish
+takes effect by restarting the service rather than by an invalidation:
+
+```bash
+curl -s -H "X-API-Key: <token>" localhost:8000/datasets                      # the directory
+curl -s -H "X-API-Key: <token>" localhost:8000/datasets/gwhs-temp            # facets and palette
+curl -s -H "X-API-Key: <token>" 'localhost:8000/datasets/gwhs-temp/images?limit=2'
+curl -s -H "X-API-Key: <token>" localhost:8000/datasets/gwhs-temp/images/0   # one row's geometry
+```
+
+Two settings move it — `BIOHACK_INDEX_DIR` and `BIOHACK_DATA_BASE_URL` — and both default to the live
+environment, so an empty host `env` is a working gateway. The names are in
+[`gateway/.env.example`](gateway/.env.example), and what the responses mean is
+[`docs/data-layout.md`](docs/data-layout.md).
 
 ### Datasets
 

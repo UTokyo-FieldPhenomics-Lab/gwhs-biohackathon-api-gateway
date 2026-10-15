@@ -206,8 +206,11 @@ ssh admin@<host>
 sudo systemctl restart biohack-gateway
 ```
 
-Nothing reads `env` yet: the variables arrive with the surfaces that need one, and the names — never
-the values — are recorded in a committed `gateway/.env.example` when they do.
+Two settings are read from it today: `BIOHACK_INDEX_DIR`, the directory of `<dataset>.db` files the
+dataset surface answers from, and `BIOHACK_DATA_BASE_URL`, the distribution its image addresses point
+at. Both default to this environment's values, so `env` may stay empty and is worth editing only when
+a second environment appears. The names — never the values — are recorded in
+[`../gateway/.env.example`](../gateway/.env.example).
 
 The directory holds four things, and which of them the gateway can read is the point:
 
@@ -447,7 +450,7 @@ Parameter Store fits the rules already — and in whatever infrastructure notes 
 | OAC id, distribution id | the next person to edit this distribution |
 | Certificate ARN | renewals |
 | Distribution domain name | the `CNAME` in 2.5 |
-| `https://data.global-wheat.com` | the gateway — **and only this**: the gateway never carries bytes and never touches the bucket, so the base URL is the whole interface it needs |
+| `https://data.global-wheat.com` | the gateway's `BIOHACK_DATA_BASE_URL` — **and only this**: the gateway never carries bytes and never touches the bucket, so the base URL is the whole interface it needs |
 | Index directory (`~/.config/biohack-gateway/index`) | written by a publish, read by the gateway at startup |
 | Access-key CSV (`publish/awsAccessKeys.csv`) | the publisher, named by `BIOHACK_ACCESS_KEYS_CSV` in `publish/env` (§5) |
 

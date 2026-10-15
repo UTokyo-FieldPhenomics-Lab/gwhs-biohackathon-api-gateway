@@ -66,9 +66,11 @@ its rows from zero.
 
 ## Metadata index
 
-One SQLite file per dataset, `~/.config/biohack-gateway/index/<dataset>.db`, produced by the
-publisher and loaded by the gateway at startup. It is a build artifact on the gateway host, not a
-published object. There are **eight tables**, one row per image in `rows`:
+One SQLite file per dataset, `~/.config/biohack-gateway/index/<dataset>.db` — the directory
+`BIOHACK_INDEX_DIR` names, when the host sets it — produced by the publisher and loaded by the
+gateway at startup. Every read-only route answers from that copy, so a republish takes effect through
+a restart and nothing else. It is a build artifact on the gateway host, not a published object. There
+are **eight tables**, one row per image in `rows`:
 
 ```sql
 CREATE TABLE dataset (            -- exactly one row: the provenance a manifest used to hold
