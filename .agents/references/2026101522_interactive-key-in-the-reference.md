@@ -77,3 +77,29 @@ The framed page has not been seen against the live host: the campus network drop
 `api.global-wheat.com/docs` is unreachable from here. The mechanism is verified locally and the
 document is verifiable by `curl --resolve`, but the last click-through belongs to a browser that can
 reach `api.*`.
+
+## Second pass: where the field lives, and what a reader meets first
+
+The field worked and looked like an artifact laid over the page: a grey panel of our own colours and
+controls at the very top, above even the title. Two changes were asked for, and the second one turned
+out to have a mechanism worth writing down.
+
+- **Groups follow the document.** Swagger UI's `tagsSorter` defaults to `null`, its comparator then
+  returns `null` for every pair, and the sort keeps the order it was given — which is the order of
+  `paths` in the document, which is the order the routes are declared. So `/health` moved above the
+  dataset router in `create_app` and the reference opens on the one call that needs no key. Its tag
+  is now `liveness` rather than FastAPI's `default`. `test_the_reference_opens_on_the_call_that_needs_no_key`
+  pins both, because both are the reader's first impression rather than formatting.
+- **The field moved into Swagger's own band.** It is injected hidden and placed by script into
+  `.scheme-container` — the strip the framework already keeps for page-wide settings, empty on this
+  document because it declares no servers. React renders that band without knowing about this node,
+  so a re-render can drop it; a `MutationObserver` on `#swagger-ui` puts it back. Verified by
+  expanding an operation, running Try it out, and finding the field still in the band with the
+  request carrying the key.
+- **The styling stopped being ours.** The input is a plain `input[type=password]` under Swagger's own
+  rules, the buttons carry Swagger's `btn authorize` and `btn` classes, and only layout is left in
+  our block. Measured against a real Swagger parameter input: same border, radius, padding, font, and
+  size; the primary button keeps the framework's green. The dark palette needed two additions for
+  this — `input[type="password"]` and a `label` colour, the latter also fixing Swagger's own labels,
+  which were still `#3b4151` on a `#1e2129` page.
+- The landing page's sentence moved with the field: it says "the field above the call list" now.
