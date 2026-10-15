@@ -1,6 +1,6 @@
 # Dataset publisher: `gwhs-temp` end to end
 
-Date: 2026-10-15. Plan: [`../plans/2026101518_dataset-publisher.md`](../plans/2026101518_dataset-publisher.md).
+Date: 2026-10-15. Plan: [`../plans/2026101518_✅dataset-publisher.md`](../plans/2026101518_dataset-publisher.md).
 Discussion that produced the plan: opencode session `ses_ec698ce96ffetb2pVuQDTQsB0z`.
 
 ## What was implemented
