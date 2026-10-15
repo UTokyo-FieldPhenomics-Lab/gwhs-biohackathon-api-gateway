@@ -51,11 +51,20 @@ repeated here.
   existing rather than by remembering a decorator, and a path that does not exist is refused too. The
   exceptions are named in the code — `/health`, and the reference page the documentation site frames,
   which carry no data and could not be opened in a browser if the page itself needed a header. That
-  page is registered by this application rather than by FastAPI's default so it can carry two things
-  the framed reader needs: a reporter that posts its own height, and a dark palette that follows the
-  site's. Opened directly it behaves as Swagger UI always did. An absent pool is a
+  page is registered by this application rather than by FastAPI's default so it can carry what the
+  framed reader needs: a field for their key, a reporter that posts the page's own height, and a dark
+  palette that follows the site's. Opened directly it behaves as Swagger UI always did. An absent pool
+  is a
   closed gateway rather than an open one, and a pool that has never parsed answers `503 unavailable`
   until it does. Images reach clients through the public `data.*` plane, so nothing has to be anonymous.
+- **The reference is usable with a key, and the key stays on the API's origin.** The contract declares
+  the scheme the gate enforces and requires it on every operation but `/health` — without that,
+  Swagger UI carries no credential and every Try it out answers `401` — and the reference page hands
+  the reader's key to Swagger UI's own storage, so the browser remembers it between visits. What the
+  field collects is typed into the API's page and never reaches the documentation site, which frames
+  the page and does nothing else; that is also why only the site may frame it (`frame-ancestors`,
+  configured per app), since a field for a secret in a page anything may embed is a field anything
+  may overlay.
 - **Liveness is a route, not a probe loop.** `/health` answers without a key so a monitor and the
   deploy script can ask it; nothing polls anything else. It is the one place a request is answered
   before authentication, and it reports the installed package version, which is how a host running
