@@ -42,7 +42,8 @@ html[data-scheme="dark"] .swagger-ui .opblock-summary-path,
 html[data-scheme="dark"] .swagger-ui .model-title,
 html[data-scheme="dark"] .swagger-ui section.models h4,
 html[data-scheme="dark"] .swagger-ui .opblock-section-header h4,
-html[data-scheme="dark"] .swagger-ui table thead tr th {
+html[data-scheme="dark"] .swagger-ui table thead tr th,
+html[data-scheme="dark"] .swagger-ui label {
   color: #e6ebf3;
 }
 
@@ -130,6 +131,13 @@ html[data-scheme="dark"] .swagger-ui .btn.try-out__btn {
   color: #d8dee9;
   border-color: #4a5464;
 }
+/* The key field's primary action is the one button that must still be findable, and grey is what
+   everything else on the page is. */
+html[data-scheme="dark"] .swagger-ui .btn.authorize {
+  background: transparent;
+  border-color: #49cc90;
+  color: #49cc90;
+}
 html[data-scheme="dark"] .swagger-ui .btn.execute {
   background-color: #2f6fb5;
   border-color: #2f6fb5;
@@ -142,6 +150,7 @@ html[data-scheme="dark"] .swagger-ui .btn.cancel {
 html[data-scheme="dark"] .swagger-ui select,
 html[data-scheme="dark"] .swagger-ui input[type="text"],
 html[data-scheme="dark"] .swagger-ui input[type="email"],
+html[data-scheme="dark"] .swagger-ui input[type="password"],
 html[data-scheme="dark"] .swagger-ui textarea {
   background: #1b1f27;
   color: #e6ebf3;
