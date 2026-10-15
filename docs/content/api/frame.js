@@ -15,9 +15,19 @@ const frame = () => document.querySelector("#reference-frame iframe");
 const siteScheme = () =>
   document.body.dataset.mdColorScheme === "slate" ? "dark" : "light";
 
-/** Tell the frame which palette the reader chose. */
+/** Tell the frame which palette the reader chose.
+ *
+ * Only once the frame has actually left this origin: posting to a window that never loaded the API
+ * host — a blocked network, a host that is down — addresses the parent's own origin and is dropped
+ * with a console warning. A cross-origin window's `location` throws when read, which is exactly the
+ * test: readable means not ours to talk to yet.
+ */
 const tellScheme = (target) => {
-  if (target && target.contentWindow) {
+  if (!target || !target.contentWindow) return;
+  try {
+    void target.contentWindow.location.href;
+    return;
+  } catch {
     target.contentWindow.postMessage({ scheme: siteScheme() }, FRAME_ORIGIN);
   }
 };
