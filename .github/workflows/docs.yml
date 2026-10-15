@@ -1,0 +1,56 @@
+# The documentation site: build it with Zensical, publish the artifact to GitHub Pages.
+#
+# The publishing source is this workflow rather than a branch, so Jekyll never sees the sources and no
+# CNAME file is committed — the custom domain lives in the repository's Pages settings. The hand steps
+# behind that domain, and what to do when the site is retired, are in deploy/README.md §6.
+
+name: docs
+
+on:
+  push:
+    branches: [main]
+    paths: ["docs/**", "zensical.toml", ".github/workflows/docs.yml"]
+  # A pull request builds to prove the site still builds; only main publishes.
+  pull_request:
+    paths: ["docs/**", "zensical.toml", ".github/workflows/docs.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time, and never cancel one in flight: a half-published site is worse than a
+# slightly stale one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          # No moving major tag exists for this action, so the version is pinned exactly.
+          enable-cache: true
+      # --locked: the site is built from docs/uv.lock, so no page can change because a dependency moved.
+      - run: uv sync --locked --project docs
+      # --strict: a warning fails the build, which is what catches a link to a page that does not exist.
+      - run: uv run --project docs zensical build --strict
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

@@ -1,0 +1,105 @@
+# The documentation site. Zensical builds it, .github/workflows/docs.yml publishes it to GitHub
+# Pages, and the hand steps behind the domain — the repository's Pages settings and the DNS record —
+# are in deploy/README.md §6.
+#
+# This file sits at the repository root rather than in docs/ because Zensical resolves `docs_dir` and
+# `site_dir` relative to the config file, and .gitignore already ignores the `site/` that the second
+# one produces. Content stays in docs/, and every file there is site material: the runbook that would
+# otherwise be a second README lives in deploy/README.md instead.
+
+[project]
+site_url = "https://docs.global-wheat.com/"
+site_name = "Global Wheat BioHackathon API"
+site_description = "Dataset and model API for the global wheat BioHackathon, Göttingen, 7-11 December 2026."
+
+# Both relative to this file, which is why the site is never built from a config inside docs/.
+docs_dir = "docs"
+site_dir = "site"
+
+repo_url = "https://github.com/UTokyo-FieldPhenomics-Lab/gwhs-biohackathon-api-gateway"
+repo_name = "UTokyo-FieldPhenomics-Lab/gwhs-biohackathon-api-gateway"
+edit_uri = "edit/main/docs/"
+
+# The interactive reference is an external link rather than a generated section: it is FastAPI's own
+# Swagger UI on the API host, which needs no renderer here and cannot be a static page.
+nav = [
+  { "Start here" = "index.md" },
+  { "Data layout" = "data-layout.md" },
+  { "Examples" = "examples/index.md" },
+  { "Interactive API reference" = "https://api.global-wheat.com/docs" },
+]
+
+[project.theme]
+language = "en"
+features = [
+  "announce.dismiss",
+  "content.code.annotate",
+  "content.code.copy",
+  "content.code.select",
+  "content.footnote.tooltips",
+  "content.tabs.link",
+  "content.tooltips",
+  "navigation.footer",
+  "navigation.indexes",
+  "navigation.instant",
+  "navigation.instant.prefetch",
+  "navigation.path",
+  "navigation.sections",
+  "navigation.top",
+  "navigation.tracking",
+  "search.highlight",
+]
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme)"
+toggle.icon = "lucide/sun-moon"
+toggle.name = "Switch to light mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to system preference"
+
+[project.plugins]
+# Zensical copies every non-markdown file it finds under docs_dir, and this subproject keeps its
+# pyproject.toml and uv.lock beside its content, so both would otherwise be published as assets. The
+# examples' .py/.js/.kt files are deliberately NOT excluded: the examples page links to them so a
+# reader can download the snippet it shows.
+exclude = { glob = ["pyproject.toml", "uv.lock", "**/__pycache__/**"] }
+
+[project.markdown_extensions]
+abbr = {}
+admonition = {}
+attr_list = {}
+def_list = {}
+footnotes = {}
+md_in_html = {}
+toc.permalink = true
+pymdownx.arithmatex.generic = true
+pymdownx.betterem = {}
+pymdownx.caret = {}
+pymdownx.details = {}
+pymdownx.emoji.emoji_generator = "zensical.extensions.emoji.to_svg"
+pymdownx.emoji.emoji_index = "zensical.extensions.emoji.twemoji"
+pymdownx.highlight.anchor_linenums = true
+pymdownx.highlight.line_spans = "__span"
+pymdownx.highlight.pygments_lang_class = true
+pymdownx.inlinehilite = {}
+pymdownx.keys = {}
+pymdownx.magiclink = {}
+pymdownx.mark = {}
+pymdownx.smartsymbols = {}
+pymdownx.superfences.custom_fences = [
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
+]
+pymdownx.tabbed.alternate_style = true
+pymdownx.tabbed.combine_header_slug = true
+pymdownx.tasklist.custom_checkbox = true
+pymdownx.tilde = {}
