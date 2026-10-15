@@ -24,10 +24,12 @@ repo_url = "https://github.com/UTokyo-FieldPhenomics-Lab/gwhs-biohackathon-api-g
 repo_name = "UTokyo-FieldPhenomics-Lab/gwhs-biohackathon-api-gateway"
 edit_uri = "edit/main/docs/content/"
 
-# Sizes the framed Swagger UI to its own height; it listens for a message the API host sends. The
-# stylesheet hides the heading of that one page, which carries nothing but the frame.
-extra_javascript = ["javascripts/frame.js"]
-extra_css = ["stylesheets/frame.css"]
+# The framed API reference needs two files: one sizes the frame and passes the reader's palette into
+# it, the other hides the heading of a page that carries nothing but the frame. They live in
+# `docs/content/api/`, which holds no page of its own — the reference is an iframe inside
+# `interactive.md`, so that directory exists only for these two.
+extra_javascript = ["api/frame.js"]
+extra_css = ["api/frame.css"]
 
 # The interactive reference is an external link rather than a generated section: it is FastAPI's own
 # Swagger UI on the API host, which needs no renderer here and cannot be a static page. Every page
