@@ -30,8 +30,8 @@ Two planes, joined only by a frozen contract:
   the participant-facing site that publishes part of them at <https://docs.global-wheat.com>.
 - **Domains** — `data.*` serves static images through CloudFront (no auth, long cache);
   `api.*` hits the gateway directly and always requires a key, images included, because
-  clients display images from `data.*` rather than through the API. They are deliberately
-  separate distributions, never one.
+  clients display images from `data.*` rather than through the API; `docs.*` is a static site on
+  GitHub Pages, which nobody here runs. They are deliberately separate distributions, never one.
 
 The gateway never carries bytes. It answers with the public `data.*` URL of an object and
 resolves every address by lookup in its in-memory index, so no client input is ever concatenated

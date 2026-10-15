@@ -34,12 +34,17 @@ out of its cached parquet and PUTs them in one request: nothing is staged on dis
 moves no bytes between regions. How the bucket, the distribution, the certificate, and the domain
 are built is in [`deploy/README.md`](deploy/README.md).
 
-Two domains, deliberately separate:
+Three domains, deliberately separate:
 
 ```
 data.global-wheat.com  → CloudFront → S3         static images, no auth, long cache
 api.global-wheat.com   → gateway    → backends   dynamic requests, always requires a key
+docs.global-wheat.com  → GitHub Pages            the documentation site, static, disposable
 ```
+
+The first two are ours to run; the third is GitHub's, which is why the documentation stays readable
+while the host is stopped. `api.global-wheat.com/docs` remains the interactive reference, and the site
+frames that page rather than copying it.
 
 The gateway **never carries bytes**: it answers with the public `data.*` URL of an object, which
 is what clients display, so bandwidth stays on the CDN and off the gateway. Every address is
