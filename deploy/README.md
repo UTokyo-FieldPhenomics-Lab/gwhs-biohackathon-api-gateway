@@ -6,6 +6,9 @@ done by hand, once, in the order written here, and there is one environment toda
 Frankfurt and the bucket beside it. Constraints behind every choice are in
 [`../.agents/rules/deploy.md`](../.agents/rules/deploy.md).
 
+§6 adds a third, independent piece: the curated documentation site, served by GitHub Pages rather than
+by either of the two above, so it stays readable while the host is stopped.
+
 ## What exists
 
 | | |
@@ -14,7 +17,8 @@ Frankfurt and the bucket beside it. Constraints behind every choice are in
 | Bucket | private, `eu-central-1`, Block Public Access on; CloudFront reads it through an origin access control and is its only reader |
 | Distribution | `data.global-wheat.com` — HTTPS only, `GET`/`HEAD`, long TTL, all edge locations |
 | Certificate | ACM in **`us-east-1`**, because CloudFront requires it there whatever the origin's region is |
-| Domains | `api.global-wheat.com` → the host's Elastic IP, TLS terminated on the host by Caddy (§1.5); `data.global-wheat.com` → the distribution |
+| Domains | `api.global-wheat.com` → the host's Elastic IP, TLS terminated on the host by Caddy (§1.5); `data.global-wheat.com` → the distribution; `docs.global-wheat.com` → GitHub Pages (§6), which is not ours to run |
+| Docs site | static, on GitHub Pages, published from an Actions artifact (§6) — no host, no bucket, and no certificate we manage |
 | Region and zone | the region is environment configuration and the host and bucket share one (`eu-central-1`); no zone is pinned, so a replacement instance may land in any of them |
 
 Three facts behind that table, each measured rather than assumed:
@@ -622,4 +626,146 @@ would need your own credentials.
 **Rotation** is create-then-replace-then-delete: create a second access key for the same user,
 replace the CSV at `publish/awsAccessKeys.csv`, confirm with `get-caller-identity`, then delete the
 first key in the console. Replacing the instance means the same three steps on the new host.
+
+---
+
+# 6. The documentation site
+
+The curated documentation is a static site: Zensical builds it, GitHub Pages serves it, and nobody runs
+a server for it. It is independent of §1 and §2 by construction, and `api.global-wheat.com/docs`
+remains FastAPI's own Swagger UI — the site links to it, and it links back. The record below and the
+Pages settings are made by hand, once, like the bucket and the distribution.
+
+| | |
+|---|---|
+| Site | `https://docs.global-wheat.com` — static, built from `zensical.toml` and `docs/` by [`../.github/workflows/docs.yml`](../.github/workflows/docs.yml) |
+| Publishing source | GitHub Actions: an artifact is uploaded and deployed, so Jekyll is not involved and no `CNAME` file is committed |
+| DNS record | `CNAME` `docs` → `utokyo-fieldphenomics-lab.github.io` — no repository name — TTL 3600, at お名前.com |
+| Certificate | issued by GitHub for the custom domain; nothing here requests or renews it, and we cannot reissue it |
+| Publication | any push to `main` touching `docs/**` or `zensical.toml`; a pull request builds with `--strict` and deploys nothing |
+
+Three facts behind that:
+
+- **It must not share the image plane.** Objects under `data.*` are write-once and are never
+  invalidated, while this site is rewritten on every push: §2's long TTL is right for one and wrong
+  for the other.
+- **It must not share the API's failure domain.** The gateway host is on demand, and one measured
+  network already drops its Elastic IP
+  ([`../.agents/references/2026101513_campus-path-blocks-the-eip.md`](../.agents/references/2026101513_campus-path-blocks-the-eip.md))
+  — not a property a reader should inherit.
+- **It is public.** The repository is public, so Pages needs no plan change and the site is
+  world-readable: nothing secret and nothing participant-specific may enter `docs/`.
+
+## 6.1 Turn it on
+
+Five steps, **in this order**: three in the console, one in the `お名前.com` panel, one to finish. The
+custom domain is saved in the repository before the DNS record exists; the other order lets someone
+else publish a site on the subdomain. This needs repository admin rights, and the DNS entry needs
+whoever holds the panel.
+
+1. **Organization → Settings → Pages** — confirm publishing is permitted for the organization.
+2. **Repository → Settings → Pages → Build and deployment → Source: GitHub Actions.** A branch source
+   would run Jekyll over the sources, which is not what the workflow expects.
+3. Same page, **Custom domain**: `docs.global-wheat.com` → **Save**.
+4. At お名前.com, in the same panel as §2.2, add **one** record — a `CNAME`, not the four `A` records:
+   - **`CNAME`**: ホスト名 `docs` (the label only — the panel appends `.global-wheat.com`, and pasting
+     the name whole gives `docs.global-wheat.com.global-wheat.com`), VALUE
+     `utokyo-fieldphenomics-lab.github.io` with no trailing dot, TTL 3600.
+   - The value is not a guess: `www.global-wheat.com` in this very zone already points at it, for the
+     `www.global-wheat.com` repository's own site. `185.199.108–111.153` are for an apex domain and
+     are not used here.
+   - That `www` record is a different site's and does not interact with this one: a custom domain is
+     attached per repository and `docs` and `www` are different names. `api` in this zone is the
+     host's Elastic IP (§1.4), `data` the distribution (§2.5), and the `_…data` record is the ACM
+     validation for the certificate in §2.2 — this adds a fourth, unrelated one.
+
+   ```bash
+   curl -s 'https://dns.google/resolve?name=docs.global-wheat.com&type=CNAME'
+   ```
+
+5. Once it resolves and the certificate has been issued — up to 24 hours, and the checkbox is absent
+   until then — back in **Settings → Pages**, select **Enforce HTTPS**, then run §6.3.
+
+Nothing needs to be published for those steps to be saved: the name starts answering once §6.2's
+workflow has deployed once, and the certificate follows the name rather than the content.
+
+### Optional: verify the domain
+
+Verifying a domain protects it, and its immediate subdomains, from being attached to someone else's
+Pages site. Two reasons this is optional here:
+
+- **It may already be done.** If `global-wheat.com` appears under **Organization → Settings → Pages →
+  Verified domains**, its subdomains are covered and there is nothing to add.
+- **Its only job starts when the site ends.** While this site is live and the `CNAME` is in place,
+  nothing needs the verification; it matters on the day the site is disabled and the record is
+  forgotten, because a `CNAME` still pointing at GitHub Pages with no site behind it is a takeover
+  path.
+
+If you skip it, §6.4's "remove the `docs` `CNAME`" stops being tidiness and becomes the thing that
+closes that path. If you do it, add the `_github-pages-challenge-utokyo-fieldphenomics-lab…` name and
+value GitHub shows under *Add a domain* as a `TXT` row in the same panel visit, and keep it there
+afterwards.
+
+## 6.2 Build and publish
+
+Nothing here runs on a host, and nothing here is a secret: the workflow holds the deploy credential as
+its own short-lived token. It is also entirely repository-local — the organization can publish any
+number of Pages sites, each has its own settings, and `<organization>.github.io` is only the `CNAME`
+target they share. One custom domain serves one site at a time, which is why this is a subdomain of
+`global-wheat.com` rather than a path under the lab's existing site. Locally:
+
+```bash
+uv sync --locked --project docs
+uv run --project docs zensical build --strict     # exit 0; writes site/, which git ignores
+uv run --project docs zensical serve              # http://localhost:8000
+```
+
+`zensical.toml` sits at the repository root and its `docs_dir` and `site_dir` are resolved relative to
+that file, which is what makes `docs/` the content root and `site/` the output. `docs/` holds site
+material and nothing else: the runbook is this file, so the site never grows a second README to keep
+honest.
+
+## 6.3 Verify
+
+```bash
+curl -sI https://docs.global-wheat.com/ | head -3
+curl -sI http://docs.global-wheat.com/ | head -3
+curl -sI https://utokyo-fieldphenomics-lab.github.io/gwhs-biohackathon-api-gateway/ | head -3
+curl -s https://docs.global-wheat.com/ | grep -o '<title>[^<]*</title>'
+
+# the certificate must be ours, not GitHub's wildcard
+echo | openssl s_client -connect docs.global-wheat.com:443 -servername docs.global-wheat.com 2>/dev/null |
+  openssl x509 -noout -subject -ext subjectAltName
+```
+
+Expected: `200` with `server: GitHub.com`; a `301` to the `https` URL; a `301` to
+`docs.global-wheat.com`; the site's title; and a certificate whose subject is
+`docs.global-wheat.com`.
+
+Two readings that look like failures and are not, both measured on this organization on 2026-10-15:
+
+- **The `github.io` path may redirect somewhere else first.** This organization's user site has its own
+  custom domain, so `utokyo-fieldphenomics-lab.github.io/<repo>/` 301s host-wide to
+  `lab.fieldphenomics.com/<repo>/` until that repository has a custom domain of its own. Once
+  `docs.global-wheat.com` is saved in step 3, the 301 must point at it instead — the
+  `www.global-wheat.com` repository shows exactly that, its path redirecting to its own domain.
+  Re-run this check after the first deploy, not before.
+- **The certificate is a separate event from the record.** `https://www.global-wheat.com/` still
+  answers GitHub's wildcard `CN=*.github.io`, whose `subjectAltName` does not include that name, so
+  every HTTPS client fails while `http://` returns `200`. That site's custom domain was added and the
+  certificate never issued, and it is the state this check exists to catch: a resolving `CNAME` and a
+  pending certificate look identical from the DNS side. If the same certificate appears here,
+  re-save the custom domain in **Settings → Pages** and wait; `Enforce HTTPS` stays unavailable until
+  GitHub has issued one.
+
+Then push one visible change to a page and watch it appear — that, and not the name resolving, is what
+proves the workflow is wired to the domain. In a browser the padlock must be GitHub's certificate for
+`docs.global-wheat.com`.
+
+## 6.4 When the event is over
+
+The site is disposable by rule. **Settings → Pages → Unpublish** takes it down. Then remove the `docs`
+`CNAME` at お名前.com: that is what closes the takeover path. If the domain was verified (§6.1), the
+`TXT` record alone keeps the name protected and the `CNAME` could stay, but a record pointing at
+nothing is worth deleting on a site whose whole point is that it can be removed.
 
