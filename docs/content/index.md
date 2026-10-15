@@ -18,12 +18,20 @@ per team, so ask the organisers for yours.
 export API=https://api.global-wheat.com
 export GWHS_API_KEY=<your team's token>
 
-curl -s "$API/health"                                               # open: liveness and version
-curl -s -H "X-API-Key: $GWHS_API_KEY" "$API/datasets"               # every dataset, one line each
-curl -s -H "X-API-Key: $GWHS_API_KEY" "$API/datasets/gwhd"          # one dataset's contract
-curl -s -H "X-API-Key: $GWHS_API_KEY" "$API/datasets/gwhd/images?limit=2"    # a page of images
-curl -s -H "X-API-Key: $GWHS_API_KEY" "$API/datasets/gwhd/images/0"          # one row's annotation
+curl -s "$API/health"
+curl -s -H "X-API-Key: $GWHS_API_KEY" "$API/datasets"
+curl -s -H "X-API-Key: $GWHS_API_KEY" "$API/datasets/gwhd"
+curl -s -H "X-API-Key: $GWHS_API_KEY" "$API/datasets/gwhd/images?limit=2"
+curl -s -H "X-API-Key: $GWHS_API_KEY" "$API/datasets/gwhd/images/0"
 ```
+
+| call | what it is |
+|---|---|
+| `/health` | liveness and version — the one route that needs no key |
+| `/datasets` | every dataset, one line each |
+| `/datasets/gwhd` | one dataset's contract: its fields, filters, classes, and palette |
+| `/datasets/gwhd/images?limit=2` | a page of images |
+| `/datasets/gwhd/images/0` | row 0's annotation |
 
 ## What comes back
 
