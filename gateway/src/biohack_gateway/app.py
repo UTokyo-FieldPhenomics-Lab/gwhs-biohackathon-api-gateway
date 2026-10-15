@@ -1,10 +1,11 @@
 """Global Wheat API gateway application.
 
-The surface is small and every part of it is deliberate. ``/health`` and the generated documentation
-pages answer without a key because they carry no data — liveness, and a contract that is public in
-this repository anyway. Everything else, including paths that do not exist, needs a participant
-token, because the people this serves are somewhere else on the internet and nothing but that token
-stands between them and the host.
+The surface is small and every part of it is deliberate. ``/health`` and the reference page answer
+without a key because they carry no data — liveness, and a contract that is public in this
+repository anyway — and the reference is also where a reader puts the key that unlocks everything
+else. Every other path, including paths that do not exist, needs a participant token, because the
+people this serves are somewhere else on the internet and nothing but that token stands between them
+and the host.
 
 Key authentication, the error contract, and liveness live here. The dataset surface is included
 from here, and the model surface will arrive the same way: both inherit the gate by adding a route
@@ -17,7 +18,7 @@ import logging
 from enum import StrEnum
 from importlib.metadata import version as installed_version
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -47,6 +48,21 @@ in the checkout it was started from."""
 
 API_KEY_HEADER = "X-API-Key"
 """Where a participant's token arrives."""
+
+API_KEY_SCHEME = "ApiKeyAuth"
+"""The name the contract gives that header.
+
+Swagger UI carries a credential into a request only for a scheme the document declares, so without
+this the reference lists every endpoint and can try none of them. The name is arbitrary, the header
+is not, and both are read from here rather than written out again.
+"""
+
+DOCS_PARENT_ORIGIN = "https://docs.global-wheat.com"
+"""The one site allowed to frame the reference page, and the one window it reports its height to.
+
+One origin rather than two settings: the page tells the browser who may frame it, and it addresses
+the height it reports to the same site. A harness that frames a local app passes its own.
+"""
 
 OPEN_PATHS = frozenset({"/health", "/docs", "/redoc", "/openapi.json"})
 """The paths that answer without a key.
@@ -78,10 +94,11 @@ SWAGGER_FRAME_REPORTER = """
   // observing `documentElement` catches a section expanding and misses it collapsing, because a
   // document's box does not shrink back to its content while the frame stays tall. The container
   // does shrink, so it is what gets observed — together with the class changes Swagger UI makes
-  // when a section is toggled, which is what a collapse looks like.
+  // when a section is toggled, which is what a collapse looks like. The key field above the
+  // container counts as well, or the frame would cut off the one control a reader needs first.
   // The same channel carries the theme: the site says which side of the palette it is on, as a
   // query parameter for the first paint and as a message whenever the reader switches.
-  const SITE_ORIGIN = "https://docs.global-wheat.com";
+  const SITE_ORIGIN = "__PARENT_ORIGIN__";
   const apply_scheme = (scheme) => {
     if (scheme === "dark" || scheme === "light") document.documentElement.dataset.scheme = scheme;
   };
@@ -98,9 +115,14 @@ SWAGGER_FRAME_REPORTER = """
     document.body.style.overflow = "hidden";
   }
   const report_height = () => requestAnimationFrame(() => {
+    // Opened on its own there is nobody to size, and a message addressed to the site's origin
+    // from a page that is not framed is a console warning and nothing else.
+    if (window.parent === window) return;
     const ui = document.querySelector("#swagger-ui") || document.body;
-    const height = Math.ceil(ui.getBoundingClientRect().bottom + window.scrollY);
-    window.parent.postMessage({docsHeight: height}, SITE_ORIGIN);
+    const bar = document.querySelector("#key-bar");
+    const barBottom = bar ? bar.getBoundingClientRect().bottom : 0;
+    const bottom = Math.max(ui.getBoundingClientRect().bottom, barBottom);
+    window.parent.postMessage({docsHeight: Math.ceil(bottom + window.scrollY)}, SITE_ORIGIN);
   });
   window.addEventListener("message", (event) => {
     if (event.origin !== SITE_ORIGIN || !event.data) return;
@@ -121,8 +143,205 @@ SWAGGER_FRAME_REPORTER = """
 
 The alternative — a fixed height, or a scrollbar inside the frame — is what this replaces. It is a
 same-origin-free mechanism: a message with a number, addressed to one origin, ignored by everyone
-else, and the page works exactly as before when nothing listens.
+else, and the page works exactly as before when nothing listens. `__PARENT_ORIGIN__` is replaced
+with the app's configured parent origin, so the page names one site for both the frame and the
+message.
 """
+
+
+SWAGGER_KEY_BAR = """
+<style>
+  #key-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.75rem;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #e5e7eb;
+    background: #fafafa;
+    color: #3b4151;
+    font-family: sans-serif;
+    font-size: 0.875rem;
+  }
+  #key-bar label { font-weight: 600; }
+  #key-bar input {
+    flex: 1 1 18rem;
+    min-width: 12rem;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid #c3c9d0;
+    border-radius: 4px;
+    background: #fff;
+    color: inherit;
+    font: inherit;
+  }
+  #key-bar button {
+    padding: 0.35rem 0.75rem;
+    border: 1px solid #c3c9d0;
+    border-radius: 4px;
+    background: #fff;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+  #key-bar .key-state { flex: 1 1 100%; color: #6b7280; }
+  #key-bar .key-state[data-set="yes"] { color: #1f7a4d; }
+  html[data-scheme="dark"] #key-bar {
+    border-bottom-color: #3b4250;
+    background: #262b34;
+    color: #c3cbd8;
+  }
+  html[data-scheme="dark"] #key-bar input,
+  html[data-scheme="dark"] #key-bar button {
+    border-color: #3b4250;
+    background: #1e2129;
+    color: #e6ebf3;
+  }
+  html[data-scheme="dark"] #key-bar .key-state { color: #9aa5b4; }
+  html[data-scheme="dark"] #key-bar .key-state[data-set="yes"] { color: #4ec07f; }
+  /* One way in, and only once the field below has proved it works: a reader who found the standard
+     button instead would meet a dialog that opens at the centre of a frame as tall as the page. */
+  html.key-bar-ready .swagger-ui .auth-wrapper { display: none; }
+</style>
+<div id="key-bar">
+  <form id="key-form" autocomplete="off">
+    <label for="key-input">Your key</label>
+    <input
+      id="key-input"
+      name="key"
+      type="password"
+      autocomplete="off"
+      spellcheck="false"
+      placeholder="__HEADER__ — paste your team's token"
+      aria-describedby="key-state"
+    />
+    <button type="submit">Use key</button>
+    <button id="key-forget" type="button">Forget</button>
+  </form>
+  <span id="key-state" class="key-state" role="status"></span>
+</div>
+<div id="swagger-ui">
+""".replace("__HEADER__", API_KEY_HEADER)
+"""The field a participant puts their key into, and the styles it needs.
+
+It sits above Swagger UI's container rather than inside it, so the framework's own rendering cannot
+replace it. It is inserted where that container is, which is *before* Swagger's script, so the code
+that drives it is injected at the end of the body instead, where Swagger UI exists.
+"""
+
+SWAGGER_KEY_BAR_SCRIPT = """
+<script>
+  (() => {
+    // The reference is read inside the documentation site's frame, and a framed page cannot show
+    // Swagger UI's own Authorize dialog where the reader is looking: the frame is as tall as the
+    // page, so a centred dialog opens somewhere below the fold. This field is where a key goes
+    // instead — it calls what the dialog calls, in a place that is always on screen.
+    const SCHEME = "__SCHEME__";
+    const bar = document.getElementById("key-bar");
+    const form = document.getElementById("key-form");
+    const input = document.getElementById("key-input");
+    const state = document.getElementById("key-state");
+    if (!bar || !form || !input || !state || typeof ui === "undefined") {
+      // No bar rather than a dead one: without Swagger's own object a field would swallow keys.
+      if (bar) bar.remove();
+      return;
+    }
+
+    // Read Swagger's state rather than keeping a copy: the key is stored by Swagger (the page asks
+    // it to persist one), and one copy of a secret is enough. A failure here says nothing rather
+    // than something wrong.
+    const describe = () => {
+      try {
+        const held = ui.authSelectors.authorized().get(SCHEME);
+        state.dataset.set = held ? "yes" : "no";
+        state.textContent = held
+          ? "a key is in use — paste another to replace it"
+          : "no key yet — paste your team's token, and every call below can be tried";
+      } catch {
+        state.textContent = "";
+      }
+    };
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const value = input.value.trim();
+      if (!value) return;
+      // Swagger remembers a key only when it is handed in the variant its own dialog uses, with the
+      // definition it applies to; `preauthorizeApiKey` sets it for this page and loses it on the
+      // next visit, which is the one thing this page asks Swagger to do for it.
+      const schema = ui.specSelectors.securityDefinitions().get(SCHEME);
+      if (schema && ui.authActions.authorizeWithPersistOption) {
+        ui.authActions.authorizeWithPersistOption({[SCHEME]: {value: value, schema: schema}});
+      } else {
+        ui.preauthorizeApiKey(SCHEME, value);
+      }
+      input.value = "";
+      describe();
+    });
+    document.getElementById("key-forget").addEventListener("click", () => {
+      const forget = ui.authActions.logoutWithPersistOption || ui.authActions.logout;
+      forget([SCHEME]);
+      describe();
+    });
+
+    // The specification arrives after the page does, and Swagger restores a remembered key when it
+    // mounts, so the state is read again for a few seconds rather than once. It reads one boolean.
+    let reads = 0;
+    const settle = () => {
+      describe();
+      if (++reads < 20) setTimeout(settle, 250);
+    };
+    settle();
+    document.documentElement.classList.add("key-bar-ready");
+  })();
+</script>
+""".replace("__SCHEME__", API_KEY_SCHEME)
+"""What makes the field work, injected at the end of the body where Swagger UI exists.
+
+It hands the key to the same action Swagger's own dialog hands it to, so the request carries the
+header and the browser remembers the key between visits; `preauthorizeApiKey` alone would do the
+first and not the second. A field that cannot do both removes itself, and only a field that did
+both hides the standard Authorize button — a page whose script did not run keeps the door it always
+had.
+"""
+
+
+def _with_key_auth(schema: dict[str, Any]) -> dict[str, Any]:
+    """Declare in the contract the key the gate already demands.
+
+    Every operation but liveness requires a token, and the gate enforces that whatever the document
+    says — so this changes nothing about who gets in. What it changes is whether the reference can
+    be used: Swagger UI carries a credential into a request only for a scheme the document declares
+    and only for an operation that asks for it, so an undeclared key means every Try it out answers
+    ``401`` however carefully the reader pastes their token.
+
+    The requirement is written per operation rather than left to the document root, because that is
+    what Swagger UI reads. An operation that declares its own security keeps it: that is how
+    liveness says it needs none.
+
+    Parameters
+    ----------
+    schema : dict
+        The document FastAPI generated, mutated in place.
+
+    Returns
+    -------
+    dict
+        The same document, with the scheme and the requirements added.
+    """
+    components = schema.setdefault("components", {})
+    components.setdefault("securitySchemes", {})[API_KEY_SCHEME] = {
+        "type": "apiKey",
+        "in": "header",
+        "name": API_KEY_HEADER,
+    }
+    required: list[dict[str, list[str]]] = [{API_KEY_SCHEME: []}]
+    schema["security"] = required
+    for path in schema.get("paths", {}).values():
+        for method in ("get", "put", "post", "delete", "options", "head", "patch", "trace"):
+            operation = path.get(method)
+            if operation is not None and "security" not in operation:
+                operation["security"] = required
+    return schema
 
 
 class ErrorCode(StrEnum):
@@ -245,6 +464,7 @@ def create_app(
     tokens_path: Path = DEFAULT_TOKENS_FILE,
     index_dir: Path = DEFAULT_INDEX_DIR,
     data_base_url: str = DEFAULT_DATA_BASE_URL,
+    docs_parent_origin: str = DOCS_PARENT_ORIGIN,
 ) -> FastAPI:
     """Build the application.
 
@@ -260,6 +480,9 @@ def create_app(
         The directory of `<dataset>.db` files the dataset surface answers from. It need not exist.
     data_base_url : str, optional
         The public distribution the image addresses point at.
+    docs_parent_origin : str, optional
+        The one origin allowed to frame the reference page, which is also the window it reports its
+        height to. A harness that frames a local app passes its own origin here.
 
     Returns
     -------
@@ -278,21 +501,47 @@ def create_app(
     authenticator = Authenticator(tokens_path)
     app.include_router(create_dataset_router(load_datasets(index_dir), data_base_url))
 
+    document = app.openapi
+
+    def openapi_with_key_auth() -> dict[str, Any]:
+        """Answer the contract with the key scheme the reference needs to be usable.
+
+        Returns
+        -------
+        dict
+            The document FastAPI generated, declared to require the header the gate reads.
+        """
+        if app.openapi_schema is None:
+            app.openapi_schema = _with_key_auth(document())
+        return app.openapi_schema
+
+    app.openapi = openapi_with_key_auth  # type: ignore[method-assign]
+
     @app.get("/docs", include_in_schema=False)
     async def swagger_ui() -> HTMLResponse:
-        """Answer the interactive reference, with the script the documentation site's frame needs.
+        """Answer the interactive reference, in the shape the documentation site's frame needs.
 
         Returns
         -------
         HTMLResponse
-            FastAPI's own Swagger UI page, plus one script that reports this page's height to the
-            site that frames it. The page is otherwise untouched, and a reader who opens `/docs`
-            directly sees no difference.
+            FastAPI's own Swagger UI page with three additions: a field for the reader's key, the
+            dark palette, and the script that reports this page's height to the site that frames it.
+            The page is otherwise untouched, and a reader who opens `/docs` directly sees the same
+            reference with the same field.
         """
-        page = get_swagger_ui_html(openapi_url="/openapi.json", title=f"{app.title} — reference")
+        page = get_swagger_ui_html(
+            openapi_url="/openapi.json",
+            title=f"{app.title} — reference",
+            swagger_ui_parameters={"persistAuthorization": True},
+        )
         html = bytes(page.body).decode()
+        html = html.replace('<div id="swagger-ui">', SWAGGER_KEY_BAR, 1)
+        reporter = SWAGGER_FRAME_REPORTER.replace("__PARENT_ORIGIN__", docs_parent_origin)
         return HTMLResponse(
-            html.replace("</body>", f"{SWAGGER_DARK_STYLE}{SWAGGER_FRAME_REPORTER}</body>")
+            html.replace(
+                "</body>", f"{SWAGGER_DARK_STYLE}{SWAGGER_KEY_BAR_SCRIPT}{reporter}</body>"
+            ),
+            headers={"Content-Security-Policy": f"frame-ancestors {docs_parent_origin}"},
         )
 
     @app.middleware("http")
@@ -348,6 +597,7 @@ def create_app(
         response_model=HealthResponse,
         summary="Liveness",
         description="Answers without a key, so a monitor or the deploy script can ask it.",
+        openapi_extra={"security": []},  # the one operation the contract says needs no key
     )
     async def health() -> HealthResponse:
         """Report that the process is serving.
