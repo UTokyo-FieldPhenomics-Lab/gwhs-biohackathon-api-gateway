@@ -61,7 +61,9 @@ and it keeps the real client address in the host's logs. `deploy/install-tailsca
 Two checks tell the legs apart: from the room, `ping` the room router's *own* tailnet address (an
 answer means that room's leg out of the LAN is fine, so the host is the suspect), and on the host,
 `ip -s link show tailscale0` while that ping runs (a flat `RX` means the packets never arrived).
-A room's SSH is relayed and therefore slow; nothing bulk should cross it.
+A room's SSH is relayed and therefore slow; nothing bulk should cross it. What that overlay holds
+today — its peers, and which machine could serve as a GPU backend first — is inventoried in
+[`2026101514_tailnet-topology-and-lab-reachability.md`](2026101514_tailnet-topology-and-lab-reachability.md).
 
 ## Do not
 
