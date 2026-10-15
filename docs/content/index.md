@@ -16,13 +16,13 @@ team, so ask the organisers for yours.
 
 ```bash
 export API=https://api.global-wheat.com
-export GWHS_API_KEY=<your team's token>
+export KEY=<your team's token>
 
 curl -s "$API/health"
-curl -s -H "X-API-Key: $GWHS_API_KEY" "$API/datasets"
-curl -s -H "X-API-Key: $GWHS_API_KEY" "$API/datasets/gwhd"
-curl -s -H "X-API-Key: $GWHS_API_KEY" "$API/datasets/gwhd/images?limit=2"
-curl -s -H "X-API-Key: $GWHS_API_KEY" "$API/datasets/gwhd/images/0"
+curl -s -H "X-API-Key: $KEY" "$API/datasets"
+curl -s -H "X-API-Key: $KEY" "$API/datasets/gwhd"
+curl -s -H "X-API-Key: $KEY" "$API/datasets/gwhd/images?limit=2"
+curl -s -H "X-API-Key: $KEY" "$API/datasets/gwhd/images/0"
 ```
 
 | call | what it is |

@@ -1,9 +1,9 @@
 # Post-processing
 
 What the API returns is data, not a picture. A semantic dataset hands you a mask image whose colours
-are class names; an instance dataset hands you an object's geometry as a compressed run-length
-string. These are the two conversions most projects start with, in Python, JavaScript, and Kotlin —
-and each snippet is a file you can download.
+are class names; an instance dataset hands you an object's geometry as a compressed run-length string.
+These are the two conversions most projects start with — in Python, JavaScript, and Kotlin, and each
+snippet is a file you can download.
 
 Both start from pixels you have already decoded — Pillow, a browser canvas, `Bitmap.getPixels` — and
 the class mapping always comes from the dataset's own description, `GET /datasets/<id>`, never from a
@@ -11,9 +11,24 @@ figure or a blog post.
 
 ## A palette mask, one boolean array per class
 
-`gwfss`'s annotation is an image: three channels, every pixel one of the four colours the description
-publishes. Splitting it gives one boolean array per class, and the function refuses a colour the
-dataset never declared rather than labelling that pixel silently.
+The input is the mask image and nothing else: three channels, every pixel one of the four colours the
+description publishes.
+
+![The palette mask of one row](mask-input.png)
+
+Split it by colour and you get one boolean array per class — here they are, white where the class is,
+with the pixel count each one holds:
+
+![The four classes, one boolean mask each](mask-output.png)
+
+```bash
+curl -s -H "X-API-Key: $KEY" "$API/datasets/gwfss"
+curl -s -H "X-API-Key: $KEY" "$API/datasets/gwfss/images/0"
+```
+
+`head` is empty in this row, which is a fact about the image rather than a mistake in the code: the
+description's own `statistics.classes` says the row holds `stem` and `leaf`. The function refuses a
+colour the dataset never declared rather than labelling that pixel silently.
 
 === "Python"
 
@@ -25,7 +40,7 @@ dataset never declared rather than labelling that pixel silently.
     from PIL import Image
     from label_masks import label_masks
 
-    headers = {"X-API-Key": API_KEY}
+    headers = {"X-API-Key": KEY}
     description = requests.get(f"{API}/datasets/gwfss", headers=headers).json()    # the palette
     row = requests.get(f"{API}/datasets/gwfss/images/0", headers=headers).json()   # one row's URLs
 
@@ -41,7 +56,7 @@ dataset never declared rather than labelling that pixel silently.
 
     ```js
     // get(path) is your own helper: fetch(API + path, { headers }).then((r) => r.json())
-    const headers = { "X-API-Key": API_KEY };
+    const headers = { "X-API-Key": KEY };
     const description = await get("/datasets/gwfss");     // the palette
     const row = await get("/datasets/gwfss/images/0");    // one row's URLs
 
@@ -62,7 +77,7 @@ dataset never declared rather than labelling that pixel silently.
 
     ```kotlin
     // getJson(path) is your own helper: HttpURLConnection with the headers, then JSONObject(text)
-    val headers = mapOf("X-API-Key" to API_KEY)
+    val headers = mapOf("X-API-Key" to KEY)
     val description = getJson("/datasets/gwfss")      // the palette
     val row = getJson("/datasets/gwfss/images/0")     // one row's URLs
 
@@ -85,8 +100,7 @@ dataset never declared rather than labelling that pixel silently.
 
 ## An object's RLE geometry, as a mask
 
-An instance dataset carries geometry, not a mask image, so a detail response holds one entry per
-object:
+An instance dataset carries geometry, not a mask image. One object of a detail response:
 
 ```json
 { "idx": 0, "category": "spikelet_-_side1", "bbox": [231.0, 923.0, 126.0, 162.0],
@@ -94,10 +108,18 @@ object:
   "rle": { "size": [2509, 592], "counts": "Zofa05S…" } }
 ```
 
-`rle.size` is `[height, width]`, and `rle.counts` is the annotation's compressed string, verbatim —
-COCO's format, which is also what hosted SAM endpoints answer. Decoding it gives the object's own
-mask, and its pixel count equals the `area` beside it: the cheapest check that a decoder is right,
-and 12,074 for the object above.
+`rle.size` is `[height, width]`, and `rle.counts` is that object's compressed string, verbatim — COCO's
+format, which is also what hosted SAM endpoints answer. Decoding it gives the object on its own, and
+laid over the image it came from:
+
+![One object: in the image, decoded, and over the image](rle-input-output.jpg)
+
+The decoded mask counts 12,074 pixels, which is the `area` the response reports beside it — the cheapest
+check that a decoder is right.
+
+```bash
+curl -s -H "X-API-Key: $KEY" "$API/datasets/gwhs/images/0"
+```
 
 === "Python"
 

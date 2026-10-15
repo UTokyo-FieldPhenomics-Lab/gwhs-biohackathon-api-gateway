@@ -4,13 +4,23 @@ One row is one image and its annotation, addressed as `(dataset, row)`. Three da
 event, and the API answers the first ten rows of each published one today — the full sets follow
 before the hackathon.
 
-## `gwhd` — wheat heads as boxes
+| id | dataset | one row carries |
+|---|---|---|
+| `gwhd` | **Global Wheat Head Detection** | an image and a bounding box per wheat head |
+| `gwfss` | **Global Wheat Full Semantic Organ Segmentation** | an image and a mask, one colour per organ |
+| `gwhs` | **Global Wheat Head Segmentation** | an image and one object per spikelet, with box and mask geometry |
 
-![A gwhd row: a wheat plot photographed from above](https://data.global-wheat.com/gwhd/images/00000000.jpg)
+## `gwhd` — Global Wheat Head Detection
 
-One row is a field image, 1024×1024 JPEG, with **one bounding box per wheat head**. The dataset is
-CC-BY-4.0, as every dataset here is. `GET /datasets/gwhd/images/0` answers row 0's boxes, and the
-values are the image's own pixels — they draw straight onto the image `image_url` points at:
+![One gwhd row with every published head boxed](gwhd-row0-boxes.jpg)
+
+Row 0 of the demo set: a 1024×1024 plot photograph with **one box per wheat head**, 144 of them, drawn
+here in pink. The highlighted one is the row's first object. CC-BY-4.0.
+
+```bash
+curl -s -H "X-API-Key: $KEY" "$API/datasets/gwhd/images?limit=2"
+curl -s -H "X-API-Key: $KEY" "$API/datasets/gwhd/images/0"
+```
 
 ```json
 {
@@ -25,33 +35,30 @@ values are the image's own pixels — they draw straight onto the image `image_u
 }
 ```
 
-- `bbox` is `[x, y, w, h]` in pixels, so `[227, 3, 58, 47]` is the rectangle from (227, 3) to
-  (285, 50).
-- `category` is `"0"` here: the upstream named no head class, and the gateway returns the integer it
-  labelled with, as text, rather than inventing a name.
-- Row 0 holds **144** boxes. In a list response that count is `statistics.objects`, so a client can
-  choose rows by what is in them without fetching an annotation.
-- `domain`, `country`, `location`, and `development_stage` are on the row, and they are exactly the
-  filter keys `GET /datasets/gwhd` offers beside `split` and `category`.
+`bbox` is `[x, y, w, h]` in the image's own pixels, which is what the picture above draws:
 
-## `gwfss` — a semantic mask
+![How bbox maps onto the image](bbox-diagram.png)
 
-|                         the image                          |                        the mask                         |
-| :--------------------------------------------------------: | :-----------------------------------------------------: |
-| ![A gwfss row](https://data.global-wheat.com/gwfss/images/00000000.png) | ![Its mask](https://data.global-wheat.com/gwfss/masks/00000000.png) |
+- `category` is `"0"` here: the upstream named no head class, so the box is classified by the upstream
+  integer, returned as text rather than dressed up as a name.
+- A row also carries `domain`, `country`, `location`, and `development_stage`, and those are exactly
+  the filter keys `GET /datasets/gwhd` publishes beside `split` and `category`.
+- Row 0 holds 144 boxes. A list response reports that as `statistics.objects`, so a client can choose
+  rows by what is in them without fetching an annotation.
 
-One row is a 512×512 image plus a mask image of the same size. **The mask is the annotation**: three
-channels, one colour per class, and the palette is the dataset's own — `GET /datasets/gwfss`
-publishes it and nothing else does.
+## `gwfss` — Global Wheat Full Semantic Organ Segmentation
 
-| class | colour | in row 0 |
-|---|---|---|
-| `background` | `#000000` | 146,817 px |
-| `head` | `#32ff84` | 0 px |
-| `stem` | `#3284ff` | 1,920 px |
-| `leaf` | `#d6ff32` | 113,407 px |
+|                    the image                     |                    its mask                     |
+| :----------------------------------------------: | :---------------------------------------------: |
+| ![A gwfss row](gwfss-row0-image.jpg) | ![Its mask](gwfss-row0-mask.png) |
 
-A detail call answers both URLs and no objects, because the mask *is* the annotation:
+One row is a 512×512 image plus **a mask image of the same size**, and the mask *is* the annotation:
+three channels, one colour per organ, painted in the palette the dataset describes. CC-BY-4.0.
+
+```bash
+curl -s -H "X-API-Key: $KEY" "$API/datasets/gwfss"
+curl -s -H "X-API-Key: $KEY" "$API/datasets/gwfss/images/0"
+```
 
 ```json
 {
@@ -61,26 +68,54 @@ A detail call answers both URLs and no objects, because the mask *is* the annota
 }
 ```
 
-Reading those pixels per class is [Post-processing](../post-processing/index.md)'s first job. In a list
-response, `statistics.classes` names the classes a row actually contains — row 0 holds `stem` and
-`leaf`, which is why `head` counts zero above: no head was annotated in that image, and a colour is
-never present without being meant.
+A detail call returns both URLs and no objects, because there are none to return. What the palette
+means comes from the dataset's own description — `GET /datasets/gwfss` — and nowhere else:
 
-## `gwhs` — objects, with RLE geometry
+| class | colour | in row 0 |
+|---|---|---|
+| `background` | `#000000` | 146,817 px |
+| `head` | `#32ff84` | 0 px |
+| `stem` | `#3284ff` | 1,920 px |
+| `leaf` | `#d6ff32` | 113,407 px |
 
-Not published yet: the full annotation is released after the dataset release, so
-`GET /datasets/gwhs` answers nothing today. What it will hold is one row per image, and next to each
-object's box: a run-length mask for that object, its tags, and its attributes. The
-[post-processing](../post-processing/index.md) snippets decode that geometry, and they are the same code
-you will run on it.
+Split those pixels per class and each class becomes one boolean array — that is
+[Post-processing](../post-processing/index.md)'s first job. In a list response, `statistics.classes`
+names the classes a row actually contains, so row 0 holds `stem` and `leaf` and the zero beside `head`
+is a fact about the image rather than a gap in the data.
+
+## `gwhs` — Global Wheat Head Segmentation
+
+![One instance row: the image, its boxes, and the decoded masks](gwhs-row0-annotation.jpg)
+
+Not published yet: the full annotation follows the dataset release, so `GET /datasets/gwhs` answers
+nothing today. The figure above, and the object below, are a demo row of the same schema — a crop of a
+592×2509 photograph of one ear, 24 objects, each with a box and the mask its geometry decodes to.
+
+```bash
+curl -s -H "X-API-Key: $KEY" "$API/datasets/gwhs/images/0"
+```
+
+One entry of that response's `objects`:
+
+```json
+{ "idx": 0, "category": "spikelet_-_side1", "bbox": [231.0, 923.0, 126.0, 162.0],
+  "area": 12074.0, "attributes": ["Green-Spikelet"],
+  "rle": { "size": [2509, 592], "counts": "Zofa05S…" } }
+```
+
+Every object carries a box, a **run-length mask**, an area, and its attributes, and the row carries its
+tags. Where `gwhd` returns one box per head, this returns one box *and one mask per spikelet*, which is
+what makes counts and sizes per spikelet possible. Decoding `rle.counts` is
+[Post-processing](../post-processing/index.md)'s second job.
 
 ## How a response maps onto what you display
 
 | what you show | where it comes from |
 |---|---|
 | the image | `image_url`, served by `data.global-wheat.com`, no key |
-| the mask | `mask_url`, same |
+| the mask | `mask_url`, same, where the dataset has one |
 | a box on the image | `objects[].bbox` — `[x, y, w, h]` in the image's pixels |
-| a class name | `classes[].name` and `classes[].color` where the dataset publishes a palette; `objects[].category` on a row |
+| a class or a colour | `classes[].name` and `classes[].color` where the dataset publishes a palette; `objects[].category` on a row |
+| segments of one object | `objects[].rle`, decoded to a mask the size of the image |
 | how many objects | `statistics.objects` in a list, the length of `objects` in a detail |
 | what you can filter by | the `filters` block of `GET /datasets/<id>`, with the values it actually holds |
