@@ -24,6 +24,13 @@ repeated here.
   SQLite index at startup, and a republish is followed by a restart — that is the whole refresh
   mechanism. Facets are a deterministic projection of that index computed once, never a second
   store.
+- **A dataset's shape is read off the index, not configured.** Which filter keys exist, whether
+  geometry is RLE or boxes, whether a mask exists, and which row fields a response carries are facts
+  about the published artifact, so a new dataset needs no gateway change and no dataset is
+  special-cased in code. A response field is present when the index holds one — one model family with
+  `response_model_exclude_unset=True`, never a model per dataset. The two settings that move the
+  surface (`BIOHACK_INDEX_DIR`, `BIOHACK_DATA_BASE_URL`) are host environment whose defaults already
+  match the live environment.
 - **One geometry encoding across both surfaces.** The model surface returns the same object shape
   and the same COCO RLE for masks as the dataset surface (`{bbox, category?, score?, rle?}`), so a
   participant writes one decoder that serves ground truth and model output alike.
@@ -76,6 +83,7 @@ repeated here.
   has to stop working without a human remembering a command. An edit that does not parse never displaces
   the last pool that did, so a typo cannot lock participants out; one log line names the file. The
   dataset index keeps the other bargain, restart, because a publish is deliberate and large.
-- **Stay small.** The model surface stays near 400 lines; the dataset surface adds roughly 200
-  lines on top for index load, addressing, list, and facets. Growth past that is a signal to stop
-  and reconsider.
+- **Stay small.** The model surface stays near 400 lines; the dataset surface is two modules on top —
+  `dataset_index.py` for reading the artifact and `datasets.py` for the contract — whose length is
+  mostly the required NumPy docstrings. Growth past that, or a second reader of the same tables, is a
+  signal to stop and reconsider.
