@@ -19,6 +19,10 @@ repeated here.
   and the two headers the publisher owns (`Content-Type`, `Cache-Control`) match what this run
   would write — one `HeadObject` returns all three. Equal size with different headers is repaired
   by re-`PUT`ting the same bytes: the content did not change, so it is not an overwrite. A
+  `403` on that `HEAD` is not evidence of absence: a private bucket that grants `GetObject` but
+  not `ListBucket` answers `403` for a key that does not exist. The publisher settles it with a
+  conditional create (`If-None-Match: *`), which succeeds only if the key is really free; a denial
+  is never read as "absent", and nothing is ever overwritten. A
   different size stops the run and names the key. Do not hash locally and do not trust mtimes:
   the entity tag is used only after an upload, comparing the `PUT`'s answer with a `HEAD`, and is
   never a value the publisher computes. The comparison is about objects in the publisher's own

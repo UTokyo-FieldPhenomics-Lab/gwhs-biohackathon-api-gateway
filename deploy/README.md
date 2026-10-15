@@ -486,9 +486,12 @@ Run this with your own admin session: five minutes, and it never deletes anythin
 
 - `<bucket>` is the name recorded in §4. Nothing else is substituted.
 - **`s3:GetObject` is the `HEAD`.** There is no separate `s3:HeadObject` action, and the publisher's
-  idempotency check *is* a `HEAD` — that is why the read action is granted at all.
+  idempotency check *is* a `HEAD` — that is why the read action is granted at all. Because this policy
+  grants no `s3:ListBucket`, S3 answers `403` for a key that does not exist rather than `404`; the
+  publisher settles a denied `HEAD` with a conditional create (`If-None-Match: *`), which succeeds
+  only on a free key, so no `ListBucket` is needed.
 - **No `s3:DeleteObject`**: the publisher never deletes. No `s3:ListBucket` either: nothing enumerates
-  the bucket on a routine run.
+  the bucket on a routine run, and the conditional create above is what makes that absence safe.
 - **One ARN per dataset prefix, and that list is the authorisation point.** A dataset id that is not
   listed here cannot be published into, so a new release — `gwhs` when its annotation lands — costs one
   deliberate edit rather than arriving by accident.
