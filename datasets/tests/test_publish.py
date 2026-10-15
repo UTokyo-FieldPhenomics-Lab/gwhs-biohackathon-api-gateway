@@ -12,9 +12,11 @@ import pytest
 from biohack_datasets.formats import CACHE_CONTROL, CONTENT_TYPES
 from biohack_datasets.index import read_back
 from biohack_datasets.publish import (
+    IncompleteCache,
     MissingCache,
     ObjectConflict,
     VerificationError,
+    missing_shards,
     parse_bucket,
     publish_dataset,
 )
@@ -323,3 +325,43 @@ def test_losing_the_conditional_create_race_falls_back_to_comparison(tmp_path: P
 
     assert summary.uploaded == 0  # type: ignore[attr-defined]
     assert summary.skipped == 2  # type: ignore[attr-defined]
+
+
+def test_a_name_without_a_shard_number_is_not_checked() -> None:
+    """Nothing offline can say how many files of an unnumbered shape there should be."""
+    assert missing_shards([Path("data/part.parquet")]) == []
+
+
+def test_a_complete_selection_has_nothing_missing() -> None:
+    """The whole of every split is what a publishable cache is."""
+    files = [
+        Path("data/test-00000-of-00001.parquet"),
+        Path("data/train-00000-of-00002.parquet"),
+        Path("data/train-00001-of-00002.parquet"),
+    ]
+
+    assert missing_shards(files) == []
+
+
+def test_an_incomplete_selection_names_the_missing_shard(tmp_path: Path) -> None:
+    """A gap in the shards would give every later row an address that is not its own."""
+    cache_dir = tmp_path / "cache"
+    data = cache_dir / "demo" / "data"
+    data.mkdir(parents=True)
+    table = pa.Table.from_pylist([_record(JPEG, "a.JPG")], schema=_schema())
+    pq.write_table(table, data / "train-00001-of-00002.parquet")
+
+    with pytest.raises(IncompleteCache, match="train-00000-of-00002"):
+        _publish(tmp_path, None, cache_dir=cache_dir)
+
+
+def test_a_dry_run_refuses_an_incomplete_selection_too(tmp_path: Path) -> None:
+    """The plan a dry run prints is only honest if the cache it would read is whole."""
+    cache_dir = tmp_path / "cache"
+    data = cache_dir / "demo" / "data"
+    data.mkdir(parents=True)
+    table = pa.Table.from_pylist([_record(JPEG, "a.JPG")], schema=_schema())
+    pq.write_table(table, data / "train-00000-of-00002.parquet")
+
+    with pytest.raises(IncompleteCache, match="train-00001-of-00002"):
+        _publish(tmp_path, None, cache_dir=cache_dir, dry_run=True)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -11,8 +12,15 @@ import pytest
 from huggingface_hub.file_download import DryRunFileInfo
 
 from biohack_datasets import cli, fetch_cache
-from biohack_datasets.fetch_cache import CacheVerificationError, download, plan, verify
-from biohack_datasets.sources import Source, Upstream
+from biohack_datasets.fetch_cache import (
+    CacheVerificationError,
+    download,
+    fetch_labels,
+    labels_path,
+    plan,
+    verify,
+)
+from biohack_datasets.sources import Labels, Source, Upstream
 
 UPSTREAM = Upstream(
     repo="owner/repo",
@@ -124,3 +132,26 @@ def test_verify_deletes_a_file_that_is_not_readable_parquet(tmp_path: Path) -> N
         verify([truncated])
 
     assert not truncated.exists()
+
+
+LABELS = Labels(
+    "https://huggingface.co/GlobalWheat/GWFSS_Segformer_b0/resolve/" + "a" * 40 + "/class.json"
+)
+
+
+def test_labels_path_keeps_the_urls_file_name(tmp_path: Path) -> None:
+    """The cache mirrors the file the URL names, under the dataset's labels directory."""
+    assert labels_path(tmp_path, "gwfss", LABELS) == tmp_path / "gwfss" / "labels" / "class.json"
+
+
+def test_fetch_labels_writes_what_the_url_returns(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """One HTTPS GET, staged and moved into place, so no half-written legend is cached."""
+    destination = tmp_path / "labels" / "class.json"
+    monkeypatch.setattr(fetch_cache, "urlopen", lambda url, timeout: BytesIO(b"[]"))
+
+    fetch_labels(LABELS, destination)
+
+    assert destination.read_bytes() == b"[]"
+    assert not list(destination.parent.glob("*.part"))

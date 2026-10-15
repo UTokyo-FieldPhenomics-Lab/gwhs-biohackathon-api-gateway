@@ -12,8 +12,11 @@ The cache lives at ``datasets/.hf_cache/<dataset_id>/`` and is ignored by git.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from urllib.parse import urlparse
+from urllib.request import urlopen
 
 import pyarrow
 import pyarrow.parquet as pq
@@ -21,7 +24,7 @@ from huggingface_hub import snapshot_download
 from huggingface_hub.file_download import DryRunFileInfo
 from huggingface_hub.utils.tqdm import disable_progress_bars
 
-from biohack_datasets.sources import Source, Upstream
+from biohack_datasets.sources import Labels, Source, Upstream
 
 DEFAULT_CACHE_DIR = Path(__file__).resolve().parents[2] / ".hf_cache"
 """``datasets/.hf_cache``, resolved from the package so the working directory does not matter.
@@ -32,9 +35,16 @@ Named after the tool that fills it, like ``.mypy_cache``, ``.pytest_cache``, and
 DEFAULT_CONCURRENCY = 16
 """Parallel downloads when the caller names no other number."""
 
+LABELS_SUBDIR = "labels"
+"""Subdirectory of a dataset's cache holding its pinned class vocabulary."""
+
 
 class CacheVerificationError(RuntimeError):
     """A file in the cache is unreadable, so the run must not be treated as a good cache."""
+
+
+class CacheFetchError(RuntimeError):
+    """A pinned file could not be downloaded, so the cache is not complete."""
 
 
 def plan(upstream: Upstream, local_dir: Path) -> list[DryRunFileInfo]:
@@ -96,6 +106,60 @@ def download(upstream: Upstream, local_dir: Path, concurrency: int) -> None:
         local_dir=local_dir,
         max_workers=concurrency,
     )
+
+
+def labels_path(cache_dir: Path, dataset_id: str, labels: Labels) -> Path:
+    """Name where a dataset's pinned class vocabulary lives in the cache.
+
+    Parameters
+    ----------
+    cache_dir : pathlib.Path
+        Root of the cache.
+    dataset_id : str
+        Dataset the vocabulary belongs to.
+    labels : Labels
+        The pinned URL, whose last path segment is the file's name.
+
+    Returns
+    -------
+    Path
+        The cache path, whether or not it exists yet.
+    """
+    return cache_dir / dataset_id / LABELS_SUBDIR / Path(urlparse(labels.url).path).name
+
+
+def fetch_labels(labels: Labels, destination: Path) -> None:
+    """Download one pinned class vocabulary into the cache.
+
+    The file is a few hundred bytes of JSON published beside a model, so it is fetched with a plain
+    HTTPS GET rather than through the Hub client: the URL already names an immutable revision, and
+    a client that resolves repository ids would have to be told the repository's type as well.
+
+    Parameters
+    ----------
+    labels : Labels
+        The pinned URL, which :mod:`biohack_datasets.sources` has already checked is `https`.
+    destination : pathlib.Path
+        Where to write it, conventionally :func:`labels_path`.
+
+    Returns
+    -------
+    None
+
+    Raises
+    ------
+    CacheFetchError
+        The URL cannot be read. The message names it, and no half-written file is left behind.
+    """
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    staged = destination.with_name(f"{destination.name}.part")
+    try:
+        with urlopen(labels.url, timeout=60) as response:
+            staged.write_bytes(response.read())
+    except OSError as error:
+        staged.unlink(missing_ok=True)
+        raise CacheFetchError(f"{labels.url}: {error}") from error
+    os.replace(staged, destination)
 
 
 def verify(paths: Sequence[Path]) -> dict[Path, int]:
@@ -222,10 +286,19 @@ def _fetch_one(
         state = "cached" if file.is_cached else "to download"
         emit(f"    {file.filename}  {_size(file.file_size or 0)}  {state}")
 
+    labels = source.labels
+    vocabulary: Path | None = None
+    if labels is not None:
+        vocabulary = labels_path(cache_dir, source.dataset_id, labels)
+        state = "cached" if vocabulary.is_file() else "to download"
+        emit(f"    {labels.url} -> {vocabulary}  {state}")
+
     if dry_run:
         return
 
     download(source.upstream, local_dir, concurrency)
+    if labels is not None and vocabulary is not None:
+        fetch_labels(labels, vocabulary)
     for path, rows in verify([Path(file.local_path) for file in files]).items():
         emit(f"    {path.relative_to(local_dir)}  {rows} rows")
 

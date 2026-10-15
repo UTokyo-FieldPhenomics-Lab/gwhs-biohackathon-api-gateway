@@ -9,6 +9,7 @@ untouched. Reads stay serial; only uploads run concurrently.
 
 from __future__ import annotations
 
+import re
 from collections import deque
 from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -18,9 +19,11 @@ from pathlib import Path
 import pyarrow.parquet as pq
 
 from biohack_datasets import __version__
-from biohack_datasets.adapters import Adapter, get_adapter
+from biohack_datasets.adapters import Adapter, check_adapter, get_adapter
+from biohack_datasets.fetch_cache import labels_path
 from biohack_datasets.formats import CACHE_CONTROL, CONTENT_TYPES
 from biohack_datasets.index import build, commit, counts, utc_timestamp
+from biohack_datasets.labels import Palette, load_palette
 from biohack_datasets.model import Row
 from biohack_datasets.s3 import AlreadyExists, ObjectInfo, ObjectStore, ObjectUnreadable
 from biohack_datasets.sources import Source, Upstream
@@ -33,6 +36,9 @@ DEFAULT_CONCURRENCY = 16
 
 Emit = Callable[[str], None]
 
+_SHARD_NAME = re.compile(r"^(?P<split>.+)-(?P<index>\d+)-of-(?P<total>\d+)\.parquet$")
+"""A sharded parquet name as the Hub writes one, such as train-00000-of-00002.parquet."""
+
 
 class PublishError(RuntimeError):
     """A publish cannot continue; the message names what stopped it."""
@@ -40,6 +46,10 @@ class PublishError(RuntimeError):
 
 class MissingCache(PublishError):
     """The cached parquet a publish reads is absent."""
+
+
+class IncompleteCache(PublishError):
+    """The cached selection is missing a shard, so its row numbers would not be the dataset's."""
 
 
 class ObjectConflict(PublishError):
@@ -130,6 +140,44 @@ def parquet_files(cache_dir: Path, dataset_id: str, upstream: Upstream) -> list[
     return [found[name] for name in sorted(found)]
 
 
+def missing_shards(files: Sequence[Path]) -> list[str]:
+    """Name the shards missing from a cached selection, from the file names alone.
+
+    A dataset's absolute row number is the cumulative index over its files in sorted path order, so
+    a selection missing a shard does not merely publish fewer rows: every row after the gap takes
+    the address of a row that is not there, and a later, complete publish meets its own different
+    bytes at those keys. A shard's name carries the count, which is the one fact the check needs and
+    the one thing a publish can read without the network.
+
+    Parameters
+    ----------
+    files : sequence of pathlib.Path
+        The cached files of one dataset, in address order.
+
+    Returns
+    -------
+    list of str
+        One file name per missing shard. A name that carries no shard number is skipped, because
+        nothing offline can say how many files of that shape there should be.
+    """
+    present: dict[tuple[str, int], set[int]] = {}
+    for path in files:
+        match = _SHARD_NAME.match(path.name)
+        if match is None:
+            continue
+        key = (match.group("split"), int(match.group("total")))
+        present.setdefault(key, set()).add(int(match.group("index")))
+
+    missing: list[str] = []
+    for (split, total), indexes in sorted(present.items()):
+        missing.extend(
+            f"{split}-{index:05d}-of-{total:05d}.parquet"
+            for index in range(total)
+            if index not in indexes
+        )
+    return missing
+
+
 def publish_dataset(
     source: Source,
     *,
@@ -171,6 +219,8 @@ def publish_dataset(
     ------
     MissingCache
         The cache holds no parquet for the dataset.
+    IncompleteCache
+        The cache holds part of the selection rather than all of it.
     AdapterNotImplemented
         The provenance record names an adapter this package does not implement.
     PublishError
@@ -183,9 +233,16 @@ def publish_dataset(
         return None
     if source.adapter is None:
         raise PublishError(f"{source.dataset_id}: pinned upstream declares no adapter")
-    adapter = get_adapter(source.adapter)
+    # The name is checked here so a typo fails before anything is read. The reader itself is built
+    # further down, once the vocabulary is loaded, because the mask schema needs it to exist.
+    check_adapter(source.adapter)
 
     files = parquet_files(cache_dir, source.dataset_id, source.upstream)
+    if missing := missing_shards(files):
+        raise IncompleteCache(
+            f"{source.dataset_id}: the cache holds {len(files)} file(s) and is missing"
+            f" {', '.join(missing)}; run 'biohack-datasets fetch --dataset {source.dataset_id}'"
+        )
     upstream = source.upstream
     emit(
         f"{source.dataset_id}: adapter {source.adapter},"
@@ -196,6 +253,10 @@ def publish_dataset(
         emit(f"    cache {cached}: {len(files)} parquet file(s), {_cached_rows(files)} row(s)")
     else:
         emit(f"    cache {cache_dir / source.dataset_id}: empty (run biohack-datasets fetch)")
+    if source.labels is not None:
+        vocabulary = labels_path(cache_dir, source.dataset_id, source.labels)
+        state = "cached" if vocabulary.is_file() else "missing (run biohack-datasets fetch)"
+        emit(f"    vocabulary {source.labels.url} -> {vocabulary}  {state}")
     emit(f"    index {index_path}")
     emit(
         f"    bucket s3://{bucket}" if bucket else "    bucket none: build locally, upload nothing"
@@ -208,12 +269,15 @@ def publish_dataset(
             f" run 'biohack-datasets fetch --dataset {source.dataset_id}'"
         )
 
+    palette = _palette_of(source, cache_dir)
+    adapter = get_adapter(source.adapter, palette)
     temporary = build(
         source,
         adapter.iter_rows(files),
         index_path,
         rules=__version__,
         generated_at=utc_timestamp(),
+        classes=palette.classes if palette is not None else (),
         mask_kind=adapter.mask_kind,
     )
     try:
@@ -304,6 +368,39 @@ def publish_datasets(
                 f" license {license_name}, rows {summary.rows}, objects {summary.objects}"
             )
     return 0
+
+
+def _palette_of(source: Source, cache_dir: Path) -> Palette | None:
+    """Read a dataset's pinned class vocabulary out of the cache.
+
+    Parameters
+    ----------
+    source : Source
+        Dataset being published.
+    cache_dir : pathlib.Path
+        Root of the cache.
+
+    Returns
+    -------
+    Palette or None
+        The vocabulary, or `None` when the dataset's source names none.
+
+    Raises
+    ------
+    MissingCache
+        The source names a vocabulary that has not been fetched. Publishing without it would build
+        an index whose classes and row classes are silently empty, which reads as a dataset with no
+        vocabulary rather than as a missing file.
+    """
+    if source.labels is None:
+        return None
+    path = labels_path(cache_dir, source.dataset_id, source.labels)
+    if not path.is_file():
+        raise MissingCache(
+            f"{source.dataset_id}: no cached class vocabulary at {path};"
+            f" run 'biohack-datasets fetch --dataset {source.dataset_id}'"
+        )
+    return load_palette(path)
 
 
 def _cached_rows(files: Sequence[Path]) -> int:

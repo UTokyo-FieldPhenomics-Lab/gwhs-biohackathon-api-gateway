@@ -51,5 +51,5 @@ def sniff_image_ext(data: bytes) -> str:
         return "png"
     magic = data[:4].hex()
     raise UnknownImageFormat(
-        f"image magic {magic!r} is neither JPEG ({JPEG_MAGIC.hex()}) nor PNG ({PNG_MAGIC.hex()})"
+        f"magic {magic!r} is neither JPEG ({JPEG_MAGIC.hex()}) nor PNG ({PNG_MAGIC.hex()})"
     )
