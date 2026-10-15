@@ -1,6 +1,7 @@
 # Dataset surface: serve the publisher's index over HTTP
 
-Status: **in progress**
+Status: done — implemented and verified on the host on 2026-10-15 — see
+[`../references/2026101519_dataset-surface.md`](../references/2026101519_dataset-surface.md)
 
 ## Goal and acceptance
 
@@ -71,3 +72,15 @@ one is not.
 
 `uv run pytest`, `mypy`, `ruff` in `gateway/`; then on the host, with `gwhs-temp.db` in place and
 a token issued, the four routes against `https://api.global-wheat.com`.
+
+## Result (2026-10-15)
+
+Local: 103 tests (up from 63), `mypy --strict`, and `ruff` clean in `gateway/`. The real
+`gwhs-temp.db` copied off the host loads into the shapes this fixture pins: row 0 answers 592×2509,
+24 objects, 5 tags, RLE `[2509, 592]`, and a cursor walk of 3 pages covers rows 0–9.
+
+Host, after the deploy described in `deploy/README.md` (`f70822a`): `/datasets` needs a key and
+answers the one real dataset; its description carries 18 tags, 6 categories, and 5 attributes; the
+list's row 0 statistics are `{objects: 24, tags: 5}`; the detail returns tags and geometry; an absent
+row, a bad cursor, and a `limit` over 1,000 answer `404`, `400`, `400`; and the `image_url` the API
+emitted resolves to `200 image/jpeg`. OpenAPI lists exactly `/health` and the four dataset paths.
