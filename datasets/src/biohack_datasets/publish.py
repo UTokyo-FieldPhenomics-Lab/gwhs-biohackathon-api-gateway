@@ -14,6 +14,7 @@ from collections import deque
 from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
+from itertools import islice
 from pathlib import Path
 
 import pyarrow.parquet as pq
@@ -187,6 +188,7 @@ def publish_dataset(
     store: ObjectStore | None,
     concurrency: int,
     dry_run: bool,
+    limit: int | None = None,
     emit: Emit = print,
 ) -> PublishSummary | None:
     """Build, validate, upload, and verify one dataset.
@@ -207,6 +209,10 @@ def publish_dataset(
         Uploads in flight.
     dry_run : bool
         Print the plan and write nothing.
+    limit : int or None, optional
+        Publish only the first limit rows. The objects are the prefix a later, full publish finds
+        already correct and skips, while the index describes just those rows, so a rehearsal points
+        index_path at a throwaway directory rather than the gateway's.
     emit : callable, optional
         Sink for the report, one line at a time.
 
@@ -228,6 +234,8 @@ def publish_dataset(
     VerificationError
         An uploaded object does not read back as written.
     """
+    if limit is not None and limit < 1:
+        raise PublishError(f"{source.dataset_id}: limit must be at least 1, got {limit}")
     if source.upstream is None:
         emit(f"{source.dataset_id}: skipped, no upstream revision pinned yet")
         return None
@@ -257,6 +265,8 @@ def publish_dataset(
         vocabulary = labels_path(cache_dir, source.dataset_id, source.labels)
         state = "cached" if vocabulary.is_file() else "missing (run biohack-datasets fetch)"
         emit(f"    vocabulary {source.labels.url} -> {vocabulary}  {state}")
+    if limit is not None:
+        emit(f"    limit {limit} row(s): a rehearsal, whose objects a full publish will skip")
     emit(f"    index {index_path}")
     emit(
         f"    bucket s3://{bucket}" if bucket else "    bucket none: build locally, upload nothing"
@@ -273,7 +283,7 @@ def publish_dataset(
     adapter = get_adapter(source.adapter, palette)
     temporary = build(
         source,
-        adapter.iter_rows(files),
+        _rows(adapter, files, limit),
         index_path,
         rules=__version__,
         generated_at=utc_timestamp(),
@@ -286,7 +296,7 @@ def publish_dataset(
             uploaded = skipped = repaired = 0
         else:
             uploaded, skipped, repaired = _upload(
-                adapter, files, source.dataset_id, store, concurrency
+                adapter, files, source.dataset_id, store, concurrency, limit=limit
             )
             emit(f"    {uploaded} uploaded, {repaired} repaired, {skipped} skipped")
         rows, objects = counts(temporary)
@@ -318,6 +328,7 @@ def publish_datasets(
     store: ObjectStore | None,
     concurrency: int,
     dry_run: bool,
+    limit: int | None = None,
     emit: Emit = print,
 ) -> int:
     """Publish every selected dataset, stopping at the first failure.
@@ -340,6 +351,8 @@ def publish_datasets(
         Uploads in flight.
     dry_run : bool
         Print the plan and write nothing.
+    limit : int or None, optional
+        Publish only the first limit rows of each dataset.
     emit : callable, optional
         Report sink.
 
@@ -359,6 +372,7 @@ def publish_datasets(
             store=store,
             concurrency=concurrency,
             dry_run=dry_run,
+            limit=limit,
             emit=emit,
         )
         if summary is not None:
@@ -439,12 +453,34 @@ def _objects_of(dataset_id: str, row: Row) -> Iterator[tuple[str, bytes, str]]:
         yield f"{dataset_id}/masks/{row.row:08d}.{row.mask_ext}", row.mask, row.mask_ext
 
 
+def _rows(adapter: Adapter, files: Sequence[Path], limit: int | None) -> Iterator[Row]:
+    """Read a dataset's rows, either all of them or the first limit.
+
+    Parameters
+    ----------
+    adapter : Adapter
+        Reader of the dataset's schema.
+    files : sequence of pathlib.Path
+        Cached parquet files, in address order.
+    limit : int or None
+        How many rows to read, or None for every row.
+
+    Returns
+    -------
+    Iterator of Row
+        The rows, numbered from zero either way, so a limit yields the dataset's prefix.
+    """
+    rows = adapter.iter_rows(files)
+    return rows if limit is None else islice(rows, limit)
+
+
 def _upload(
     adapter: Adapter,
     files: Sequence[Path],
     dataset_id: str,
     store: ObjectStore,
     concurrency: int,
+    limit: int | None = None,
 ) -> tuple[int, int, int]:
     """Upload every object, reading rows serially and uploading concurrently.
 
@@ -469,7 +505,7 @@ def _upload(
     counts_by_action = {"uploaded": 0, "skipped": 0, "repaired": 0}
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
         pending: deque[Future[str]] = deque()
-        for row in adapter.iter_rows(files):
+        for row in _rows(adapter, files, limit):
             for key, body, extension in _objects_of(dataset_id, row):
                 pending.append(pool.submit(_put_object, store, key, body, extension))
                 if len(pending) >= concurrency:

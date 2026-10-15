@@ -15,6 +15,7 @@ from biohack_datasets.publish import (
     IncompleteCache,
     MissingCache,
     ObjectConflict,
+    PublishError,
     VerificationError,
     missing_shards,
     parse_bucket,
@@ -365,3 +366,32 @@ def test_a_dry_run_refuses_an_incomplete_selection_too(tmp_path: Path) -> None:
 
     with pytest.raises(IncompleteCache, match="train-00001-of-00002"):
         _publish(tmp_path, None, cache_dir=cache_dir, dry_run=True)
+
+
+def test_a_limit_publishes_only_the_first_rows(tmp_path: Path) -> None:
+    """A rehearsal publishes the dataset's prefix, not a slice of one file."""
+    store = MemoryObjectStore()
+
+    summary = _publish(tmp_path, store, limit=1)
+
+    assert summary.rows == 1  # type: ignore[attr-defined]
+    assert set(store.objects) == {"demo/images/00000000.jpg"}
+    assert len(read_back(tmp_path / "index" / "demo.db")["rows"]) == 1
+
+
+def test_a_full_publish_skips_the_prefix_a_rehearsal_wrote(tmp_path: Path) -> None:
+    """Same keys, same bytes: the rehearsal does not touch the write-once rule."""
+    store = MemoryObjectStore()
+    _publish(tmp_path, store, limit=1)
+
+    summary = _publish(tmp_path, store)
+
+    assert summary.uploaded == 1  # type: ignore[attr-defined]
+    assert summary.skipped == 1  # type: ignore[attr-defined]
+    assert set(store.objects) == {"demo/images/00000000.jpg", "demo/images/00000001.png"}
+
+
+def test_a_limit_below_one_is_refused(tmp_path: Path) -> None:
+    """A count that is not a count is a mistake, not an empty publish."""
+    with pytest.raises(PublishError, match="at least 1"):
+        _publish(tmp_path, None, limit=0)

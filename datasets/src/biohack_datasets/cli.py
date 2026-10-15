@@ -101,6 +101,7 @@ def _publish(args: argparse.Namespace, sources: dict[str, Source]) -> int:
         store=store,
         concurrency=args.concurrency,
         dry_run=args.dry_run,
+        limit=args.limit,
     )
 
 
@@ -139,6 +140,31 @@ def _cache_dir(args: argparse.Namespace) -> Path:
         The requested directory, or the package default.
     """
     return Path(args.cache_dir) if args.cache_dir else DEFAULT_CACHE_DIR
+
+
+def _positive(text: str) -> int:
+    """Parse a row count that must be at least one.
+
+    Parameters
+    ----------
+    text : str
+        The value a caller passed on the command line.
+
+    Returns
+    -------
+    int
+        The count.
+
+    Raises
+    ------
+    argparse.ArgumentTypeError
+        The value is not an integer of at least one. argparse reports it as a usage error, rather
+        than letting a negative count reach islice.
+    """
+    value = int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"expected a count of at least 1, got {text!r}")
+    return value
 
 
 def _build_parser(dataset_ids: list[str]) -> argparse.ArgumentParser:
@@ -184,6 +210,15 @@ def _build_parser(dataset_ids: list[str]) -> argparse.ArgumentParser:
     publish.add_argument(
         "--bucket",
         help="target bucket, s3://NAME; default $BIOHACK_BUCKET, else build locally",
+    )
+    publish.add_argument(
+        "--limit",
+        type=_positive,
+        metavar="N",
+        help=(
+            "publish only the first N rows: a rehearsal, whose objects a full publish then skips. "
+            "The index describes N rows, so point --index-dir at a throwaway directory"
+        ),
     )
     publish.add_argument(
         "--index-dir",
