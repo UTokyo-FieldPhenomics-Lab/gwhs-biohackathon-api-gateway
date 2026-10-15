@@ -1,7 +1,7 @@
 # The documentation site: GitHub Pages, `docs.global-wheat.com`, and the missing stylesheet
 
 2026-10-15 16:00 JST. Hosting decision, bring-up, and the one failure that cost most of the session.
-The plan is [`../plans/2026101521_docs-site-hosting.md`](../plans/2026101521_docs-site-hosting.md);
+The plan is [`../plans/2026101521_✅docs-site-hosting.md`](../plans/2026101521_✅docs-site-hosting.md);
 the runbook the operator follows is [`../../deploy/README.md`](../../deploy/README.md) §6.
 
 ## Objective
