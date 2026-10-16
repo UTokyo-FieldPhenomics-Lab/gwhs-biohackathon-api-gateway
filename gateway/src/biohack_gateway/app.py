@@ -1,11 +1,11 @@
 """Global Wheat API gateway application.
 
-The surface is small and every part of it is deliberate. ``/health`` and the reference page answer
-without a key because they carry no data — liveness, and a contract that is public in this
-repository anyway — and the reference is also where a reader puts the key that unlocks everything
-else. Every other path, including paths that do not exist, needs a participant token, because the
-people this serves are somewhere else on the internet and nothing but that token stands between them
-and the host.
+The surface is small and every part of it is deliberate. ``/health`` and the two pages this host
+serves answer without a key because they carry no data — liveness, a contract that is public in
+this repository anyway, and a page every number on which comes from a call the reader's own key
+makes — and the two pages are also where a reader puts that key. Every other path, including paths
+that do not exist, needs a participant token, because the people this serves are somewhere else on
+the internet and nothing but that token stands between them and the host.
 
 Key authentication, the error contract, and liveness live here. The dataset surface and the model
 surface are both included from here, and both inherit the gate by adding a route rather than by
@@ -32,6 +32,7 @@ from starlette.middleware.base import RequestResponseEndpoint
 from biohack_gateway.auth import Authenticator
 from biohack_gateway.dataset_index import DEFAULT_INDEX_DIR, load_datasets
 from biohack_gateway.datasets import DEFAULT_DATA_BASE_URL, create_dataset_router
+from biohack_gateway.frames import frame_reporter
 from biohack_gateway.models import (
     DEFAULT_MODELS_FILE,
     ModelRegistry,
@@ -40,6 +41,7 @@ from biohack_gateway.models import (
     http_transport,
     load_models,
 )
+from biohack_gateway.play import PLAY_PATH, play_page
 from biohack_gateway.tokens import DEFAULT_TOKENS_FILE, TokenPoolError
 
 logger = logging.getLogger(__name__)
@@ -105,27 +107,37 @@ One origin rather than two settings: the page tells the browser who may frame it
 the height it reports to the same site. A harness that frames a local app passes its own.
 """
 
-OPEN_PATHS = frozenset({"/health", "/docs", "/redoc", "/openapi.json"})
+OPEN_PATHS = frozenset({"/health", "/docs", PLAY_PATH, "/redoc", "/openapi.json"})
 """The paths that answer without a key.
 
-Both entries earn the exception the same way: they say nothing about the data and exist for someone
-who has no key yet, and the documentation pages cannot be reached from a browser at all if the page
-itself needs a header. Every other path — including ones that do not exist — is behind the gate.
+Every entry earns the exception the same way: it says nothing about the data and exists for someone
+who has no key yet, and a page cannot be opened in a browser at all if the page itself needs a
+header. Two of them are also where a reader puts a key — the reference and the model page — and a
+field for a secret in a page that anything may embed is a field that anything may overlay, which is
+why each names the one site allowed to frame it. Every other path, including ones that do not exist,
+is behind the gate.
 """
 
-_DARK_STYLE_PATH = Path(__file__).with_name("swagger_dark.css")
-_TRIM_STYLE_PATH = Path(__file__).with_name("swagger_trim.css")
+_ASSETS = Path(__file__).parent / "assets"
+"""The page material this application serves, one language to a file.
 
-SWAGGER_DARK_STYLE = f"<style>{_DARK_STYLE_PATH.read_text(encoding='utf-8')}</style>"
+Markup, script and styling live here rather than as strings in the modules that inject them, so a
+page is edited as a page and every Python module in this package is Python. They are read at
+import and inlined into the answer, never mounted: what this host serves at ``/docs`` is a
+document the application carries, not a directory whose contents anything may fetch by
+guessing a name, and nothing here depends on the working directory. `gateway.md` says so.
+"""
+
+SWAGGER_DARK_STYLE = f"<style>{(_ASSETS / 'swagger_dark.css').read_text(encoding='utf-8')}</style>"
 """Swagger UI in the documentation site's dark palette, carried by the page itself.
 
 Swagger UI ships no dark theme — the CDN serves one stylesheet and no dark variant — so this one
-lives beside this module and is read at import. It applies only when the page has been told which
+lives in `assets/` and is read at import. It applies only when the page has been told which
 side it is on: by the `?scheme=` it was framed with, by the site's message when the reader switches,
 or by the operating system's preference when the page is opened on its own.
 """
 
-SWAGGER_TRIM_STYLE = f"<style>{_TRIM_STYLE_PATH.read_text(encoding='utf-8')}</style>"
+SWAGGER_TRIM_STYLE = f"<style>{(_ASSETS / 'swagger_trim.css').read_text(encoding='utf-8')}</style>"
 """The chrome this contract makes meaningless, removed in both palettes.
 
 Separate from the palette because it is not one: the response table's always-empty Links column and
@@ -134,127 +146,10 @@ rule that had to justify its missing `html[data-scheme="dark"]` prefix would be 
 than a second file. What each trim removes, and what it deliberately leaves alone, is in the file.
 """
 
-SWAGGER_FRAME_REPORTER = """
-<script>
-  // The documentation site frames this page, and a cross-origin frame cannot be measured from
-  // outside: the page reports its own height so the frame grows to its content and the reader
-  // scrolls one page instead of two nested ones. Nothing here reads or sends anything but that
-  // number, and only to the documentation site.
-  //
-  // The height is the bottom edge of the Swagger UI container, not `documentElement.scrollHeight`:
-  // observing `documentElement` catches a section expanding and misses it collapsing, because a
-  // document's box does not shrink back to its content while the frame stays tall. The container
-  // does shrink, so it is what gets observed — together with the class changes Swagger UI makes
-  // when a section is toggled, which is what a collapse looks like. The key field above the
-  // container counts as well, or the frame would cut off the one control a reader needs first.
-  // The same channel carries the theme: the site says which side of the palette it is on, as a
-  // query parameter for the first paint and as a message whenever the reader switches.
-  const SITE_ORIGIN = "__PARENT_ORIGIN__";
-  const apply_scheme = (scheme) => {
-    if (scheme === "dark" || scheme === "light") document.documentElement.dataset.scheme = scheme;
-  };
-  apply_scheme(
-    new URLSearchParams(location.search).get("scheme")
-      || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"),
-  );
-
-  if (window.parent !== window) {
-    // Framed: the site around the frame owns the height, so this page must not scroll — a scrollbar
-    // here would also narrow the viewport, reflow the text a few pixels taller, and keep itself
-    // alive. Opened directly, nothing is hidden and the page scrolls as Swagger UI intends.
-    document.documentElement.style.overflow = "hidden";
-    document.body.style.overflow = "hidden";
-  }
-  const report_height = () => requestAnimationFrame(() => {
-    // Opened on its own there is nobody to size, and a message addressed to the site's origin
-    // from a page that is not framed is a console warning and nothing else.
-    if (window.parent === window) return;
-    const ui = document.querySelector("#swagger-ui") || document.body;
-    const bar = document.querySelector("#key-bar");
-    const barBottom = bar ? bar.getBoundingClientRect().bottom : 0;
-    const bottom = Math.max(ui.getBoundingClientRect().bottom, barBottom);
-    window.parent.postMessage({docsHeight: Math.ceil(bottom + window.scrollY)}, SITE_ORIGIN);
-  });
-  window.addEventListener("message", (event) => {
-    if (event.origin !== SITE_ORIGIN || !event.data) return;
-    apply_scheme(event.data.scheme);
-  });
-  const observed = document.querySelector("#swagger-ui") || document.body;
-  new ResizeObserver(report_height).observe(observed);
-  new MutationObserver(report_height).observe(document.body, {
-    subtree: true,
-    attributes: true,
-    attributeFilter: ["class", "style", "hidden"],
-  });
-  window.addEventListener("load", report_height);
-  window.addEventListener("resize", report_height);
-</script>
-"""
-"""Injected into the Swagger UI page so `docs.global-wheat.com` can size the frame around it.
-
-The alternative — a fixed height, or a scrollbar inside the frame — is what this replaces. It is a
-same-origin-free mechanism: a message with a number, addressed to one origin, ignored by everyone
-else, and the page works exactly as before when nothing listens. `__PARENT_ORIGIN__` is replaced
-with the app's configured parent origin, so the page names one site for both the frame and the
-message.
-"""
-
-
 SWAGGER_KEY_BAR = (
-    """
-<style>
-  /* What this page adjusts about Swagger UI's own rendering: the row's layout, the column it sits
-     in, and one icon whose reading this page changes. The type, the input, and the buttons are the
-     framework's, and so is the column — `wrapper` is the class it puts its own content in, which
-     keeps this row lined up with the title and the calls rather than flush to the band it is in.
-     The state line is ours because Swagger has no equivalent for it. */
-  #key-bar form {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem 0.75rem;
-    align-items: center;
-  }
-  #key-bar label { margin: 0; font-size: 14px; font-weight: 700; }
-  #key-bar input { flex: 1 1 14rem; min-width: 0; margin: 0; }
-  /* The two buttons wrap together or not at all: one of them alone on a second line reads as a
-     mistake, and on a phone they belong on their own line under the field. */
-  #key-bar .key-buttons { display: inline-flex; flex-wrap: wrap; gap: 0.5rem; }
-  #key-bar .key-state { display: block; margin-top: 0.5rem; color: #6b7280; }
-  #key-bar .key-state[data-set="yes"] { color: #1f7a4d; }
-  html[data-scheme="dark"] #key-bar .key-state { color: #9aa4b2; }
-  html[data-scheme="dark"] #key-bar .key-state[data-set="yes"] { color: #4ec07f; }
-  /* Swagger draws the closed padlock once a call is authorized and the open one when it is not,
-     which reads backwards on a page whose whole purpose is entering a key: a closed padlock should
-     mean the call still needs one. The two glyphs are exchanged — Swagger UI's own shapes, and
-     nothing else about the button changes — and a browser that does not know the `d` property keeps
-     the icons it had rather than losing them. */
-  .swagger-ui .authorization__btn svg.locked path { d: path("__OPEN__"); }
-  .swagger-ui .authorization__btn svg.unlocked path { d: path("__CLOSED__"); }
-  /* One way in, and only once the field below has proved it works: a reader who found the standard
-     button instead would meet a dialog that opens at the centre of a frame as tall as the page. */
-  html.key-bar-ready .swagger-ui .auth-wrapper { display: none; }
-</style>
-<div id="key-bar" class="wrapper" hidden>
-  <form id="key-form" autocomplete="off">
-    <label for="key-input">Your key</label>
-    <input
-      id="key-input"
-      name="key"
-      type="password"
-      autocomplete="off"
-      spellcheck="false"
-      placeholder="__HEADER__"
-      aria-describedby="key-state"
-    />
-    <span class="key-buttons">
-      <button type="submit" class="btn authorize">Use key</button>
-      <button id="key-forget" type="button" class="btn">Forget</button>
-    </span>
-  </form>
-  <span id="key-state" class="key-state" role="status"></span>
-</div>
-<div id="swagger-ui">
-""".replace("__HEADER__", API_KEY_HEADER)
+    (_ASSETS / "swagger_key_bar.html")
+    .read_text(encoding="utf-8")
+    .replace("__HEADER__", API_KEY_HEADER)
     .replace("__OPEN__", _PADLOCK_OPEN)
     .replace("__CLOSED__", _PADLOCK_CLOSED)
 )
@@ -266,112 +161,11 @@ wrong thing. The script moves it there once the page has rendered, and takes it 
 cannot: what this row shows, Swagger UI already styles.
 """
 
-SWAGGER_KEY_BAR_SCRIPT = """
-<script>
-  (() => {
-    // The reference is read inside the documentation site's frame, and a framed page cannot show
-    // Swagger UI's own Authorize dialog where the reader is looking: the frame is as tall as the
-    // page, so a centred dialog opens somewhere below the fold. This field is where a key goes
-    // instead — it calls what the dialog calls, in the place a reader looks for page-wide settings.
-    const SCHEME = "__SCHEME__";
-    const bar = document.getElementById("key-bar");
-    const form = document.getElementById("key-form");
-    const input = document.getElementById("key-input");
-    const state = document.getElementById("key-state");
-    if (!bar || !form || !input || !state || typeof ui === "undefined") {
-      // No bar rather than a dead one: without Swagger's own object a field would swallow keys.
-      if (bar) bar.remove();
-      return;
-    }
-
-    // Swagger's servers band is the strip between the description and the call list, where a reader
-    // expects page-wide settings to live — and the band whose background makes this row part of the
-    // page rather than something laid over it. React renders that band and has never heard of this
-    // node, so a re-render can drop it; that is what the observer at the end is for.
-    const anchor = () =>
-      document.querySelector("#swagger-ui .scheme-container") ||
-      document.querySelector("#swagger-ui .information-container");
-    const place = () => {
-      const target = anchor();
-      if (!target) return;
-      if (bar.parentElement !== target) target.prepend(bar);
-      bar.hidden = false;
-    };
-
-    // Read Swagger's state rather than keeping a copy: the key is stored by Swagger (the page asks
-    // it to persist one), and one copy of a secret is enough. A failure here says nothing rather
-    // than something wrong.
-    const describe = () => {
-      try {
-        const held = ui.authSelectors.authorized().get(SCHEME);
-        state.dataset.set = held ? "yes" : "no";
-        const text = held
-          ? "a key is in use — paste another to replace it"
-          : "no key yet — paste your team's token, and every call below can be tried";
-        // Only when it changed: the observer that keeps this line true watches the container this
-        // line is in, and assigning the same text still replaces the text node — a mutation that
-        // changes nothing is a mutation, and the callback would call itself without yielding.
-        if (state.textContent !== text) state.textContent = text;
-      } catch {
-        if (state.textContent !== "") state.textContent = "";
-      }
-    };
-
-    form.addEventListener("submit", (event) => {
-      event.preventDefault();
-      const value = input.value.trim();
-      if (!value) return;
-      // Swagger remembers a key only when it is handed in the variant its own dialog uses, with the
-      // definition it applies to; `preauthorizeApiKey` sets it for this page and loses it on the
-      // next visit, which is the one thing this page asks Swagger to do for it.
-      const schema = ui.specSelectors.securityDefinitions().get(SCHEME);
-      if (schema && ui.authActions.authorizeWithPersistOption) {
-        ui.authActions.authorizeWithPersistOption({[SCHEME]: {value: value, schema: schema}});
-      } else {
-        ui.preauthorizeApiKey(SCHEME, value);
-      }
-      input.value = "";
-      describe();
-    });
-    document.getElementById("key-forget").addEventListener("click", () => {
-      const forget = ui.authActions.logoutWithPersistOption || ui.authActions.logout;
-      forget([SCHEME]);
-      describe();
-    });
-
-    // Swagger's own words for the two states describe its idea of them — "locked" once a key is
-    // set — which is the opposite of what the exchanged icons say. The label follows the icon, so a
-    // reader who cannot see it hears what the picture shows.
-    const relabel = () => {
-      for (const button of document.querySelectorAll("#swagger-ui .authorization__btn")) {
-        const label = button.querySelector("svg.locked")
-          ? "this call sends your key"
-          : "this call needs your key";
-        if (button.getAttribute("aria-label") !== label) button.setAttribute("aria-label", label);
-        if (button.getAttribute("title") !== label) button.setAttribute("title", label);
-      }
-    };
-
-    // Placed, kept placed, and kept relabelled: anything Swagger re-renders inside its container
-    // can take this node with it or restore its own words, and putting both back is a few selectors
-    // The same observation keeps the state line true, because the two things that change it are
-    // re-renders of this container — the specification arriving, and Swagger restoring a remembered
-    // key when it mounts. `load` covers a restore that lands without one, so nothing polls.
-    const settle = () => {
-      place();
-      describe();
-      relabel();
-    };
-    new MutationObserver(settle).observe(document.querySelector("#swagger-ui"), {
-      childList: true,
-      subtree: true,
-    });
-    window.addEventListener("load", settle);
-    settle();
-    document.documentElement.classList.add("key-bar-ready");
-  })();
-</script>
-""".replace("__SCHEME__", API_KEY_SCHEME)
+SWAGGER_KEY_BAR_SCRIPT = (
+    f"<script>{(_ASSETS / 'swagger_key_bar.js').read_text(encoding='utf-8')}</script>".replace(
+        "__SCHEME__", API_KEY_SCHEME
+    )
+)
 """What makes the field work, injected at the end of the body where Swagger UI exists.
 
 It hands the key to the same action Swagger's own dialog hands it to, so the request carries the
@@ -663,7 +457,7 @@ def create_app(
         )
         html = bytes(page.body).decode()
         html = html.replace('<div id="swagger-ui">', SWAGGER_KEY_BAR, 1)
-        reporter = SWAGGER_FRAME_REPORTER.replace("__PARENT_ORIGIN__", docs_parent_origin)
+        reporter = frame_reporter(docs_parent_origin, "#swagger-ui", extra="#key-bar")
         return HTMLResponse(
             html.replace(
                 "</body>",
@@ -671,6 +465,23 @@ def create_app(
             ),
             headers={"Content-Security-Policy": f"frame-ancestors {docs_parent_origin}"},
         )
+
+    @app.get(PLAY_PATH, include_in_schema=False)
+    async def play() -> HTMLResponse:
+        """Answer the page a participant runs one model from, in the same frame as the reference.
+
+        The two open pages earn the exception the same way, and this one earns it twice over: it
+        carries no data of its own — every number on it comes from a call the reader's key makes —
+        and it is the one place a reader types that key into a page this host serves, which is why
+        only the documentation site may frame it. Serving it from here is also what makes the live
+        call possible at all: the page is same-origin with the API, so no CORS is involved anywhere.
+
+        Returns
+        -------
+        HTMLResponse
+            The page, from :mod:`biohack_gateway.play`, carrying that page's own CSP.
+        """
+        return play_page(docs_parent_origin)
 
     @app.middleware("http")
     async def require_key(request: Request, call_next: RequestResponseEndpoint) -> Response:

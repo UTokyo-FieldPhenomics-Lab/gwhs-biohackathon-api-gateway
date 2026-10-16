@@ -24,6 +24,7 @@ from biohack_gateway.app import (
     DOCS_PARENT_ORIGIN,
     create_app,
 )
+from biohack_gateway.play import PLAY_PATH
 from biohack_gateway.tokens import TokenPool
 
 TEAM = "gw-01"
@@ -306,3 +307,110 @@ def test_the_parent_origin_is_a_setting(tmp_path: Path) -> None:
 
     assert response.headers["content-security-policy"] == f"frame-ancestors {parent}"
     assert f'"{parent}"' in response.text
+
+
+def test_the_model_page_answers_without_a_key(client: TestClient) -> None:
+    """The page is where a key is entered, so it cannot itself need a header to be reachable."""
+    assert client.get(PLAY_PATH).status_code == 200
+
+
+def test_the_model_page_is_not_in_the_contract(client: TestClient) -> None:
+    """It is a page for a browser, not an operation: the reference must not list it."""
+    assert PLAY_PATH not in client.get("/openapi.json").json()["paths"]
+
+
+def test_the_model_page_loads_the_site_own_decoder(client: TestClient) -> None:
+    """One decoder, and it is the published one.
+
+    The page draws a mask with the documentation site's `rle_decode.js` — the file the
+    tutorial hands a participant to download — loaded by URL. A copy beside this module would
+    be a second decoder to keep in step with the one the site promises is correct.
+    """
+    page = client.get(PLAY_PATH).text
+
+    assert f'src="{DOCS_PARENT_ORIGIN}/post-processing/rle_decode.js"' in page
+    assert "rleDecode" in page
+    assert "function rleDecode" not in page  # the decoder is loaded, never copied
+
+
+def test_the_model_page_names_no_model_and_no_parameter(client: TestClient) -> None:
+    """The page is built from `GET /models`, so supporting a new model needs no change to it.
+
+    This is the invariant the page exists to hold: a model it cannot render is an incomplete
+    declaration rather than a page that is not clever enough. A model id or one of today's parameter
+    names appearing in the page is that invariant broken, and it would be broken quietly.
+    """
+    page = client.get(PLAY_PATH).text
+
+    assert "sam3.1" not in page
+    for parameter in ("prompt", "confidence_threshold", "imgsz"):
+        assert parameter not in page
+    assert "/models/" in page and "/datasets/" in page  # it asks the surface instead
+
+
+def test_the_model_page_reads_the_image_without_cors(client: TestClient) -> None:
+    """`data.global-wheat.com` sends no `access-control-allow-origin`, so the image must not ask.
+
+    An `<img>` carrying `crossorigin` would not load there at all, and the canvas it is drawn on is
+    tainted either way — which is why the page composites the mask through an offscreen canvas and
+    counts the decoded array rather than reading a pixel back.
+    """
+    page = client.get(PLAY_PATH).text
+
+    assert "crossorigin=" not in page and "crossOrigin" not in page
+    assert "getImageData" not in page
+    assert "putImageData" in page
+
+
+def test_the_model_page_may_only_be_framed_by_the_site(client: TestClient) -> None:
+    """The key is typed into this page, so only the documentation site may embed it."""
+    response = client.get(PLAY_PATH)
+
+    assert response.headers["content-security-policy"] == f"frame-ancestors {DOCS_PARENT_ORIGIN}"
+    assert f'"{DOCS_PARENT_ORIGIN}"' in response.text
+
+
+def test_the_model_page_reports_its_height_to_the_same_site(tmp_path: Path) -> None:
+    """Both framed pages share one reporter, and it names the origin the app was given."""
+    parent = "http://127.0.0.1:8080"
+    with TestClient(
+        create_app(
+            tokens_path=_pool(tmp_path / "tokens.json"),
+            index_dir=tmp_path / "index",
+            docs_parent_origin=parent,
+        )
+    ) as client:
+        page = client.get(PLAY_PATH)
+
+    assert page.headers["content-security-policy"] == f"frame-ancestors {parent}"
+    assert f'"{parent}"' in page.text
+    assert 'src="' + parent + '/post-processing/rle_decode.js"' in page.text
+    assert 'SITE_ORIGIN = "' + parent + '"' in page.text
+
+
+def test_the_model_page_maps_the_mask_into_canvas_order(client: TestClient) -> None:
+    """A decoded mask is COCO's order; the canvas is row-major, and the two differ by a transpose.
+
+    The decoder hands back an array that indexes as `row + column * height`, while `ImageData` is
+    row-major — so copying the index straight across draws every mask lying down the image instead
+    of across it. That looked plausible enough in a screenshot; it was caught by counting the drawn
+    pixels and finding them outside the object's own box, which is why the mapping is pinned here.
+    """
+    page = client.get(PLAY_PATH).text
+
+    assert "((index % height) * width + Math.floor(index / height)) * 4" in page
+    # And the scroll is in the pixels the canvas is drawn at, not the image's own.
+    assert "clientHeight / image.naturalHeight" in page
+
+
+def test_the_reference_and_the_model_page_share_one_reporter(client: TestClient) -> None:
+    """A second copy of a messaging contract is a second thing to keep true."""
+    reference = client.get("/docs").text
+    play = client.get(PLAY_PATH).text
+
+    for page in (reference, play):
+        assert page.count("const SITE_ORIGIN = ") == 1
+    assert "docsHeight" in reference and "docsHeight" in play
+    # Each page tells the reporter which box is the page, and the reference counts its key field.
+    assert 'CONTAINER = "#swagger-ui"' in reference and 'EXTRA = "#key-bar"' in reference
+    assert 'CONTAINER = "#play"' in play

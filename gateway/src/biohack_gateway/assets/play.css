@@ -1,0 +1,184 @@
+/* The page a participant runs one model from, styled beside the module that serves it.
+ *
+ * Deliberately plain, and deliberately not a framework: the page is five rows, and a build step would
+ * be a second toolchain between a reader and one HTTP call. What it does borrow is the reference
+ * page's palette mechanism — the documentation site says which side it is on, as `data-scheme` on
+ * `html`, so the page matches the site it is read inside, and falls back to the operating system's
+ * preference when it is opened on its own.
+ *
+ * Every rule is scoped to `#play`, so nothing here can reach a page that has no such element.
+ */
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  background: transparent;
+}
+#play {
+  --ink: #1f2328;
+  --muted: #6b7280;
+  --line: #d8dee6;
+  --surface: #ffffff;
+  --band: #f6f8fa;
+  --accent: #0b6bcb;
+  --good: #1f7a4d;
+  --bad: #b3261e;
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 12px 4px 16px;
+  color: var(--ink);
+}
+html[data-scheme="dark"] #play {
+  --ink: #e6e9ef;
+  --muted: #9aa4b2;
+  --line: #39404b;
+  --surface: #16181d;
+  --band: #1d2027;
+  --accent: #6aa9ff;
+  --good: #4ec07f;
+  --bad: #ff8a80;
+}
+
+#play h1 {
+  margin: 0 0 0.75rem;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+/* The five rows. Each is one line of controls that wraps rather than scrolling sideways, which is
+   what makes the same markup work in a narrow frame and on a phone. */
+#play .row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin: 0 0 0.6rem;
+}
+#play label,
+#play .legend {
+  font-weight: 600;
+  margin: 0;
+}
+#play input,
+#play select {
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+  min-width: 0;
+}
+#play input[type="password"] {
+  flex: 1 1 12rem;
+}
+#play input[type="number"] {
+  width: 6rem;
+}
+#play input[type="range"] {
+  flex: 0 1 14rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+#play input[type="checkbox"] {
+  width: auto;
+}
+#play select {
+  flex: 0 1 20rem;
+}
+#play button {
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--band);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.35rem 0.8rem;
+  cursor: pointer;
+}
+#play button[type="submit"],
+#play #run {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+#play button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+#play .state {
+  color: var(--muted);
+  font-size: 0.9em;
+}
+#play .state.good {
+  color: var(--good);
+}
+#play .state.bad {
+  color: var(--bad);
+}
+
+/* The model's own parameters, generated from what it declares. A label wraps its control so a row
+   that has to wrap keeps each name beside the thing it names. */
+#play #parameters {
+  gap: 0.4rem 1rem;
+}
+#play #parameters label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+}
+#play #parameters label > span {
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+/* The result. The canvas is black until an image is drawn on it, so it stays hidden until there is
+   one — a blank rectangle would read as a model that found nothing. The image is shown at the
+   column's width, and the figure is a box of its own: a 2509-pixel-tall photograph would otherwise
+   be four viewports of page, with the object the model found somewhere in the middle of it. The
+   script scrolls that box to the object once it has drawn one. */
+#play figure {
+  margin: 0.75rem 0 0.5rem;
+  max-height: min(70vh, 40rem);
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+#play canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: var(--band);
+}
+#play figcaption {
+  position: sticky;
+  top: 0;
+  padding: 0.4rem 0.6rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.9em;
+}
+#play figcaption.good { color: var(--good); }
+#play figcaption.bad { color: var(--bad); }
+#play details {
+  margin-top: 0.5rem;
+  color: var(--muted);
+}
+#play summary {
+  cursor: pointer;
+}
+#play pre {
+  overflow: auto;
+  max-height: 22rem;
+  margin: 0.5rem 0 0;
+  padding: 0.6rem 0.75rem;
+  background: var(--band);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 0.85em;
+}
