@@ -54,11 +54,14 @@ Rules state what must hold and why — never history, measurements, or anecdotes
 - **The overlay is not assumed to be ours alone, and a network we share is not rewritten for us.** A
   private network carries other people's devices, so the target is isolation by tag and access policy
   with the per-service token as the second lock. Where that policy is one file for a network shared
-  with people outside the project, the deviation is **recorded rather than taken**: for this event the
-  tailnet keeps its everything-reaches-everything policy, so the per-service token is the *only* lock —
-  a backend cannot even see which peer called, because every arrival wears its router's address — and
-  what that leaves exposed is a peer reaching an inference port, never key material. The record, the
-  reasoning and the trigger to revisit are in [`../../deploy/README.md`](../../deploy/README.md) §1.3.
+  with people outside the project, the deviation is **recorded rather than taken**: the tailnet keeps
+  its everything-reaches-everything policy and the per-service token is the *only* lock, which leaves a
+  peer able to reach an inference port and no key material exposed. A lock by address is not the
+  alternative it looks like — what a backend sees of its caller is a fact about the **path**, one
+  machine's rewriting hop cannot be removed by any router setting — so only a credential carried in the
+  request is the same on every path, and only a credential survives a rebuilt host. The record and the
+  per-path measurements are in [`../../deploy/README.md`](../../deploy/README.md) §1.3 and
+  [`../../deploy/gpu-backends.md`](../../deploy/gpu-backends.md).
 - **GPU backends are never publicly reachable.** The gateway reaches them over an authenticated,
   non-public link and each requires its own token; CloudFront never forwards to them. The transport —
   a VPN, a private network, or a provider tunnel — is an implementation detail, not a fixed route.
