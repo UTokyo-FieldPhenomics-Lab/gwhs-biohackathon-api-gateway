@@ -226,10 +226,16 @@ hand.
 
 ## Tasks, in order
 
-1. **Measure each model** at its own container resolution, FP16, inference mode, on the real
-   fine-tuned weights: `resident_gb`, and the peak at concurrency 1, 2, and 4. `per_request_gb` is
-   not a constant — batching amortises the encoder and concurrent streams do not — so the largest
-   concurrency that fits is read off the ladder, not divided. Output: the three configs.
+1. **Measure each model** at its own container resolution, FP16, inference mode, on the weights the
+   container will actually load: `resident_gb`, and the peak at concurrency 1, 2, and 4.
+   `per_request_gb` is not a constant — batching amortises the encoder and concurrent streams do not
+   — so the largest concurrency that fits is read off the ladder, not divided. Output: the three
+   configs. **Unblocked 2026-10-16**: the weight store is live (`../rules/models.md`), holding
+   SAM 3.1, SAM 2.1 HQ, CascadePSP and BiRefNet — by filename all four are the *upstream public*
+   checkpoints, so the reference numbers need no code from outside this organisation and none of
+   this waits on anyone else. The store's link and per-file ids are in the private submodule's
+   `README.md`. Measure the models the pre-meeting demo would call first: SAM 3.1 and the CascadePSP
+   refine.
 2. **Define the protocol types** — the Pydantic models shared by the gateway and the container, and
    the container's server implementing `/infer` and `/infer/upload` with the geometry contract the
    public docs already describe.
@@ -253,3 +259,4 @@ hand.
 | 6 | Whether the second borrowed 5090 arrives | Concurrency, not redundancy: it lands inside the laboratory's existing fault domain |
 | 7 | `../rules/project.md` still states the tag-and-access-policy invariant, which the event deviates from; `deploy/README.md` §1.3 records the deviation, and `../rules/deploy.md` never stated it — the plan listed that file in error | Amending the invariant lands with the implementation, per the note above |
 | 8 | Whether a managed endpoint is admissible at all, since `project.md` forbids a publicly reachable backend and one is exactly that | The 20th, alongside the rental question |
+| 9 | Whether the pre-meeting demo is SAM 3.1 plus the CascadePSP refine, and how far it must go — a call that returns a mask, or a call a participant can make from the site | The order of Tasks 2 and 3, and therefore what must be working by the 20th |
