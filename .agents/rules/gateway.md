@@ -57,7 +57,9 @@ here.
   strip the framework keeps for page-wide settings, between the description and the calls, rather than
   in styling of our own. Its groups come out in the order of the paths in the document, which is why
   `/health` is declared before the dataset surface: the one call that needs no key is the one a reader
-  can try first.
+  can try first. The padlock a call carries means what the reader expects of it — closed until their
+  key is in, open once it is, in words as well as in the glyph — rather than what Swagger UI means by
+  its own icons.
 - **Liveness is a route, not a probe loop.** `/health` answers without a key so a monitor and the
   deploy script can ask it; nothing polls anything else. It reports the installed package version,
   which is how a host running stale code is noticed.
