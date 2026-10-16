@@ -29,6 +29,10 @@ __PLAY_CSS__
     <span id="model-state" class="state" role="status"></span>
   </div>
 
+  <div class="row" id="parameters">
+    <span class="legend">Parameters</span>
+  </div>
+
   <div class="row">
     <label for="source">Image</label>
     <select id="source">
@@ -44,12 +48,25 @@ __PLAY_CSS__
     <span id="run-state" class="state" role="status"></span>
   </div>
 
-  <div class="row" id="parameters"></div>
-
   <figure hidden>
-    <figcaption id="check"></figcaption>
-    <canvas id="canvas"></canvas>
+    <figcaption>
+      <span id="check"></span>
+      <a id="full" href="" target="_blank" rel="noopener" hidden>full size ↗</a>
+    </figcaption>
+    <div id="pane">
+      <div id="stage">
+        <canvas id="canvas"></canvas>
+        <div id="marks"></div>
+      </div>
+    </div>
   </figure>
+
+  <details id="request" hidden>
+    <summary>The equivalent curl</summary>
+    <p class="note">The call this page makes, with your key left as <code>$KEY</code> — the page never
+      prints it.</p>
+    <pre id="request-body"></pre>
+  </details>
 
   <details id="response" hidden>
     <summary>The response body</summary>
