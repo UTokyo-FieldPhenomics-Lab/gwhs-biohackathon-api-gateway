@@ -197,7 +197,9 @@ conversation can promise.
 - [ ] Measure the endpoint's latency composition, and write the trans-Pacific leg into the
   documentation
 - [ ] The documentation's model page and its browser demo — **handed to
-  [`2026101617_play-page.md`](2026101617_play-page.md)**, which is waiting on a tuned parameter set
+  [`2026101617_play-page.md`](2026101617_play-page.md)**. The page and the demo panel are in place;
+  what is still open there is the recorded call the panel replays and the end-to-end browser
+  rehearsal.
 - [ ] **The meeting**: whether online compute is rented, AWS or HF, or participants are guided to
   their own (ZeroGPU)
 - [ ] A new container copies the same paths and declaration format
