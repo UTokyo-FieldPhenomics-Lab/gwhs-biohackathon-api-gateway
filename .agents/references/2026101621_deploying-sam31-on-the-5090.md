@@ -96,14 +96,28 @@ change to the 3090 at all: one `sed` on the host's `env` and one container recre
 ## Failover, measured once the two ends agreed
 
 With the list as `[5090, labpc]` and the 5090's container stopped, the same `predict` came back **200 with
-the identical geometry from labpc** — so the second entry is a real fault domain now, which it was not an
-hour earlier. It took **61.2 s**, and that number is the finding: the gateway waited the full request
-timeout (60) for the stopped backend before trying the next, because on Windows Docker Desktop's port
-proxy keeps the port bound and the connection hangs rather than being refused. The failed backend is then
-passed over for 30 s — **shorter than the failure it remembers — so the next request after that window
-pays the same minute again.** On Linux a stopped container refuses instantly and hides this. Recorded in
-`gpu-backends.md` with the reasoning, and left open: which constant moves is `gateway.md`'s call, since
-it fixes the 30.
+the identical geometry from labpc** — so the second entry is a real fault domain, which it was not an hour
+earlier. It took **61.2 s**, and that number is the finding: the gateway waited a whole request timeout
+(60) before trying the next backend, then passed the failed one over for only 30 s — shorter than the wait
+it had just caused, so the request arriving after that window paid it again, and every request arriving
+during the minute queued behind.
+
+**Fixed the same evening**, as a relationship rather than a number — `gateway.md` carries the invariant
+now, and the constants carry these measurements. Two corrections came out of doing it, both worth more
+than the change itself:
+
+- **The connect phase is what a dead backend costs here, not the response budget.** The first version left
+  a window between reading the routing order and counting the attempt, and a live four-request burst
+  showed two of three requests still queueing behind the stopped backend; making the two one step fixed
+  it — **exactly one** attempt then met the failure, in **4.25 s** (the 3-second connect bound plus
+  labpc's 1.34 s), while the other three answered in 1.4–1.7 s. The decomposition is also what disproved
+  the claim I had written into the constants: a stopped container behind Docker Desktop's proxy does
+  **not** accept and then go silent, it never accepts at all.
+- **A pre-existing race found and not fixed: the token pool.** `auth.py` marks itself checked *before* the
+  pool it read is in place, so a burst arriving inside that window is refused by the request gate with
+  `503 the gateway cannot authenticate anyone right now`. Four threads through `TestClient` reproduce it;
+  eight simultaneous requests against the live gateway did not, because the window is one file read.
+  Reported rather than fixed — it belongs to the request gate, not to routing.
 
 ## The order of the list, and a correction
 
