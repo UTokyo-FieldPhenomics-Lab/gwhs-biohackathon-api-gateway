@@ -92,6 +92,14 @@ Package: `deploy/`. Repo-wide invariants are in [`project.md`](project.md) and a
   it, and every symptom matches a host that is down. Tailnet flags live in that script — `tailscale
   up` applies exactly the flags on its line, so a flag set by hand is cleared on the next run — and
   reachability is re-checked after every stop/start.
+- **The tailnet must never advertise a prefix that contains the host's public clients.** The host
+  accepts the room subnets, and tailscaled's table 52 is consulted before the main table, so an
+  advertised prefix that covers a client's source address captures that client's *reply* path: the
+  request arrives, the reply leaves by `tailscale0`, and every port times out with nothing logged
+  anywhere. One router advertised `the campus client network`, the campus NAT every UTokyo client shares, and
+  the host read as unreachable from the whole campus for two days. A router advertises the LAN behind
+  it, never the WAN it egresses through. When a client cannot reach the host, read
+  `ip route get <client-address>` on the host before any other theory.
 - **Rollback pins identity, not a checksum we compute.** Code by git tag, container images by digest,
   model weights by an immutable upstream reference. Never generate and maintain our own checksum file;
   an image digest is the registry's content identifier, not a hash we compute.

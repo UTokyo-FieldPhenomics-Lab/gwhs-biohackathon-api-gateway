@@ -47,7 +47,7 @@ them are still other people's measurements.
 - **Tokyo→Frankfurt is 242–350 ms**, the physical floor and the reason the protocol stays at one round
   trip per inference. The home path measured ~100 ms better than the laboratory path, and the
   laboratory path jitters by hundreds of milliseconds within a single ping run
-  ([`../references/2026101514_tailnet-topology-and-lab-reachability.md`](../references/2026101514_tailnet-topology-and-lab-reachability.md)).
+  ([`../references/2026101610_backend-reachability-over-the-room-routers.md`](../references/2026101610_backend-reachability-over-the-room-routers.md)).
 - **Rental, on demand, quoted per hour and multiplied by a 120-hour window:** 24 GB ≈ $0.80/h →
   **$96**; 48 GB ≈ $1.80/h → **$216**; 80 GB ≈ $2.50/h → **$300**; 100 GB-class ≈ $4.50/h →
   **$540**. Watch these as magnitudes, not prices.

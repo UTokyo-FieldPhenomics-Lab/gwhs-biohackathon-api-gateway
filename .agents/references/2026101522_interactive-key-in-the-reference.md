@@ -78,6 +78,11 @@ The framed page has not been seen against the live host: the campus network drop
 document is verifiable by `curl --resolve`, but the last click-through belongs to a browser that can
 reach `api.*`.
 
+*(Corrected 2026-10-16: the campus drops nothing. The host's replies to `the campus client network` were routed
+into the tailnet by an accepted subnet route, so `api.*` was reachable from here only over the
+tailnet; the advertisement is gone and the public path works from this campus — see
+[`2026101513_host-unreachable-from-the-utokyo-network.md`](2026101513_host-unreachable-from-the-utokyo-network.md).)*
+
 ## Second pass: where the field lives, and what a reader meets first
 
 The field worked and looked like an artifact laid over the page: a grey panel of our own colours and
@@ -116,8 +121,9 @@ out to have a mechanism worth writing down.
 
 The one thing never verified from here was the real frame at <https://docs.global-wheat.com/interactive/>:
 this campus network drops the path that resolves `api.*` to its public address, so the frame came up
-empty in every earlier attempt. How it was reached from here belongs to that network and is written
-down separately, as a workaround rather than a practice:
+empty in every earlier attempt. *(2026-10-16: that reading was wrong — see the correction above; the
+frame is reachable over the public path from this campus now.)* How it was reached from here belongs
+to that network and is written down separately, as a workaround rather than a practice:
 [`2026101513_host-unreachable-from-the-utokyo-network.md`](2026101513_host-unreachable-from-the-utokyo-network.md).
 What matters for this reference page is what the live page then did, against the deployed `951ff40`:
 
@@ -156,3 +162,25 @@ the key-bar script alone made ours render again. The fix is two lines — write 
 changed — and the reason is now a comment where the write happens. What made this worth the hour is
 that the *deployed* page (`951ff40`) still polls instead, so production never had the bug; the
 refactor that introduced it was committed but not yet deployed.
+
+## Driving the frame from a network that cannot reach `api.*`
+
+Kept as a fallback, not a practice: the public path is what a participant uses, and it works from
+this campus now ([`2026101513_host-unreachable-from-the-utokyo-network.md`](2026101513_host-unreachable-from-the-utokyo-network.md)).
+When a machine can reach `docs.*` but not `api.*`, the frame's origin has to be redirected, and two
+things bite:
+
+- **The name has to stay on the wire.** A browser sends no SNI for an IP literal, and `deploy/Caddyfile`
+  declares one site, so `https://<the host's address>/` fails with `SSL_ERROR_INTERNAL_ERROR_ALERT` (curl:
+  `TLS alert internal error (592)`) *before* any certificate is presented — there is no "accept the
+  risk" button, and plain `http://` only gets a `308` back to the same dead end. Map the name instead:
+  an `/etc/hosts` line (whole machine, needs sudo, hides the real path — remove it after), or one
+  throwaway browser profile with `--host-resolver-rules="MAP api.global-wheat.com gwhs-host"`.
+- **A frame served from `100.64.0.0/10` trips Chrome's private-network check**
+  (`net::ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`). That is an artifact of the fallback address, and
+  it is disabled in that profile alone rather than in the site.
+
+Driving the framed reference that way also needs a browser that waits in real time — Playwright
+against the system Chromium, for example. A virtual time budget expires the parent while the
+cross-origin child is still loading, so the height message never arrives and a working page looks
+broken.

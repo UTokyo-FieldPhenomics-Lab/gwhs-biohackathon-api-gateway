@@ -113,8 +113,9 @@ of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-layout.md
   [`.agents/rules/models.md`](.agents/rules/models.md) — what `models/` is for, and the constraints
   that keep it inert for this repository's own build and tests.
 - Execution records and lessons: [`.agents/references/`](.agents/references)
-- A host that answers from elsewhere but not from this machine:
+- A host that answers from elsewhere but not from one network:
   [`references/2026101513_host-unreachable-from-the-utokyo-network.md`](.agents/references/2026101513_host-unreachable-from-the-utokyo-network.md)
-  — the campus-perimeter workaround; try it before concluding the service is down.
+  — it was never the network: an accepted tailnet route for the client /24 sent the host's replies
+  into the tunnel. Capture on the host and read `ip route get <client-ip>` before blaming a path.
 - Data layout contract: [`docs/data-layout.md`](docs/data-layout.md)
 - Architecture discussion and decision log (SiYuan note, external): "黑客松API服务架构设计"

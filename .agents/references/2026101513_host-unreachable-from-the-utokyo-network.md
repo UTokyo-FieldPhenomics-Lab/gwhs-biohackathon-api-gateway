@@ -1,72 +1,93 @@
-# The host is unreachable from the UTokyo network, and from a room
+# Why this campus could not reach the host: an accepted tailnet route ate the replies
 
-Date: 2026-10-15 13:10 JST (the room failure was measured 2026-10-14 02:30; the campus workaround
-was added 2026-10-15 23:15).
-Topic: the two independent reasons a session here cannot reach the gateway host, the one path that
-works from this campus, and the rules the conclusions feed.
+Date: first measured 2026-10-15 13:10 JST; root cause found and fixed 2026-10-16 11:25 JST.
+Topic: "`api.global-wheat.com` is unreachable from the UTokyo network" — read for two days as a
+campus-side drop of the Elastic IP. Its one cause, the one-command proof, the fix, and the lesson.
 
-**A workaround for one network, not a practice.** The project's way to the API is plain DNS to its
-public address, and that way works everywhere measured except this campus network. Nothing in the
-build, the deploy, or CI may depend on anything in this file.
+## The cause
 
-## Conclusion: the campus firewall drops our new public address
+The `room-router-f` GL.iNet router (`GL-MT6000`, `room-router-f`) advertised **`the campus client network`**
+— the campus NAT every UTokyo client egresses from — alongside its own `a room LAN`. The host
+runs `tailscale up --accept-routes` (`RouteAll: true`), so tailscaled installed
+`the campus client network dev tailscale0` in table 52, and `ip rule` 5270 (`from all lookup 52`, ahead of the
+main table) applied it to every unmarked packet — including the replies the kernel generates for
+inbound connections:
 
-From `visitor2.fm.a.u-tokyo.ac.jp` (`the campus client network`, AS2501) the Elastic IP `gwhs-host` is
-unreachable on every world-open port, while from abroad the same service answers `200` on `/health`
-from de, es, ir, ru, se, and us, and while another address in the same `the host's AWS prefix`
-(`gwhs-host`) answers on `:443` from here. The name resolves, the security group allows 80 and 443
-from `0.0.0.0/0`, and the certificate is valid, so the drop is **destination-specific and on this
-network's path**: the campus blocks the address we were newly allocated. It appeared together with
-the move to the Elastic IP — the instance's earlier auto-assigned address was reachable from here on
-TCP 22 — so a probe that fails from a campus machine says nothing about the host.
-
-That reading is what [`../rules/deploy.md`](../rules/deploy.md) means by "`timed out` may be the
-checking network rather than the group": confirm from a second network before changing a rule, a
-record, or anything on the host.
-
-## The path that works from here
-
-The host is also on the tailnet, so a live check from this campus goes over the private path:
-
-```bash
-curl --resolve api.global-wheat.com:443:gwhs-host https://api.global-wheat.com/health
+```
+0:     from all lookup local
+5210:  from all fwmark 0x80000/0xff0000 lookup main     # tailscaled's own packets: unaffected
+5270:  from all lookup 52                               # everything else: campus /24 goes to the tunnel
+32766: from all lookup main
 ```
 
-The name has to stay on the wire: a URL that is a bare address sends no SNI, and `deploy/Caddyfile`
-declares one site, so the handshake dies before any certificate is presented. For a browser, map that
-one name — an `/etc/hosts` line, or a throwaway profile with
-`--host-resolver-rules="MAP api.global-wheat.com gwhs-host"`. A frame then served from
-`100.64.0.0/10` trips Chrome's private-network check
-(`net::ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`), which is an artifact of the fallback address and
-is disabled in that profile alone. Driving the framed reference from here also needs a browser that
-waits in real time (Playwright against the system Chromium): a virtual time budget expires the parent
-while the cross-origin child is still loading, so the height message never arrives and a working page
-looks broken.
+A campus client's SYN or ICMP echo arrived at `ens5`, the host built the reply, and the reply left
+**into the tailnet** instead of back out `ens5` to `the campus client network`. The peer that owns the route *is*
+`the campus client network`, so the reply was handed to that router's own WAN address and never reached the
+client: silent timeout on every port and protocol, from the whole campus, for every address the
+instance has ever had. tailscaled's own WireGuard packets carried fwmark `0x80000`, which `ip rule`
+5210 sends to the main table — which is why the tailnet kept working from the same campus network the
+whole time.
 
-A pass on this path says nothing about a participant's experience — the path is private, not the
-public one — so an acceptance check that has to reflect a participant runs from a network that
-reaches the public address.
+The proof is one capture on all interfaces, run on the host while pinging from this workstation:
 
-## The room leg is a separate cause
+```
+ens5       In  IP the campus client network > the gateway host: ICMP echo request,  id 38627, seq 1
+tailscale0 Out IP the gateway host > the campus client network: ICMP echo reply,   id 38627, seq 1
+```
 
-Tailnet SSH from a room stops working while the Tailscale console reports the node **online**, with
-key expiry already disabled. That is not the firewall: a room's packets arrive carrying the client's
-own LAN address, and the host answers them only if it accepts that room's subnet route. Either side
-can supply it — the room's router masquerading its traffic, or the host accepting routes — and the
-host side is what this deployment uses, because it is one setting instead of a router's per-site one
-and it keeps the real client address in the host's logs. `deploy/install-tailscale.sh` applies
-`tailscale up --accept-routes` for that reason, and the constraint is in
-[`../rules/deploy.md`](../rules/deploy.md).
+## The fix
 
-Two checks tell the legs apart: from the room, `ping` the room router's *own* tailnet address (an
-answer means that room's leg out of the LAN is fine, so the host is the suspect), and on the host,
-`ip -s link show tailscale0` while that ping runs (a flat `RX` means the packets never arrived).
-A room's SSH is relayed and therefore slow; nothing bulk should cross it. What that overlay holds
-today — its peers, and which machine could serve as a GPU backend first — is inventoried in
-[`2026101514_tailnet-topology-and-lab-reachability.md`](2026101514_tailnet-topology-and-lab-reachability.md).
+At the source: the `the campus client network` advertisement was turned off on `room-router-f`
+(`the room gateway`), tailscaled withdrew its route, and the public path returned. **The host carries no
+configuration for this.** Two temporary host-side workarounds were applied while diagnosing and then
+deleted: `ip rule add to the campus client network lookup main pref 5260` (5260 is free — tailscaled owns
+5210/5230/5250/5270), and `ip route replace the campus client network via the VPC gateway dev ens5 … table 52`. The
+gateway in the second is required: `dev ens5` alone yields `scope link`, the kernel ARPs for
+`the campus client network` on the VPC subnet, and the replies vanish a second way.
+
+Verified after the cleanup, from this campus, plain DNS and no workaround:
+
+| Check | Result |
+|---|---|
+| `ping -c 4 api.global-wheat.com` | 4/4, ~301–318 ms |
+| `GET /health` / `GET /` / `GET /docs` | `200` / `401` / `200` |
+| `ip route get the campus client network` | `via the VPC gateway dev ens5` (main table, not `tailscale0`) |
+| `ip route get lab-3090` | `dev tailscale0 table 52` — compute plane unchanged |
+
+The lasting constraint is in [`../rules/deploy.md`](../rules/deploy.md): a router advertises the LAN
+behind it, never the WAN it egresses through.
+
+## What the earlier reading got wrong
+
+The 10-15 record concluded "the campus firewall drops our new public address" — a correct set of
+external measurements plus one wrong inference. Everything it measured still holds (foreign nodes
+reach `:443`, the SG allows `0.0.0.0/0`, the certificate is valid, `gwhs-host` in the same `/16`
+answers from here, traceroute dies after `58.138.83.x`), but none of it locates the drop, and the
+correlation with the Elastic IP move was a coincidence: the advertisement appeared in the same window,
+and the block is keyed to the *source*, not the destination. The earlier auto-assigned `a client`
+was reachable on `:22` before that advertisement existed.
+
+- **Capture on the destination host before blaming a network.** `tcpdump -ni any` shows
+  request-in/reply-out-elsewhere in one command. A probe from one side cannot separate "never
+  arrived", "a stateful firewall dropped it", and "the reply left by the wrong interface".
+- **Read the host's route to the *source* address.** `ip route get <client-ip>` answers it, and
+  `ip rule show` explains which table won. `--accept-routes` makes every advertised prefix a candidate
+  reply path, and a /24 covering your own clients is self-inflicted.
+
+`a client`, asked about on 10-16 as a replacement address, was never part of this: an
+unassociated AWS-assigned EC2 address that answers nowhere in the world, including from the host. No
+address change was needed and none was made; the EIP `gwhs-host` stays.
+
+## A private fallback, if the public path ever breaks again
+
+`curl --resolve api.global-wheat.com:443:gwhs-host https://api.global-wheat.com/health` reaches
+the same Caddy and certificate over the tailnet. A browser needs the *name* on the wire, which takes a
+host mapping, and the rest of that path (why an IP literal fails, which browser flags it needs) is
+where the frame work lives:
+[`2026101522_interactive-key-in-the-reference.md`](2026101522_interactive-key-in-the-reference.md).
 
 ## Do not
 
-- Turn any of it into a rule, a deploy step, or a CI step, beyond the two rules it already feeds.
-- Re-open the security group, or edit DNS, because a probe from here failed: both were measured, and
-  neither is the cause.
+- Conclude a remote network is blocking you from probes taken on that network alone. Capture on the
+  destination host; check `ip route get <source>` there.
+- Re-open the security group, edit DNS, or swap the Elastic IP because a probe from here failed.
