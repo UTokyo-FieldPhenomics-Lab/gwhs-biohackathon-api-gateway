@@ -33,17 +33,24 @@ them are still other people's measurements.
   prompt encoder and mask decoder (third-party deployment guide). The same source gives batch 8 →
   22 GB, batch 32 → 40+ GB, video → 28 GB+; another puts SAM 3 as fitting "comfortably on 16 GB
   GPUs". **Third-party, and to be replaced by our own measurement** — see Task 1.
-- **Cards on hand: 5090 = 32 GB, 4090 = 24 GB, 3090 = 24 GB.** One 5090 in the lab, a second
-  borrowable.
+- **Cards on hand: 5090 = 32 GB, 4090 = 24 GB, 3090 = 24 GB** — admitted against **31 / 23 / 23 GB**
+  respectively, per the 1 GB reserve in Decision 8. One 5090 in the lab, a second borrowable.
 - **Both on-prem candidates already answer the gateway host on their private addresses, and neither
   runs a tailscale client.** Measured 2026-10-16 from the host: `192.168.209.228` (home, 4090)
   answers TCP 22 and 22000 at **242–250 ms**; `192.168.250.228` (lab, 3090) answers TCP 2233, 8771
   and 22000 at **337–350 ms**; both at 0% ICMP loss. Each `/24` is advertised by that location's own
   GL.iNet router, so a machine joins the pool by being plugged in
   ([`../references/2026101610_backend-reachability-over-the-room-routers.md`](../references/2026101610_backend-reachability-over-the-room-routers.md)).
-- **A closed port is not an unreachable host.** The laboratory machine refused 22 only because it
-  runs no `sshd`, while answering on three other ports. Routing and a listening service are two
-  separate questions and were measured separately.
+- **The laboratory 3090 is the machine Task 1's reference measurement was taken on**, and it is
+  further along than the row above records. Hostname `crest-nerv`, tailnet name `nerv-linux`, and it
+  now runs **`sshd` enabled and active** and **Docker 29.7.2 already running** — so it is a Docker
+  host with a real boot service on Manjaro. That makes it the lowest-risk host for the demo
+  container: no Docker Desktop, no WSL2, and none of the SSH credential-helper trouble the 5090 has
+  ([`../references/2026101612_model-vram-and-latency-reference.md`](../references/2026101612_model-vram-and-latency-reference.md)).
+- **A closed port is not an unreachable host.** The laboratory machine refused 22 on the morning of
+  2026-10-16 while answering on three other ports, and took a key at 22 the same afternoon once
+  `sshd` was enabled. Routing and a listening service are two separate questions and were measured
+  separately.
 - **Tokyo→Frankfurt is 242–350 ms**, the physical floor and the reason the protocol stays at one round
   trip per inference. The home path measured ~100 ms better than the laboratory path, and the
   laboratory path jitters by hundreds of milliseconds within a single ping run
@@ -80,9 +87,16 @@ them are still other people's measurements.
    while the home machine and the laboratory machine are genuinely independent of each other. On-prem
    therefore already supplies two domains for the light models; the rented instance buys a third and a
    contracted one, not the second.
-5. **What is scarce is concurrency, not fit.** One sam3.1 inference is ~12 GB, so a 24 GB card is
-   filled by one request, not by the model. Every card added is a concurrency slot, which is the
-   pool's first and least arguable justification.
+5. **What is scarce is throughput — not concurrency, and not fit.** Measured 2026-10-16 on the
+   laboratory 3090: the demo pipeline holds 8.5 GB resident and answers in 1.97 s, and **concurrency
+   buys nothing**. CascadePSP saturates the card on one request — throughput 0.693 / 0.695 / 0.694
+   rps at concurrency 1 / 2 / 4, flat to three digits — while latency grows exactly linearly and
+   memory at 2.7 GB per extra request. So `max_in_flight` is **1**, a backend is a serial lane at
+   ~0.5 pipeline requests per second, and **each card added is another lane**. That, not more
+   in-flight requests, is the pool's first and least arguable justification. The one concurrency
+   worth having is *across* the two stages, whose bottlenecks differ — the rough stage is largely
+   CPU work and leaves the GPU idle, the refine stage saturates it — and that is deferred to the
+   measurement in Task 1, worth at most +36 % and possibly nothing.
 6. **Inputs are an address or an upload, never a client URL.** The default and scaling path is
    `(dataset, row)`, resolved by lookup and handed to the backend as the public `data.*` URL.
    Uploads are kept because a participant may need to send a photograph taken on site. A
@@ -92,11 +106,20 @@ them are still other people's measurements.
    The container resizes to its own fixed input before inference. This makes the memory peak a
    constant whatever arrives, and — more importantly — it means the boxes and RLE are returned in
    the coordinate frame of the image the participant actually sent, so a non-square image is never
-   silently stretched under the boxes they draw.
+   silently stretched under the boxes they draw. **Measured caveat, 2026-10-16**: the rough stage
+   honours this, but the refine stage's input is the crop the rough mask defines, so its side follows
+   the object — 1244² for the wheat-head frame measured, and larger for a larger subject, which makes
+   the refine stage's peak scale with the object and not with the input image. A container that wants
+   the constant this decision promises must therefore impose its own fixed side on the refine stage
+   too, which the foldio360 pipeline does not do today.
 8. **One config declares the resolution and the memory, because they determine each other.**
    `input_resolution`, `resident_gb` (weights and framework, once per card), and `per_request_gb`
-   (the marginal peak of one inference). Admission is `free >= resident + per_request`; concurrency
-   is `1 + floor((free - resident - per_request) / per_request)`.
+   (the marginal peak of one inference). **The budget is the card minus a 1 GB reserve, never the
+   card**: these are workstations whose desktop drives the same display, so a 24 GB card is admitted
+   against 23 GB and a 32 GB card against 31 GB, and the limit is imposed rather than trusted to be
+   respected. Admission is `budget >= resident + per_request`; the arithmetic
+   `1 + floor((budget - resident - per_request) / per_request)` is memory bookkeeping only and not a
+   licence to fill the card.
 9. **Admission is checked when a container is placed, and the gate guarantees it at run time.**
    The deploy script is the only place that can *place* — if one card cannot take the container,
    another may — so it decides, and the container's entrypoint repeats the check as a fallback for
@@ -104,12 +127,13 @@ them are still other people's measurements.
    crowded out by one started later, and only the concurrency gate covers that.
 10. **The concurrency a backend can sustain is reported, not guessed.** A backend declares
     `{model, max_in_flight}` when it starts, so the per-model gate is arithmetic on a measured
-    number.
-11. **A rented instance is a concurrency and contracted-availability decision, not a fit decision.**
-    After the correction in Decision 8's measurements, sam3.1 fits on every card on hand, and on-prem
-    already spans two independent domains, so nothing about fitting forces a rental. What the pool
-    cannot supply for free is enough simultaneous slots when several teams call at once, and a domain
-    whose availability is bought rather than borrowed.
+    number — and for the demo model the measured number is **1** (Decision 5), so the gate's job is
+    to queue fairly and bound the wait, not to pack requests onto a card.
+11. **A rented instance is a throughput and contracted-availability decision, not a fit decision.**
+    The measurements put the demo model at 8.5 GB against a 23 GB budget, and one request saturates a
+    card, so nothing about *fitting* and nothing about *concurrency* forces a rental. What the pool
+    cannot supply for free is enough serial lanes when several teams call at once — each card is one
+    lane — and a domain whose availability is bought rather than borrowed.
 12. **ZeroGPU is a participant-owned path, not pool capacity** — the pool's contract is a
     persistent, privately reachable endpoint whose latency is bounded by its own timeout, and a
     per-call shared queue behind a public hostname is none of those. It stays a legitimate thing for
@@ -157,14 +181,19 @@ Declared once, in the model's own directory, and published twice — as the cont
 an image label, so a host can read it with `docker image inspect` without starting anything:
 
 ```jsonc
-{ "model": "sam3.1",
-  "input_resolution": 1024,
-  "vram": { "resident_gb": 4.0, "per_request_gb": 8.5 } }
+{ "model": "sam3.1+cascade-psp",
+  "input_resolution": 1036,
+  "vram": { "resident_gb": 8.5, "per_request_gb": 2.7 } }
 ```
 
 ```dockerfile
-LABEL io.biohack.vram.resident_gb="4.0" io.biohack.vram.per_request_gb="8.5"
+LABEL io.biohack.vram.resident_gb="8.5" io.biohack.vram.per_request_gb="2.7"
 ```
+
+The figures are the measured ones (Task 1), and they are the reason this section exists in this
+shape: the pipeline caches both stages, so a two-stage model declares **one budget covering both**,
+not one per stage. `input_resolution` names the rough stage's fixed input; the refine stage's own
+side is the container's to impose (Decision 7's caveat).
 
 A test asserts the label and the file agree, so the pair cannot drift.
 
@@ -195,6 +224,11 @@ Each is written in the pull request that implements the thing that needs it, wit
   and a per-key gate. A 24 GB card taking one sam3.1 and several yolo means the gate has to be
   per model as well, and the rule says to change it in the same pull request and explain why.
 - **`gateway.md`, the model surface** — the shape of `/infer` and its error mapping, once written.
+- **`project.md`, the memory budget — a container never claims the last gigabyte.** Admission is
+  against the card minus 1 GB, because these are workstations whose desktop draws on the same
+  display: 23 GB of a 24 GB card, 31 GB of a 32 GB card. Stated as a rule rather than left to the
+  deploy script because a manual `docker run` bypasses the script, while the person sitting at the
+  machine still needs the desktop to work.
 - **`project.md`, the overlay rule — record the deviation rather than the tag.** The rule asks for a
   tag and an access policy on the grounds that "the overlay is not assumed to be ours alone", which
   the inventory confirms: the tailnet carries `labvpn@`, `labdevices@`, `guowei@` and
@@ -229,22 +263,22 @@ hand.
 1. **Measure each model** at its own container resolution, FP16, inference mode, on the weights the
    container will actually load: `resident_gb`, and the peak at concurrency 1, 2, and 4.
    `per_request_gb` is not a constant — batching amortises the encoder and concurrent streams do not
-   — so the largest concurrency that fits is read off the ladder, not divided. **Measured
-   2026-10-16 on a 3090 (CascadePSP, concurrency 1/2/4): throughput 0.693 / 0.695 / 0.694 rps —
+   — so the ladder is run to *price* extra requests, not to find room for them. **Measured 2026-10-16
+   on the laboratory 3090 (CascadePSP, concurrency 1/2/4): throughput 0.693 / 0.695 / 0.694 rps —
    flat — while latency went 1.44 / 2.88 / 5.76 s and the process peak 5.2 / 9.5 / 13.3 GB.** One
-   request already saturates the card, so the ladder does not find room for more, it prices it:
-   the worth-having `max_in_flight` is 1, and the pool scales by adding cards rather than by
-   stacking requests. Output: the three configs. **Unblocked 2026-10-16**: the weight store is live
+   request already saturates the card, so `max_in_flight` is 1, the pool scales by adding cards
+   rather than by stacking requests, and the ladder's remaining use is to set the queue bound. Output: the three configs. **Unblocked 2026-10-16**: the weight store is live
    (`../rules/models.md`), holding
    SAM 3.1, SAM 2.1 HQ, CascadePSP and BiRefNet — by filename all four are the *upstream public*
    checkpoints, so the reference numbers need no code from outside this organisation and none of
    this waits on anyone else. The store's link and per-file ids are in the private submodule's
-   `README.md`. Measure the models the pre-meeting demo would call first: SAM 3.1 and the CascadePSP
-   refine. **Done for the 3090**
+   `README.md`. **Done for the 3090, which is the demonstration's own host**
    ([`../references/2026101612_model-vram-and-latency-reference.md`](../references/2026101612_model-vram-and-latency-reference.md)):
    the demo configuration holds **8.5 GB resident** — both stages, since the pipeline caches and
-   releases neither — and answers in **1.97 s warm / 9.16 s cold**, so the container must be pre-warmed
-   before the meeting or the first live call costs 9 s.
+   releases neither — and answers in **1.97 s warm / 9.16 s cold**, so the container must be
+   pre-warmed before the meeting or the first live call costs 9 s. Still to measure, and only after
+   the container exists: SAM 3.1 and CascadePSP **concurrently on separate streams**, the one
+   arrangement whose gain is not already known to be zero.
 2. **Define the protocol types** — the Pydantic models shared by the gateway and the container, and
    the container's server implementing `/infer` and `/infer/upload` with the geometry contract the
    public docs already describe.
@@ -262,10 +296,11 @@ hand.
 |---|---|---|
 | 1 | The timeout value, and the global gate's size | What a dead backend costs a participant |
 | 2 | Whether the gate gains the per-model dimension, and how it is expressed | Rule change above |
-| 3 | 24 vs 48 GB rented, and whether it is rented at all | Task 1's measurements plus the demo's concurrency. 48 GB is the ceiling for a single GPU on EC2 (`g6e` = L40S); 80 GB exists only inside eight-GPU instances, so that option means a different provider |
+| 3 | 24 vs 48 GB rented, and whether it is rented at all | Task 1's measurements: nothing on hand fails to fit and nothing scales by concurrency, so this is a throughput and third-domain question now, not a capacity one. 48 GB is the ceiling for a single GPU on EC2 (`g6e` = L40S); 80 GB exists only inside eight-GPU instances, so that option means a different provider |
 | 4 | The ETH request: how many hosts, what memory, over which link, with whom as contact | The meeting |
 | 5 | The AWS GPU service quota — requested 2026-10-16 for `L-DB2E81BA` in `eu-central-1` | Nothing, but the region and the requested value still need confirming, and approval can take days |
 | 6 | Whether the second borrowed 5090 arrives | Concurrency, not redundancy: it lands inside the laboratory's existing fault domain |
 | 7 | `../rules/project.md` still states the tag-and-access-policy invariant, which the event deviates from; `deploy/README.md` §1.3 records the deviation, and `../rules/deploy.md` never stated it — the plan listed that file in error | Amending the invariant lands with the implementation, per the note above |
 | 8 | Whether a managed endpoint is admissible at all, since `project.md` forbids a publicly reachable backend and one is exactly that | The 20th, alongside the rental question |
-| 9 | **Decided 2026-10-16**: the pre-meeting demo is a **live call at the meeting that returns a real mask** — SAM 3.1 rough plus the CascadePSP refine, from the 5090 through the gateway. It is not a participant-callable surface | Fixes Tasks 2 and 3 as the critical path to 20 October; Task 1's measurement is its first step and is running |
+| 9 | **Decided 2026-10-16**: the pre-meeting demo is a **live call at the meeting that returns a real mask** — SAM 3.1 rough plus the CascadePSP refine, from the **laboratory 3090** through the gateway. It is not a participant-callable surface | Fixes Tasks 2 and 3 as the critical path to 20 October; Task 1's measurement is done for that host, and the 5090 moves to second place since it need not be on the critical path |
+| 10 | What the refine stage's crop side does on a subject that fills the frame: its peak scales with the object, and the 8.5 GB figure is for a 1244² crop | Whether the container must cap or resize the crop before the refine, and whether declaring `resident_gb` 8.5 is safe at all |
