@@ -223,11 +223,11 @@ ssh admin@<host>
 sudo systemctl restart biohack-gateway
 ```
 
-The gateway reads no setting from it today. Its index directory and image base URL are `create_app`
-parameters whose defaults already hold this environment's values, so `env` stays empty and systemd
-needs the file only to exist. A second environment moves those two by code rather than by an edit
-here; the names — never values — would then be recorded in
-[`../gateway/.env.example`](../gateway/.env.example).
+The gateway's index directory and image base URL are `create_app` parameters whose defaults already hold
+this environment's values, so those two move by code rather than by an edit here. `env` exists even
+when it holds nothing — a missing state file must fail the start, not let the service run with defaults
+— and the setting it holds today is `BIOHACK_BACKEND_TOKEN`, below. The names, never the values, are
+recorded in [`../gateway/.env.example`](../gateway/.env.example).
 
 The directory holds four things, and which of them the gateway can read is the point:
 
