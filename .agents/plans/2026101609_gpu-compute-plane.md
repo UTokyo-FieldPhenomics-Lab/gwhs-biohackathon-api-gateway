@@ -181,19 +181,20 @@ Declared once, in the model's own directory, and published twice — as the cont
 an image label, so a host can read it with `docker image inspect` without starting anything:
 
 ```jsonc
-{ "model": "sam3.1+cascade-psp",
-  "input_resolution": 1036,
-  "vram": { "resident_gb": 8.5, "per_request_gb": 2.7 } }
+{ "model": "sam31-official",
+  "input_resolution": 1008,
+  "vram": { "resident_gb": 3.7, "per_request_gb": 1.8 } }
 ```
 
 ```dockerfile
-LABEL io.biohack.vram.resident_gb="8.5" io.biohack.vram.per_request_gb="2.7"
+LABEL io.biohack.vram.resident_gb="3.7" io.biohack.vram.per_request_gb="1.8"
 ```
 
 The figures are the measured ones (Task 1), and they are the reason this section exists in this
-shape: the pipeline caches both stages, so a two-stage model declares **one budget covering both**,
-not one per stage. `input_resolution` names the rough stage's fixed input; the refine stage's own
-side is the container's to impose (Decision 7's caveat).
+shape: **a model made of two stages declares one budget covering both**, because both stay resident —
+which is why the SAM 3.1 container's 3.7 + 1.8 GB is not what a SAM 3.1 *plus CascadePSP* container
+would declare. `input_resolution` names the rough stage's fixed input; a refine stage's own side is
+the container's to impose (Decision 7's caveat).
 
 A test asserts the label and the file agree, so the pair cannot drift.
 
@@ -281,7 +282,10 @@ hand.
    arrangement whose gain is not already known to be zero.
 2. **Define the protocol types** — the Pydantic models shared by the gateway and the container, and
    the container's server implementing `/infer` and `/infer/upload` with the geometry contract the
-   public docs already describe.
+   public docs already describe. **The container's half exists**: `models/sam31_official`, proven end
+   to end on the laboratory 3090 — 8.24 s to load, 0.36 s per 5184×3456 prompt, 3812 MiB resident and
+   5644 MiB after a prompt, one object whose RLE decodes to the area it publishes. What is left of
+   this task is the gateway's own half.
 3. **Bring up one real backend** over its private link and prove the link end to end with the
    cheapest model. Both on-prem candidates are already reachable, so this needs no new hardware: a
    container on `lab-3090` rehearses the tailnet path, and a rented 24 GB instance rehearses
@@ -302,5 +306,5 @@ hand.
 | 6 | Whether the second borrowed 5090 arrives | Concurrency, not redundancy: it lands inside the laboratory's existing fault domain |
 | 7 | `../rules/project.md` still states the tag-and-access-policy invariant, which the event deviates from; `deploy/README.md` §1.3 records the deviation, and `../rules/deploy.md` never stated it — the plan listed that file in error | Amending the invariant lands with the implementation, per the note above |
 | 8 | Whether a managed endpoint is admissible at all, since `project.md` forbids a publicly reachable backend and one is exactly that | The 20th, alongside the rental question |
-| 9 | **Decided 2026-10-16**: the pre-meeting demo is a **live call at the meeting that returns a real mask** — SAM 3.1 rough plus the CascadePSP refine, from the **laboratory 3090** through the gateway. It is not a participant-callable surface | Fixes Tasks 2 and 3 as the critical path to 20 October; Task 1's measurement is done for that host, and the 5090 moves to second place since it need not be on the critical path |
+| 9 | **Decided 2026-10-16**: the pre-meeting demo is a **live call at the meeting that returns a real mask** — **SAM 3.1 alone** through the gateway, from the **laboratory 3090**. The CascadePSP refine is the next model and a bonus, not a condition, so it is deferred until the pool has room to spare. Not a participant-callable surface | Fixes Tasks 2 and 3 as the critical path to 20 October; the container's first half now exists, and the 5090 moves to second place since it need not be on the critical path |
 | 10 | What the refine stage's crop side does on a subject that fills the frame: its peak scales with the object, and the 8.5 GB figure is for a 1244² crop | Whether the container must cap or resize the crop before the refine, and whether declaring `resident_gb` 8.5 is safe at all |
