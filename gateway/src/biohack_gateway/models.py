@@ -595,9 +595,18 @@ class ModelRegistry:
                         detail="the gateway cannot authenticate to a backend right now",
                     )
                 raise HTTPException(status_code=reply.status, detail=_refusal(reply))
-            logger.warning(
-                "backend %s failed a %s with %s", backend.url, model, reply.status or "timeout"
+            # The cause is named rather than reduced to a status: `0` covers a refused connection, no
+            # route and an unreadable name, and none of them is a timeout — a log line reading
+            # "timeout" would send an operator to the wrong knob. The transport logs the operating
+            # system's own words one line above.
+            cause = (
+                "timed out"
+                if reply.timed_out
+                else f"status {reply.status}"
+                if reply.status
+                else "unreachable"
             )
+            logger.warning("backend %s failed a %s: %s", backend.url, model, cause)
             backend.unhealthy_until = time.monotonic() + UNHEALTHY_SECONDS
             failures.append(reply)
 
