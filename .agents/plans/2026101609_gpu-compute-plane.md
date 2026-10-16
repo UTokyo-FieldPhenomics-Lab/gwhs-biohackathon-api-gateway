@@ -218,6 +218,7 @@ Each is written in the pull request that implements the thing that needs it, wit
 | 24 GB rented | ~$96 | One sam3.1 slot, a third domain, and availability that is bought instead of borrowed |
 | 48 GB rented | ~$216 | Two or three sam3.1 slots, all models resident at once |
 | 80 GB rented | ~$300 | Comfortable headroom on both axes |
+| A managed endpoint (HF Inference Endpoints) | the same ladder, billed by the minute | Nothing new on capacity, and it buys the one thing a plain instance does not: scale-to-zero billing, which pays during rehearsal and not during the event. It is also the only candidate that is publicly reachable, which [`../rules/project.md`](../rules/project.md) forbids — see [`../references/2026101612_hf-inference-endpoints-and-a-client-package.md`](../references/2026101612_hf-inference-endpoints-and-a-client-package.md) |
 
 Sizing order: **measure (Task 1) → decide the concurrency the demo needs → pick the card.** Renting
 a card so a model fits is no longer a reason; the measurements above put sam3.1 on every card on
@@ -251,3 +252,4 @@ hand.
 | 5 | The AWS GPU service quota — requested 2026-10-16 for `L-DB2E81BA` in `eu-central-1` | Nothing, but the region and the requested value still need confirming, and approval can take days |
 | 6 | Whether the second borrowed 5090 arrives | Concurrency, not redundancy: it lands inside the laboratory's existing fault domain |
 | 7 | `../rules/project.md` still states the tag-and-access-policy invariant, which the event deviates from; `deploy/README.md` §1.3 records the deviation, and `../rules/deploy.md` never stated it — the plan listed that file in error | Amending the invariant lands with the implementation, per the note above |
+| 8 | Whether a managed endpoint is admissible at all, since `project.md` forbids a publicly reachable backend and one is exactly that | The 20th, alongside the rental question |
