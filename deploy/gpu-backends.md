@@ -98,14 +98,31 @@ models nobody configured.
 **Its twin is the token, and the token is not decoration.** The gateway presents `X-Backend-Token` on
 every call to a backend, which checks it against the value it was started with (`BACKEND_TOKEN` in its
 container environment); the gateway's copy is `BIOHACK_BACKEND_TOKEN` in the host's `env`
-([`README.md`](README.md)). It is the **only** lock on that hop, and the reason is measured rather than
-assumed: a backend sits behind a router that forwards the overlay, so every arrival wears that
-router's address and a host firewall cannot tell one tailnet peer from another (the 5090's `sshd` logs
-the router, `the 5090's own proxy`). Nothing below the application can express "the gateway, and nobody else",
-so without this token any device on the tailnet could take the card the event is sharing — one request
-at a time is all a card gives, which makes it a denial of the event's scarcest resource rather than a
-leak. What it does **not** protect against is an SSRF from a backend, and it does not have to: the
-container fetches only under the configured `data.*` suffix.
+([`README.md`](README.md)). It is the **only** lock on that hop, and it is what keeps a device on the
+shared tailnet from taking the card the event is sharing, one request at a time — a denial of the
+event's scarcest resource rather than a leak. What it does **not** cover is an SSRF from a backend, and
+it does not have to: the container fetches only under the configured `data.*` suffix.
+
+**Why not an address allowlist instead: what a backend sees of its caller is a fact about the path.**
+
+| Path | What arrived | Measured |
+|---|---|---|
+| `labpc`, behind `room-router-a` | the caller's own tailnet address (in `sshd` on port 22) | 2026-10-16 14:12 and 15:01 JST |
+| the 5090, behind `room-router-d` | `the 5090's own proxy` — **not** the caller, and which hop put it there is not identified | 2026-10-16, from the firewall rule it needed |
+
+So an allowlist would hold on one machine and not on another, and it would bind a backend to the
+*gateway's* address — the one value this design wants to be disposable, since the tailnet address holds
+only until that node is re-registered while replacing the host is an ordinary event. A credential
+carried in the request is the same on every path and survives a rebuilt gateway, which is why it is
+the lock. Address-based scoping is the option considered and not taken; it becomes worth revisiting if
+a backend ever lives where the caller's address both survives and is stable, which neither path is
+today.
+
+**To measure a path, ask the container and not the machine.** Start the container, then from the
+gateway run `curl -s http://<backend-lan-address>:8000/health` and read the client address in the
+container's own log (`INFO: <address>:<port> - "GET /health HTTP/1.1" 200 OK`). On Linux that agrees
+with `sshd`; on Windows it does not, because Docker Desktop's port proxy is a hop of its own — the hop
+no router setting can remove.
 
 The gateway tries a model's backends in order, marks a failed one unhealthy for 30 seconds, and moves
 on. A model's list is the **only** place its backends appear. What the model *is* — its resolution,
@@ -171,11 +188,12 @@ publish their ports *inside the WSL VM*, where the router cannot reach them.
    ```
 
    Both address ranges are in there because the router may forward the original tailnet source
-   (`100.64.0.0/10`) or NAT it to the local subnet. It turned out to be the second: sshd logs the
-   source as `the 5090's own proxy`, the router itself, so the tailnet range never matches anything and
-   **a rule here cannot tell one tailnet peer from another** — every arrival from the overlay wears
-   the router's address. Fine-grained scoping is not available at this layer, which is the same
-   conclusion as leaving the tailnet ACL alone.
+   (`100.64.0.0/10`) or rewrite it to the local subnet. It turned out to be the second: `sshd` logs the
+   source as `the 5090's own proxy`, which is **not** the caller. Which hop rewrote it is not identified and
+   does not have to be — what matters is that **a rule here cannot tell one tailnet peer from another**,
+   the same conclusion as leaving the tailnet ACL alone. The container then sees a third address again,
+   Docker Desktop's proxy being a hop of its own; "Its twin is the token" below records what that means
+   for the pool.
 
 7. **Windows blocks ICMP echo by default**, so a machine that answers nothing to `ping` is not
    necessarily down. Never use ping as the reachability test for a Windows backend — use a TCP probe.
