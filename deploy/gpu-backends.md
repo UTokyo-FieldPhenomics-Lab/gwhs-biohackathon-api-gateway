@@ -35,7 +35,7 @@ Convention: the inference port is **8000**, which is what the plan's examples as
 |---|---|---|---|---|---|---|---|
 | `labpc` (3090) | laboratory | `room-router-a` (GL-BE9300), `the laboratory LAN` | `lab-3090` | RTX 3090 | 24576 MiB | laboratory | 2026-10-16 — TCP 2233/8771/22000 open, ICMP 337–350 ms, 0% loss |
 | `homepc` (4090) | home | `home-router` (GL-MT6000), `the home LAN` | `homepc-4090` | RTX 4090 | 24576 MiB | home | 2026-10-16 — TCP 22/22000 open, ICMP 242–250 ms, 0% loss |
-| lab 5090 (Windows 11) | laboratory | `room-router-d` (GL-MT6000), `the 5090's LAN` | `lab-5090` | RTX 5090 | **32607 MiB** | laboratory | 2026-10-16 — **TCP 8000 open and answering HTTP from the host**, ICMP blocked by Windows |
+| lab 5090 (Windows 11) | laboratory | `room-router-d` (GL-MT6000), `the 5090's LAN` | `lab-5090` | RTX 5090 | **32607 MiB** | laboratory | 2026-10-16 — SSH, Docker and **GPU inside a container** all verified; port 8000 answered HTTP from the host; driver 610.88; ICMP blocked by Windows |
 | a second 5090 | borrowed from a company | ? | ? | RTX 5090 | 32 GB | likely laboratory | not delivered |
 | ~3 more 90-class | laboratory | ? | ? | unknown | ~24 GB | laboratory | not measured |
 | a rented instance | `eu-central-1` | its security group — same VPC as the gateway, so no tailnet at all | assigned on launch | L4, or L40S | 24 GB, or 48 GB | AWS | not created |
@@ -138,7 +138,11 @@ publish their ports *inside the WSL VM*, where the router cannot reach them.
    ```
 
    Both address ranges are in there because the router may forward the original tailnet source
-   (`100.64.0.0/10`) or NAT it to the local subnet.
+   (`100.64.0.0/10`) or NAT it to the local subnet. It turned out to be the second: sshd logs the
+   source as `the 5090's own proxy`, the router itself, so the tailnet range never matches anything and
+   **a rule here cannot tell one tailnet peer from another** — every arrival from the overlay wears
+   the router's address. Fine-grained scoping is not available at this layer, which is the same
+   conclusion as leaving the tailnet ACL alone.
 
 7. **Windows blocks ICMP echo by default**, so a machine that answers nothing to `ping` is not
    necessarily down. Never use ping as the reachability test for a Windows backend — use a TCP probe.
@@ -176,9 +180,16 @@ a backend is unreachable "from the lab" even while it is sitting in it.
 
     Host lab-5090
       HostName lab-5090
-      User <windows account>
+      User "Field of Phenomics"
       IdentityFile ~/.ssh/lab-5090
       ProxyJump gwhs-host
+
+**The account name is not the profile directory name, and on Windows they usually differ.** The
+5090's key sits in `C:\Users\45952`, but the account is `Field of Phenomics`; sshd resolves the
+account name, so sending the directory name answers `Invalid user 45952` **before it looks at any
+key** — which reads exactly like a rejected key and cost an hour here. Ask the machine with `whoami`,
+whose output is `machine\account`. A name with spaces needs double quotes in `ssh_config`; both
+`User "Field of Phenomics"` and `-l "Field of Phenomics"` work.
 
 On **Manjaro**, `sshd` is normally installed and only needs enabling: `systemctl enable --now sshd`.
 **Windows ships no SSH server at all**, so it needs one before any of the above means anything.
@@ -195,10 +206,15 @@ New-NetFirewallRule -Name sshd -DisplayName "OpenSSH Server" -Enabled True -Dire
 
 `-RemoteAddress` is the **source**. `100.64.0.0/10` is the tailnet itself and is what lets the gateway
 host connect; the local `/24` covers the case where the router NATs the source rather than preserving
-it. **Never widen it to `Any`** — that is the public internet, and it is the whole difference between
-"the tailnet can reach it" and "anyone can".
+it. **It NATs.** sshd logs every arrival as coming from `the 5090's own proxy`, the router, so the tailnet
+range in that rule matches nothing and a rule on this machine cannot distinguish one tailnet peer from
+another regardless. **Never widen it to `Any`** — that is the public internet, and it is the whole
+difference between "the tailnet can reach it" and "anyone can".
 
-Then the key — and the three ways one mistake presents itself as the same symptom:
+`docker` **is** on the PATH of an SSH session — the CLI needs no full path after all, and `docker
+version` answers with the Desktop engine.
+
+Then the key — and the three ways **writing it** fails, all of which present as the same symptom:
 
 ```powershell
 $key = 'ssh-ed25519 AAAA… lab-5090 backend'
@@ -219,8 +235,9 @@ Restart-Service sshd
 
 To tell a client problem from a server one: `ssh -v` prints `Offering public key: …`, and
 `Get-WinEvent -LogName 'OpenSSH/Operational' -MaxEvents 10` names the file sshd consulted and why it did
-not use it. **That machine is not up yet** (2026-10-16: the client offers the key and the server refuses
-it), so one of the three faults above is live there.
+not use it. On this machine, `Invalid user` in that log means the **account name**, not the key — see
+above. All four are now working on the 5090: the key is accepted, `docker` answers, and a container sees
+the GPU (`nvidia-smi -L` inside `nvidia/cuda:12.4.0-base-ubuntu22.04`).
 
 **Password authentication stays enabled on purpose.** The machine is on an overlay whose reachability
 the event already accepts, and a colleague who wants a shell should not have to exchange keys first.
