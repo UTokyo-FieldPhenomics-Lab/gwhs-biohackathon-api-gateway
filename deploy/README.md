@@ -233,8 +233,12 @@ The directory holds four things, and which of them the gateway can read is the p
 
 ```
 ~/.config/biohack-gateway/          0700, owned by the user the service runs as
-├── env                             systemd EnvironmentFile=; must exist, read by nothing today; 0600
+├── env                             systemd EnvironmentFile=; must exist; 0600
+│                                   one setting, BIOHACK_BACKEND_TOKEN — the credential the gateway
+│                                   presents to a GPU backend (below)
 ├── tokens.json                     participant token pool; 0600
+├── models.json                     one entry per model, its backend URLs in the order they are
+│                                   tried; 0600 — absent means the model surface serves no models
 ├── index/                          <dataset>.db per published dataset; read by the gateway
 └── publish/                        0700; excluded from the service as a whole directory
     ├── env                         BIOHACK_BUCKET, AWS_REGION, BIOHACK_ACCESS_KEYS_CSV; 0600
@@ -242,7 +246,17 @@ The directory holds four things, and which of them the gateway can read is the p
 ```
 
 `setup-gateway.sh` creates the directory, `publish/`, and `env`, and nothing else: `tokens.json`
-appears with the first issued token, `index/` with the first publish, and `publish/` is filled in §5.
+appears with the first issued token, `models.json` with the first backend written into it, `index/`
+with the first publish, and `publish/` is filled in §5. Both of the first two are edited by hand, and
+neither is in the repository; the model-to-backend list and the token it pairs with are documented in
+[`gpu-backends.md`](gpu-backends.md), which is where the machines they name are.
+
+**The one setting the gateway reads from its environment is the backend token.** It is the credential
+it presents to a GPU backend, it has to match what that backend was started with, and it is unset by
+default: a gateway without it answers every inference with `503` rather than letting a backend reply
+`401`, because that reply would read to a participant as their own key being wrong. Rotating it means
+changing both ends, which is one `EnvironmentFile=` and one container restart — there is no second
+copy anywhere, and the value never enters the repository.
 
 **What `index/` holds today:** `gwhd.db`, `gwfss.db`, and `gwhs-temp.db` — the first ten rows of each
 dataset, published on 2026-10-15 so that all three answer while the full sets are still being prepared.

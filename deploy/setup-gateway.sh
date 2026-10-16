@@ -109,9 +109,17 @@ install -d -m 0700 -o "$TARGET_USER" -g "$TARGET_USER" "$STATE_DIR/publish"
 if [[ ! -e "$STATE_DIR/env" ]]; then
   install -m 0600 -o "$TARGET_USER" -g "$TARGET_USER" /dev/null "$STATE_DIR/env"
   cat > "$STATE_DIR/env" <<'EOF'
-# Settings for biohack-gateway.service. systemd hands this over through EnvironmentFile=; the gateway
-# reads no setting from it, so it is here mainly so a missing state file fails the start rather than
-# letting the service run with defaults. One VARIABLE=value per line, unquoted.
+# Settings for biohack-gateway.service. systemd hands this over through EnvironmentFile=. One
+# VARIABLE=value per line, unquoted. The file is created even when nothing is set in it, because a
+# missing state file must fail the start rather than let the service run with defaults.
+#
+# BIOHACK_BACKEND_TOKEN — the credential the gateway presents to a GPU backend as X-Backend-Token.
+# It must hold the value those backends were started with (`-e BACKEND_TOKEN=…`), and it is the only
+# lock on that hop: a backend sits behind a router whose address every tailnet peer wears, so nothing
+# below the application can tell the gateway from any other machine on the overlay
+# (deploy/README.md §1.3, deploy/gpu-backends.md). Unset, the gateway refuses every inference with
+# 503 rather than letting a backend answer a 401 that reads like the participant's fault.
+# BIOHACK_BACKEND_TOKEN=
 EOF
 fi
 

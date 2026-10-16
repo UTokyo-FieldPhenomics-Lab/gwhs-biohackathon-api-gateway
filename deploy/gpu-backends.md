@@ -95,6 +95,18 @@ A file that does not parse means **no models**, never all of them: the surface f
 the request gate does, so a typo in host configuration cannot become a gateway that answers for
 models nobody configured.
 
+**Its twin is the token, and the token is not decoration.** The gateway presents `X-Backend-Token` on
+every call to a backend, which checks it against the value it was started with (`BACKEND_TOKEN` in its
+container environment); the gateway's copy is `BIOHACK_BACKEND_TOKEN` in the host's `env`
+([`README.md`](README.md)). It is the **only** lock on that hop, and the reason is measured rather than
+assumed: a backend sits behind a router that forwards the overlay, so every arrival wears that
+router's address and a host firewall cannot tell one tailnet peer from another (the 5090's `sshd` logs
+the router, `192.168.253.1`). Nothing below the application can express "the gateway, and nobody else",
+so without this token any device on the tailnet could take the card the event is sharing — one request
+at a time is all a card gives, which makes it a denial of the event's scarcest resource rather than a
+leak. What it does **not** protect against is an SSRF from a backend, and it does not have to: the
+container fetches only under the configured `data.*` suffix.
+
 The gateway tries a model's backends in order, marks a failed one unhealthy for 30 seconds, and moves
 on. A model's list is the **only** place its backends appear. What the model *is* — its resolution,
 its control parameters, how many requests it can hold in flight — is declared by the backend itself
