@@ -1,0 +1,941 @@
+"""The model surface: the pool's models answered over HTTP, and nothing else.
+
+The gateway does exactly three things with a model request. It resolves the address a client named
+into the public URL of an image, through the same index the dataset surface reads, so both surfaces
+address a row identically. It forwards the request to a backend over one uniform protocol. And it
+returns the backend's own answer, whose geometry the backend has already put into the shape this
+contract publishes.
+
+Nothing here encodes geometry, holds a weight, or knows what a mask is. :class:`ObjectOut` and
+:class:`RleMask` are imported from the dataset surface rather than written again: a second
+definition of the same body is the one thing this surface must not grow, and `gateway.md` asks for
+exactly one object shape across the two surfaces so a participant writes one decoder.
+
+Routing is the whole algorithm — try a model's backends in order, mark a failed one unhealthy for
+thirty seconds, move on. There is no circuit breaker and no weighted choice, which are for a pool
+larger than this one, and no health loop, which is what `gateway.md` forbids: the gateway learns a
+backend is gone from a real request's failure, and the timeout is what that costs.
+
+**Control parameters come from the model, not from here.** A model declares what it accepts — the
+prompt it can be given, the threshold it applies — and the gateway repeats that declaration in
+``GET /models`` and forwards the values verbatim. It is the one place the parameters appear, so a
+new model needs no gateway change, the same bargain the dataset surface strikes with a published
+index.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import time
+import urllib.error
+import urllib.request
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from fastapi import APIRouter, HTTPException, Query, Request, UploadFile
+from pydantic import BaseModel
+
+from biohack_gateway.dataset_index import Dataset
+from biohack_gateway.datasets import ObjectOut, image_addresses
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_MODELS_FILE = Path.home() / ".config" / "biohack-gateway" / "models.json"
+"""Where the host names its models and their backends, as ``{"<model>": ["<url>", ...]}``.
+
+Host configuration beside the token pool, for the reason the runbook gives: it names running
+machines, so it does not belong in this repository. The file need not exist — a gateway with no
+models configured answers an empty directory rather than refusing to start.
+"""
+
+UNHEALTHY_SECONDS = 30.0
+"""How long a backend that failed a request is passed over.
+
+The number `gateway.md` fixes. It is long enough for a container to be restarted and short enough
+that a recovered backend is not shunned for the rest of an event.
+"""
+
+DECLARATION_TIMEOUT_SECONDS = 3.0
+"""How long a backend is given to answer what it serves, at startup only.
+
+Short on purpose: this is the one moment the gateway waits on a machine that may be switched off,
+and a model whose backend is off appears in the directory with nothing declared rather than holding
+up the process.
+"""
+
+PREDICT_TIMEOUT_SECONDS = 60.0
+"""How long one inference may take before the backend is treated as failed.
+
+The value is deliberately still open — it is the knob that decides what a dead backend costs a
+participant — and this default is the placeholder the plan carries until the rehearsal fixes it.
+"""
+
+DECLARATION_RETRY_SECONDS = 30.0
+"""How long before a backend that did not answer at all is asked again.
+
+Not a poll: a backend that has declared something is never re-read until the gateway restarts, and
+a machine that is switched off is asked once per window rather than once per request. It exists
+because the gateway and a container start independently and either can restart alone — a container
+that was still loading its weights when the gateway came up would otherwise stay undescribed until
+somebody restarted the *gateway*, which is the one thing nobody would think to do.
+"""
+
+DECLARATION_LOADING_RETRY_SECONDS = 3.0
+"""How long before a backend that answered "still loading" is asked again.
+
+A shorter wait than a silent machine gets, because the two are different facts: ``503`` means a
+container that is warming up and will describe itself in seconds, while no answer means a machine
+that may be off for the afternoon. Without the distinction, a gateway started before its container
+would show an empty directory for half a minute after the container was up, which is exactly the
+window somebody checks it in.
+"""
+
+
+class ModelParameter(BaseModel):
+    """One control parameter a model accepts, as the model declares it.
+
+    Attributes
+    ----------
+    name : str
+        The parameter's name, which is the query parameter's name on the predict routes.
+    default : str or float or None
+        What the model uses when the client sends nothing, where it has a default.
+    minimum, maximum : float or None
+        The accepted range, where the parameter is numeric and bounded.
+    description : str
+        One line saying what the parameter does, safe to publish.
+    """
+
+    name: str
+    default: str | float | None = None
+    minimum: float | None = None
+    maximum: float | None = None
+    description: str = ""
+
+
+class ModelSummary(BaseModel):
+    """One model, as both the directory and the detail route publish it.
+
+    The detail route answers the same object as the directory holds, which is what makes an id
+    quotable: a client fetches one model rather than filtering the directory, and the two can never
+    disagree.
+
+    Attributes
+    ----------
+    id : str
+        The model id a client addresses, and the first segment of every one of its routes.
+    resolution : int or None
+        The square side the model runs at, as it declared. `None` where nothing answered.
+    backends_up : int
+        How many of its backends are not currently passed over. Zero means a call will be refused
+        rather than queued.
+    max_in_flight : int
+        Requests the live backends declare they can hold at once, summed. Published rather than
+        enforced: the concurrency gate is not implemented yet.
+    parameters : list of ModelParameter
+        What the model accepts. Empty where no backend has declared anything.
+    """
+
+    id: str
+    resolution: int | None = None
+    backends_up: int = 0
+    max_in_flight: int = 0
+    parameters: list[ModelParameter] = field(default_factory=list)
+
+
+class ModelDirectory(BaseModel):
+    """The `GET /models` body.
+
+    Attributes
+    ----------
+    models : list of ModelSummary
+        One entry per configured model, ordered by id.
+    """
+
+    models: list[ModelSummary]
+
+
+class ModelPrediction(BaseModel):
+    """The answer to a predict request, whatever the model was.
+
+    Attributes
+    ----------
+    model : str
+        The model that answered.
+    objects : list of ObjectOut
+        The same object shape the dataset surface returns, so one decoder reads both.
+    resolution_used : int or None
+        The side the model actually ran at, where it reports one.
+    """
+
+    model: str
+    objects: list[ObjectOut]
+    resolution_used: int | None = None
+
+
+@dataclass(frozen=True)
+class Reply:
+    """One backend's answer, reduced to what the gateway acts on.
+
+    Attributes
+    ----------
+    status : int
+        The HTTP status the backend answered with, or 0 when the connection failed.
+    body : bytes
+        The response body, empty when there is none.
+    timed_out : bool
+        Whether the failure was the clock rather than the backend, which decides the error code the
+        caller sees.
+    """
+
+    status: int
+    body: bytes
+    timed_out: bool = False
+
+
+Transport = Callable[[str, str, Mapping[str, str], bytes | None, float], Reply]
+"""How the gateway reaches a backend: ``(method, url, headers, body, timeout) -> Reply``.
+
+A function rather than an HTTP client, so a test can answer for a backend without starting one, and
+so this package keeps depending on nothing but the standard library.
+"""
+
+
+def http_transport(
+    method: str, url: str, headers: Mapping[str, str], body: bytes | None, timeout: float
+) -> Reply:
+    """Send one request to a backend over HTTP, and reduce the outcome to a :class:`Reply`.
+
+    Parameters
+    ----------
+    method : str
+        The HTTP method.
+    url : str
+        The absolute backend URL.
+    headers : mapping of str to str
+        Headers to send.
+    body : bytes or None
+        The request body, where there is one.
+    timeout : float
+        Seconds to wait before calling it a timeout.
+
+    Returns
+    -------
+    Reply
+        The status and body, or a failure described as one. A refused connection and a timeout are
+        both failures rather than exceptions here: every caller's next step is the same, and the
+        difference only decides which code the participant sees.
+    """
+    request = urllib.request.Request(url, data=body, headers=dict(headers), method=method)
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+            return Reply(status=response.status, body=response.read())
+    except urllib.error.HTTPError as error:
+        # A backend that answered with a status is answering, not failing to answer.
+        return Reply(status=error.code, body=error.read())
+    except TimeoutError:
+        return Reply(status=0, body=b"", timed_out=True)
+    except OSError as error:
+        # Connection refused, no route, DNS — one outcome for all of them. `socket.timeout` is an
+        # OSError subclass on some platforms and a TimeoutError on others; the type is checked in
+        # that order by the except clauses above.
+        logger.warning("backend unreachable: %s (%s)", url, error)
+        return Reply(status=0, body=b"")
+
+
+def load_models(path: Path) -> dict[str, list[str]]:
+    """Read the host's model-to-backend list.
+
+    Parameters
+    ----------
+    path : Path
+        The file. It need not exist.
+
+    Returns
+    -------
+    dict of str to list of str
+        One entry per model, with its backend URLs in the order they are to be tried. Empty when the
+        file is absent, unreadable, or does not parse.
+
+    Notes
+    -----
+    A file that does not parse yields **no models**, never all of them: the surface fails closed the
+    same way the request gate does, because a typo in host configuration must not become a gateway
+    that answers for models nobody configured. The reason is logged once, here, rather than on every
+    request that finds nothing.
+    """
+    if not path.exists():
+        logger.info("no model-backend list at %s; the model surface has no models", path)
+        return {}
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        logger.error("model-backend list at %s does not parse (%s); serving no models", path, error)
+        return {}
+    if not isinstance(document, dict):
+        logger.error("model-backend list at %s must be an object of model to URL list", path)
+        return {}
+
+    models: dict[str, list[str]] = {}
+    for model, urls in document.items():
+        if not isinstance(urls, list) or not all(isinstance(url, str) and url for url in urls):
+            logger.error("model %r in %s must map to a list of non-empty URLs", model, path)
+            continue
+        models[str(model)] = [url.rstrip("/") for url in urls]
+    return models
+
+
+@dataclass
+class Backend:
+    """One machine that can serve a model, and what it said about itself.
+
+    Attributes
+    ----------
+    url : str
+        The base URL, without a trailing slash.
+    resolution : int or None
+        The side it declared it runs at.
+    max_in_flight : int
+        How many requests it declared it can hold at once.
+    parameters : list of ModelParameter
+        What it declared it accepts.
+    unhealthy_until : float
+        A monotonic deadline: while now is below it, this backend is passed over.
+    """
+
+    url: str
+    resolution: int | None = None
+    max_in_flight: int = 1
+    parameters: list[ModelParameter] = field(default_factory=list)
+    unhealthy_until: float = 0.0
+    declared: bool = False
+    """Whether this backend has answered what it serves, ever. Once true it is never asked again."""
+    answered: bool = False
+    """Whether the last declaration attempt got any answer, which decides how long to wait next."""
+    tried_at: float = 0.0
+    """When the declaration was last attempted, so a refusal is not repeated per request."""
+
+    def is_passed_over(self, now: float) -> bool:
+        """Say whether this backend is still in its thirty seconds of quiet.
+
+        Parameters
+        ----------
+        now : float
+            The current monotonic clock.
+
+        Returns
+        -------
+        bool
+            True while the backend should not be tried.
+        """
+        return now < self.unhealthy_until
+
+
+class ModelRegistry:
+    """The configured models, what their backends declared, and which ones are passed over.
+
+    The registry is built once, at startup, and lives for the process. Declarations are read at that
+    moment and never polled, so a backend that was switched off when the gateway started appears
+    with nothing declared until the gateway is restarted — the same bargain the dataset index
+    strikes, and the reason neither needs a health loop.
+    """
+
+    def __init__(
+        self,
+        models: Mapping[str, Sequence[str]],
+        backend_token: str,
+        transport: Transport = http_transport,
+    ) -> None:
+        """Build the registry and ask every backend what it serves.
+
+        Parameters
+        ----------
+        models : mapping of str to sequence of str
+            The host's model-to-backend list.
+        backend_token : str
+            The token presented to backends as `X-Backend-Token`. Empty means no backend can be
+            called, which is a misconfiguration the predict routes report rather than hide.
+        transport : Transport, optional
+            How to reach a backend. Injectable so a test can answer for one.
+        """
+        self._token = backend_token
+        self._transport = transport
+        self._backends: dict[str, list[Backend]] = {
+            model: [Backend(url=url) for url in urls] for model, urls in models.items()
+        }
+        for model, backends in self._backends.items():
+            for backend in backends:
+                self._declare(model, backend)
+
+    def _declare(self, model: str, backend: Backend) -> None:
+        """Ask one backend what it serves, and record the answer.
+
+        Parameters
+        ----------
+        model : str
+            The model the backend is listed under.
+        backend : Backend
+            The backend to ask. It is mutated with whatever it answers.
+
+        Notes
+        -----
+        A backend answers this without a token, because ``/health`` is for a human and the deploy
+        script and carries no data. A backend that does not answer is logged and left undeclared:
+        its address still routes, and a later request asks it again, so a container that was still
+        loading its weights when the gateway started describes itself once it is up.
+        """
+        backend.tried_at = time.monotonic()
+        reply = self._transport(
+            "GET", f"{backend.url}/health", {}, None, DECLARATION_TIMEOUT_SECONDS
+        )
+        backend.answered = reply.status != 0
+        if reply.status != 200:
+            logger.warning("backend %s did not declare itself (%s)", backend.url, reply.status)
+            return
+        try:
+            declaration = json.loads(reply.body)
+        except json.JSONDecodeError:
+            logger.warning("backend %s answered an unreadable declaration", backend.url)
+            return
+        if not isinstance(declaration, dict):
+            logger.warning("backend %s answered a declaration that is not an object", backend.url)
+            return
+        if declaration.get("model") != model:
+            # The list is what the gateway was told to route by; the declaration says what is
+            # actually there. A mismatch is someone's edit not having landed, and it is worth saying
+            # out loud rather than silently routing to the wrong model.
+            logger.warning(
+                "backend %s declares model %r but is listed under %r",
+                backend.url,
+                declaration.get("model"),
+                model,
+            )
+        backend.resolution = declaration.get("resolution")
+        if isinstance(declaration.get("max_in_flight"), int):
+            backend.max_in_flight = declaration["max_in_flight"]
+        backend.parameters = _declared_parameters(declaration.get("parameters"))
+        backend.declared = True
+
+    def _refresh_undeclared(self, model: str, backends: Sequence[Backend]) -> None:
+        """Ask any backend that has never declared itself, at most once per retry window.
+
+        Parameters
+        ----------
+        model : str
+            The model the backends are listed under.
+        backends : sequence of Backend
+            The backends whose declarations may be stale or missing.
+
+        Notes
+        -----
+        This is what keeps a gateway started before its containers from describing nothing forever.
+        It is bounded twice over: only undeclared backends are asked, and each is asked at most once
+        per window — :data:`DECLARATION_LOADING_RETRY_SECONDS` where the machine answered and said
+        it was still loading, and :data:`DECLARATION_RETRY_SECONDS` where it did not answer at all.
+        A backend that has declared something is never re-read, so the steady state costs no
+        request.
+        """
+        now = time.monotonic()
+        for backend in backends:
+            if backend.declared:
+                continue
+            window = (
+                DECLARATION_LOADING_RETRY_SECONDS if backend.answered else DECLARATION_RETRY_SECONDS
+            )
+            if now - backend.tried_at < window:
+                continue
+            self._declare(model, backend)
+
+    def directory(self) -> list[ModelSummary]:
+        """Describe every configured model.
+
+        Returns
+        -------
+        list of ModelSummary
+            One entry per model, in id order.
+        """
+        return [self.describe(model) for model in sorted(self._backends)]
+
+    def describe(self, model: str) -> ModelSummary:
+        """Describe one model, or refuse.
+
+        Parameters
+        ----------
+        model : str
+            The model id from the path.
+
+        Returns
+        -------
+        ModelSummary
+            The model's id, what its backends declared, and how many are answering.
+
+        Raises
+        ------
+        HTTPException
+            No model has that id. The name is not repeated in the message, so nothing a caller sent
+            is echoed back.
+        """
+        backends = self._backends.get(model)
+        if backends is None:
+            raise HTTPException(status_code=404, detail="no such model")
+        self._refresh_undeclared(model, backends)
+        now = time.monotonic()
+        live = [backend for backend in backends if not backend.is_passed_over(now)]
+        declared = next((backend for backend in backends if backend.declared), None)
+        return ModelSummary(
+            id=model,
+            resolution=declared.resolution if declared else None,
+            backends_up=len(live),
+            max_in_flight=sum(backend.max_in_flight for backend in live),
+            parameters=declared.parameters if declared else [],
+        )
+
+    def eligible(self, model: str) -> list[Backend]:
+        """Return the backends a request for one model may be tried against, in order.
+
+        Parameters
+        ----------
+        model : str
+            The model id.
+
+        Returns
+        -------
+        list of Backend
+            The backends not currently passed over. Empty means the caller should be told the model
+            is unavailable rather than made to wait for a machine that has just failed.
+
+        Raises
+        ------
+        HTTPException
+            No model has that id.
+        """
+        if model not in self._backends:
+            raise HTTPException(status_code=404, detail="no such model")
+        now = time.monotonic()
+        return [backend for backend in self._backends[model] if not backend.is_passed_over(now)]
+
+    def forward(
+        self,
+        model: str,
+        path: str,
+        query: str,
+        body: bytes | None,
+        content_type: str,
+    ) -> Reply:
+        """Send one request to the first backend of a model that answers.
+
+        Parameters
+        ----------
+        model : str
+            The model id.
+        path : str
+            The path below the model, without a leading slash — `predict` or `predict/upload`.
+        query : str
+            The query string as the client sent it, forwarded verbatim: the parameters are the
+            model's, and the gateway does not know their names.
+        body : bytes or None
+            The request body, already resolved into what a backend expects.
+        content_type : str
+            The content type to send with it.
+
+        Returns
+        -------
+        Reply
+            The first backend's answer. A backend that failed is marked unhealthy for
+            :data:`UNHEALTHY_SECONDS` and the next one is tried.
+
+        Raises
+        ------
+        HTTPException
+            `503` when no backend may be tried — all of them are passed over, or the host
+            configured none for this model; or when every backend that was tried failed, reported as
+            an upstream failure with the status the last one gave.
+        """
+        backends = self.eligible(model)
+        if not self._token:
+            # Fail closed and say whose fault it is. Without a token every backend would answer 401,
+            # which the surface maps to a client error — a misconfigured gateway reported as a bad
+            # request, which sends the reader looking in the wrong place.
+            raise HTTPException(
+                status_code=503,
+                detail="the gateway is not configured to reach models",
+            )
+        if not backends:
+            raise HTTPException(
+                status_code=503,
+                detail="no backend is answering for this model right now",
+            )
+
+        headers = {
+            "X-Backend-Token": self._token,
+            "Content-Type": content_type,
+            "Accept": "application/json",
+        }
+        suffix = f"?{query}" if query else ""
+        failures: list[Reply] = []
+        for backend in backends:
+            url = f"{backend.url}/models/{model}/{path}{suffix}"
+            reply = self._transport("POST", url, headers, body, PREDICT_TIMEOUT_SECONDS)
+            if 200 <= reply.status < 300:
+                backend.unhealthy_until = 0.0
+                return reply
+            if 400 <= reply.status < 500:
+                # The request's fault, so it is the client's answer and no other backend is asked:
+                # an identical request would fail identically everywhere.
+                if reply.status in (401, 403):
+                    # Except this one, which is never the caller's fault: the gateway's own token
+                    # was refused, and telling a participant their key is bad would send them to the
+                    # wrong place with a key that is fine.
+                    logger.error("a backend refused the gateway's token (%s)", reply.status)
+                    raise HTTPException(
+                        status_code=503,
+                        detail="the gateway cannot authenticate to a backend right now",
+                    )
+                raise HTTPException(status_code=reply.status, detail=_refusal(reply))
+            logger.warning(
+                "backend %s failed a %s with %s", backend.url, model, reply.status or "timeout"
+            )
+            backend.unhealthy_until = time.monotonic() + UNHEALTHY_SECONDS
+            failures.append(reply)
+
+        last = failures[-1]
+        if last.timed_out:
+            raise HTTPException(status_code=504, detail="the model took too long to answer")
+        raise HTTPException(
+            status_code=502,
+            detail=f"every backend for this model failed with {last.status}",
+        )
+
+
+def _declared_parameters(raw: Any) -> list[ModelParameter]:
+    """Read a backend's declared parameter list, ignoring anything malformed.
+
+    Parameters
+    ----------
+    raw : Any
+        Whatever the backend put in its declaration's `parameters` field.
+
+    Returns
+    -------
+    list of ModelParameter
+        The parameters that parsed. A malformed entry is dropped rather than failing the whole
+        declaration, because a model that is otherwise answering should still be listed.
+    """
+    if not isinstance(raw, list):
+        return []
+    parameters: list[ModelParameter] = []
+    for entry in raw:
+        try:
+            parameters.append(ModelParameter.model_validate(entry))
+        except ValueError:
+            logger.warning("ignoring an unreadable parameter declaration: %r", entry)
+    return parameters
+
+
+def _image_url(datasets: Mapping[str, Dataset], dataset: str, row: int, base: str) -> str:
+    """Resolve an address to the public URL of its image, or refuse.
+
+    Parameters
+    ----------
+    datasets : mapping of str to Dataset
+        The index the dataset surface reads, so both surfaces address a row identically.
+    dataset : str
+        The dataset id, a lookup key in the closed index.
+    row : int
+        The absolute row of the pinned revision.
+    base : str
+        The distribution's base URL, without a trailing slash.
+
+    Returns
+    -------
+    str
+        The public `data.*` URL the backend is told to fetch.
+
+    Raises
+    ------
+    HTTPException
+        No dataset has that id, or the dataset has no such row.
+    """
+    found = datasets.get(dataset)
+    if found is None:
+        raise HTTPException(status_code=404, detail="no such dataset")
+    image = found.row_index.get(row)
+    if image is None:
+        raise HTTPException(status_code=404, detail="no such row")
+    return str(image_addresses(found, image, base)["image_url"])
+
+
+class PredictInput(BaseModel):
+    """The address of the image to run a model on.
+
+    Attributes
+    ----------
+    dataset : str
+        The dataset id.
+    row : int
+        The absolute row of the pinned revision.
+    """
+
+    dataset: str
+    row: int
+
+
+def create_model_router(
+    registry: ModelRegistry,
+    datasets: Mapping[str, Dataset],
+    data_base_url: str,
+) -> APIRouter:
+    """Build the model surface over a loaded registry and the dataset index.
+
+    Parameters
+    ----------
+    registry : ModelRegistry
+        The configured models and their backends, built at startup.
+    datasets : mapping of str to Dataset
+        The index, so a `(dataset, row)` in a predict body resolves the same way it does on the
+        dataset surface.
+    data_base_url : str
+        The public distribution's base URL, with or without a trailing slash.
+
+    Returns
+    -------
+    APIRouter
+        The routes, ready to include. They inherit the request gate from the application, so nothing
+        here authenticates and nothing here is anonymous.
+    """
+    base = data_base_url.rstrip("/")
+    router = APIRouter(tags=["models"])
+
+    @router.get(
+        "/models",
+        response_model=ModelDirectory,
+        response_model_exclude_unset=True,
+        summary="The model directory",
+        description=(
+            "One line per model: the side it runs at, how many backends are answering, and the "
+            "control parameters it accepts."
+        ),
+    )
+    def list_models() -> ModelDirectory:
+        """List every model this gateway can be asked for.
+
+        Returns
+        -------
+        ModelDirectory
+            One entry per configured model, in id order.
+        """
+        return ModelDirectory(models=registry.directory())
+
+    @router.get(
+        "/models/{model}",
+        response_model=ModelSummary,
+        response_model_exclude_unset=True,
+        summary="One model",
+        description="What the model runs at and which parameters it accepts, freshly.",
+    )
+    def describe_model(model: str) -> ModelSummary:
+        """Describe one model.
+
+        Parameters
+        ----------
+        model : str
+            The model id from the path.
+
+        Returns
+        -------
+        ModelSummary
+            The same entry the directory carries, which is why an id can be quoted.
+
+        Raises
+        ------
+        HTTPException
+            No model has that id.
+        """
+        return registry.describe(model)
+
+    @router.post(
+        "/models/{model}/predict",
+        response_model=ModelPrediction,
+        response_model_exclude_unset=True,
+        summary="Run one inference",
+        description=(
+            "The image is addressed as `(dataset, row)` and resolved by the gateway, so a client "
+            "never sends a URL one. Parameters are the model's own; `GET /models/{model}` lists "
+            "them with their defaults, and omitting one uses the model's default."
+        ),
+    )
+    def predict(
+        model: str,
+        request: Request,
+        body: PredictInput,
+        prompt: str | None = Query(None, description="The text the model is asked to find."),
+        confidence_threshold: float | None = Query(
+            None,
+            ge=0.0,
+            le=1.0,
+            description="How sure the model must be before it reports an object.",
+        ),
+    ) -> ModelPrediction:
+        """Segment one image named by an address.
+
+        Parameters
+        ----------
+        model : str
+            The model id from the path.
+        request : Request
+            The incoming request, whose query string is forwarded verbatim.
+        body : PredictInput
+            The address to resolve.
+        prompt : str or None, optional
+            The text prompt, where the model takes one.
+        confidence_threshold : float or None, optional
+            The confidence floor, where the model takes one.
+
+        Returns
+        -------
+        ModelPrediction
+            The model's own answer, already in this contract's geometry.
+
+        Raises
+        ------
+        HTTPException
+            No model has that id; the address does not resolve; or every backend failed.
+        """
+        registry.describe(model)  # refuses an unknown model before the address is even looked up
+        url = _image_url(datasets, body.dataset, body.row, base)
+        reply = registry.forward(
+            model,
+            path="predict",
+            query=request.url.query,
+            body=json.dumps({"input": {"url": url}}).encode(),
+            content_type="application/json",
+        )
+        return _prediction(reply, model)
+
+    @router.post(
+        "/models/{model}/predict/upload",
+        response_model=ModelPrediction,
+        response_model_exclude_unset=True,
+        summary="Run one inference on your own image",
+        description=(
+            "The participant's own photograph, sent as multipart and forwarded to the backend as "
+            "bytes. It is never stored: this is the one path that carries bytes through the "
+            "gateway, and it carries them no further than the model."
+        ),
+    )
+    async def predict_upload(
+        model: str,
+        request: Request,
+        file: UploadFile,
+        prompt: str | None = Query(None, description="The text the model is asked to find."),
+        confidence_threshold: float | None = Query(
+            None,
+            ge=0.0,
+            le=1.0,
+            description="How sure the model must be before it reports an object.",
+        ),
+    ) -> ModelPrediction:
+        """Segment one uploaded image.
+
+        Parameters
+        ----------
+        model : str
+            The model id from the path.
+        request : Request
+            The incoming request, whose query string is forwarded verbatim.
+        file : UploadFile
+            The image. Read into memory and forwarded; never written to disk.
+        prompt : str or None, optional
+            The text prompt, where the model takes one.
+        confidence_threshold : float or None, optional
+            The confidence floor, where the model takes one.
+
+        Returns
+        -------
+        ModelPrediction
+            The model's own answer.
+
+        Raises
+        ------
+        HTTPException
+            No model has that id, the upload is empty, or every backend failed.
+        """
+        registry.describe(model)
+        payload = await file.read()
+        if not payload:
+            raise HTTPException(status_code=400, detail="the upload is empty")
+        reply = registry.forward(
+            model,
+            path="predict/upload",
+            query=request.url.query,
+            body=payload,
+            content_type=file.content_type or "application/octet-stream",
+        )
+        return _prediction(reply, model)
+
+    return router
+
+
+def _refusal(reply: Reply) -> str:
+    """Read a backend's own explanation out of a refusal, where it sent one.
+
+    Parameters
+    ----------
+    reply : Reply
+        The backend's refusal.
+
+    Returns
+    -------
+    str
+        The backend's message when it sent one in either shape we accept, and a plain line
+        otherwise. The body is re-worded into this contract rather than forwarded: what a backend
+        sends is its own business, and a caller reads one error shape here.
+    """
+    try:
+        document = json.loads(reply.body)
+    except json.JSONDecodeError:
+        return "the backend refused the request"
+    if isinstance(document, dict):
+        error = document.get("error")
+        if isinstance(error, dict) and isinstance(error.get("message"), str):
+            return str(error["message"])
+        if isinstance(document.get("detail"), str):
+            return str(document["detail"])
+    return "the backend refused the request"
+
+
+def _prediction(reply: Reply, model: str) -> ModelPrediction:
+    """Turn a backend's answer into this contract's body, or refuse.
+
+    Parameters
+    ----------
+    reply : Reply
+        The backend's successful answer.
+    model : str
+        The model id the request was for, used when the backend did not name one.
+
+    Returns
+    -------
+    ModelPrediction
+        The validated body.
+
+    Raises
+    ------
+    HTTPException
+        The backend answered something that is not this contract. That is a broken backend rather
+        than a bad request, and it is reported as such: a participant cannot act on it and the
+        operator can.
+    """
+    try:
+        document = json.loads(reply.body)
+        if isinstance(document, dict):
+            document.setdefault("model", model)
+        return ModelPrediction.model_validate(document)
+    except (json.JSONDecodeError, ValueError) as error:
+        logger.warning("backend answered a body that is not this contract: %s", error)
+        raise HTTPException(
+            status_code=502, detail="a backend answered outside the contract"
+        ) from None

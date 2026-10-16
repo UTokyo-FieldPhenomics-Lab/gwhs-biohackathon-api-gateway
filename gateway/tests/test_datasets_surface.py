@@ -312,4 +312,8 @@ def test_the_routes_are_part_of_the_published_contract(client: TestClient) -> No
         "/datasets/{dataset}",
         "/datasets/{dataset}/images",
         "/datasets/{dataset}/images/{row}",
+        "/models",
+        "/models/{model}",
+        "/models/{model}/predict",
+        "/models/{model}/predict/upload",
     }
