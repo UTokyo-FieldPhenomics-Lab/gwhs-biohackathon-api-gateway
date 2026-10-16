@@ -114,6 +114,7 @@ itself needs a header. Every other path — including ones that do not exist —
 """
 
 _DARK_STYLE_PATH = Path(__file__).with_name("swagger_dark.css")
+_TRIM_STYLE_PATH = Path(__file__).with_name("swagger_trim.css")
 
 SWAGGER_DARK_STYLE = f"<style>{_DARK_STYLE_PATH.read_text(encoding='utf-8')}</style>"
 """Swagger UI in the documentation site's dark palette, carried by the page itself.
@@ -122,6 +123,15 @@ Swagger UI ships no dark theme — the CDN serves one stylesheet and no dark var
 lives beside this module and is read at import. It applies only when the page has been told which
 side it is on: by the `?scheme=` it was framed with, by the site's message when the reader switches,
 or by the operating system's preference when the page is opened on its own.
+"""
+
+SWAGGER_TRIM_STYLE = f"<style>{_TRIM_STYLE_PATH.read_text(encoding='utf-8')}</style>"
+"""The chrome this contract makes meaningless, removed in both palettes.
+
+Separate from the palette because it is not one: the response table's always-empty Links column and
+the response's single-option Media type chooser are equally useless to a reader in light mode, and a
+rule that had to justify its missing `html[data-scheme="dark"]` prefix would be a worse neighbour
+than a second file. What each trim removes, and what it deliberately leaves alone, is in the file.
 """
 
 SWAGGER_FRAME_REPORTER = """
@@ -640,10 +650,11 @@ def create_app(
         Returns
         -------
         HTMLResponse
-            FastAPI's own Swagger UI page with three additions: a field for the reader's key, the
-            dark palette, and the script that reports this page's height to the site that frames it.
-            The page is otherwise untouched, and a reader who opens `/docs` directly sees the same
-            reference with the same field.
+            FastAPI's own Swagger UI page with four additions: a field for the reader's key, the
+            dark palette, the trims that remove chrome this contract makes meaningless, and the
+            script that reports this page's height to the site that frames it. The page is otherwise
+            untouched, and a reader who opens `/docs` directly sees the same reference with the same
+            field.
         """
         page = get_swagger_ui_html(
             openapi_url="/openapi.json",
@@ -655,7 +666,8 @@ def create_app(
         reporter = SWAGGER_FRAME_REPORTER.replace("__PARENT_ORIGIN__", docs_parent_origin)
         return HTMLResponse(
             html.replace(
-                "</body>", f"{SWAGGER_DARK_STYLE}{SWAGGER_KEY_BAR_SCRIPT}{reporter}</body>"
+                "</body>",
+                f"{SWAGGER_DARK_STYLE}{SWAGGER_TRIM_STYLE}{SWAGGER_KEY_BAR_SCRIPT}{reporter}</body>",
             ),
             headers={"Content-Security-Policy": f"frame-ancestors {docs_parent_origin}"},
         )

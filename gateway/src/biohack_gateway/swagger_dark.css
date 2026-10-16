@@ -77,7 +77,6 @@ html[data-scheme="dark"] .swagger-ui .scheme-container {
 html[data-scheme="dark"] .swagger-ui .opblock-summary-description,
 html[data-scheme="dark"] .swagger-ui .model .property.primitive,
 html[data-scheme="dark"] .swagger-ui .parameter__type,
-html[data-scheme="dark"] .swagger-ui .response-col_links,
 html[data-scheme="dark"] .swagger-ui .tab li {
   color: #9aa4b2;
 }
@@ -166,8 +165,7 @@ html[data-scheme="dark"] .swagger-ui .tab li.active * {
 
 /* Tables and their rules */
 html[data-scheme="dark"] .swagger-ui table thead tr th,
-html[data-scheme="dark"] .swagger-ui table tbody tr td,
-html[data-scheme="dark"] .swagger-ui .response-col_links {
+html[data-scheme="dark"] .swagger-ui table tbody tr td {
   border-color: #3b4250;
 }
 
