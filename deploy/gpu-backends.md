@@ -325,7 +325,7 @@ changed in place** (`docker update --restart unless-stopped <model>`, not exerci
 environment variable, a port, the GPU access or the name cannot, and each needs `docker rm -f` and the
 run line below.
 
-### The five things you will actually do
+### The commands you will actually use
 
     docker ps                      # what is running
     docker ps -a                   # including anything you stopped
