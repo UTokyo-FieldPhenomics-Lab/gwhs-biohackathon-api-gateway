@@ -53,15 +53,20 @@ default policy of "everything reaches everything" is in force today.
   address — a node's `100.x`, or a private address inside an advertised `/24`, which is what the
   measurement above settles; the backend needs nothing exposed publicly, which is what
   [`../rules/project.md`](../rules/project.md) already requires.
-- Publish the container to the tailnet only, and keep the container itself off the LAN:
-  `docker run --gpus all -p 127.0.0.1:8000:8000 …` then
-  `tailscale serve --bg --https=443 http://127.0.0.1:8000`. Binding the container straight to a `100.x`
-  address is the trap: `docker` resolves that bind at container start, and `tailscale0` may not exist
-  yet, so the container fails on boot. `tailscale serve` is tailnet-only unless `funnel` is asked for,
-  and it also stops the model port from appearing on the lab LAN.
+- **The pool publishes the container on the LAN, and it needs no client to do it.** The machines ride
+  their router's advertised `/24`, so `docker run -p 8000:8000` (bound `0.0.0.0`) is what the router
+  forwards to — measured working on all three machines, the Windows one through Docker Desktop's
+  Windows-side proxy. The alternative below is for a machine that is its own tailnet node and wants the
+  port off the LAN; it is not what this pool does, because it costs a client per machine for a
+  guarantee the event already accepted giving up. `tailscale serve --bg --https=443
+  http://127.0.0.1:8000` behind `-p 127.0.0.1:8000:8000` is that alternative, and it is tailnet-only
+  unless `funnel` is asked for. What remains true either way: binding a container straight to a `100.x`
+  address is the trap, because `docker` resolves that bind at start and `tailscale0` may not exist yet.
 - Tags and an ACL are owed before the first backend joins, per `project.md`: the tailnet carries other
   people's devices, and today nothing separates them; the per-backend token is the second lock, not the
-  first.
+  first. **`deploy/README.md` §1.3 now records the event's decision to deviate from this** — one ACL
+  file rewrites four other owners' policy — so the invariant stands and the exception is written down.
+  The inventory and the per-OS bring-up recipes are in [`../../deploy/backends.md`](../../deploy/backends.md).
 - Latency to campus over this overlay measures 234–259 ms direct, which is the physical Tokyo→Frankfurt
   floor, so routing through the relay costs little latency but a shared relay costs throughput and
   jitter — relevant for image payloads. Whether a given lab machine punches through directly is one
