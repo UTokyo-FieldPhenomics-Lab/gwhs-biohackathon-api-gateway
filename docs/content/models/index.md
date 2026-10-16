@@ -135,9 +135,11 @@ The page above is served by the API itself and framed here, so it is **same-orig
 cross-origin call is involved anywhere, and your key is typed into the API's own pages — this site
 never sees it. The reference and this page remember **one** key between them, in your browser on the
 API's origin: set it on either and the other uses it, and Forget on either clears it for both. Paste
-your token, pick a row or a photograph, and press Run; the image you chose is drawn as soon as the
-address is complete, and the mask the model returns is decoded in your browser by the same decoder
-this site hands you.
+your token, pick a row or a photograph, and press Run; the image is drawn as soon as the address is
+complete — whole, at whatever size the page can show it in — with each box labelled by the score that
+model gave it, and the mask decoded in your browser by the same decoder this site hands you. The page
+also prints the call it would make as a `curl` command, with your key left as `$KEY`, so anything you
+set up here can be taken straight to a shell.
 
 ## A recorded call, decoded here
 
