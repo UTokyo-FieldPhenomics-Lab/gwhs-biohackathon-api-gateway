@@ -26,13 +26,17 @@ __PLAY_CSS__
     <span id="model-state" class="state" role="status"></span>
   </div>
 
-  <div class="row" role="radiogroup" aria-labelledby="image-legend">
-    <span class="legend" id="image-legend">Image</span>
-    <label><input type="radio" name="source" value="row" checked> a published row</label>
-    <select id="dataset" disabled aria-label="dataset"></select>
-    <input id="row" type="number" min="0" step="1" value="0" disabled aria-label="row number">
-    <label><input type="radio" name="source" value="upload"> your own photograph</label>
-    <input id="file" type="file" accept="image/*" disabled aria-label="your photograph">
+  <div class="row">
+    <label for="source">Image</label>
+    <select id="source">
+      <option value="row">a published row</option>
+      <option value="upload">your own photograph</option>
+    </select>
+    <span id="row-choice">
+      <select id="dataset" disabled aria-label="dataset"></select>
+      <input id="row" type="number" min="0" step="1" value="0" disabled aria-label="row number">
+    </span>
+    <input id="file" type="file" accept="image/*" hidden aria-label="your photograph">
   </div>
 
   <div class="row" id="parameters"></div>

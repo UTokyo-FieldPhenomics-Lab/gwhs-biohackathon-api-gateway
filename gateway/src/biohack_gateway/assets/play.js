@@ -125,16 +125,14 @@
     $("run").disabled = !declaration.backends_up;
   };
 
+  // The image choice: one dropdown decides it, and the controls for the choice that is not taken are
+  // hidden rather than left in the row looking available.
   const syncSource = () => {
-    const upload = sourceOf() === "upload";
+    const upload = $("source").value === "upload";
+    $("row-choice").hidden = upload;
+    $("file").hidden = !upload;
     dataset.disabled = upload || !dataset.options.length;
     $("row").disabled = upload;
-    $("file").disabled = !upload;
-  };
-
-  const sourceOf = () => {
-    const chosen = document.querySelector('input[name="source"]:checked');
-    return chosen ? chosen.value : "row";
   };
 
   $("connect").addEventListener("submit", async (event) => {
@@ -169,9 +167,7 @@
     loadModel(model.value).catch((error) => say($("model-state"), error.message, false));
   });
 
-  for (const radio of document.querySelectorAll('input[name="source"]')) {
-    radio.addEventListener("change", syncSource);
-  }
+  $("source").addEventListener("change", syncSource);
   syncSource();
 
   // No `crossorigin`: `data.global-wheat.com` sends no `access-control-allow-origin` header, and an
@@ -295,7 +291,7 @@
 
   $("run").addEventListener("click", async () => {
     const state = $("run-state");
-    const upload = sourceOf() === "upload";
+    const upload = $("source").value === "upload";
     const file = $("file").files[0];
     if (upload && !file) {
       say(state, "choose a photograph first", false);
