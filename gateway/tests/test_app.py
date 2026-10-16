@@ -8,6 +8,7 @@ same helper builds every answer that says no.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Iterator
 from importlib.metadata import version as installed_version
 from pathlib import Path
@@ -241,6 +242,23 @@ def test_the_reference_opens_on_the_call_that_needs_no_key(client: TestClient) -
 
     assert next(iter(paths)) == "/health"
     assert paths["/health"]["get"]["tags"] == ["liveness"]
+
+
+def test_the_reference_does_not_read_its_padlocks_backwards(client: TestClient) -> None:
+    """Swagger marks an authorized call with a closed padlock, which on this page says the opposite.
+
+    This page is where a key is entered, so a closed padlock belongs on the call that still needs
+    one. The two glyphs are exchanged in the page's stylesheet and the button's label is written to
+    match, so what the icon shows and what a screen reader hears are the same thing.
+    """
+    page = client.get("/docs").text
+    locked = re.search(r'svg\.locked path \{ d: path\("([^"]+)"\)', page)
+    unlocked = re.search(r'svg\.unlocked path \{ d: path\("([^"]+)"\)', page)
+
+    assert locked and unlocked, "the page does not exchange the two padlocks"
+    assert "6 5.6V6h2v-.801" in locked.group(1)  # the open shackle belongs to the authorized state
+    assert "M12 8H8V5.199" in unlocked.group(1)  # the closed one to the state that needs a key
+    assert "this call sends your key" in page and "this call needs your key" in page
 
 
 def test_the_reference_page_carries_a_key_field(client: TestClient) -> None:

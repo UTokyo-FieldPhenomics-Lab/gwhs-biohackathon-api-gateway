@@ -57,6 +57,28 @@ this the reference lists every endpoint and can try none of them. The name is ar
 is not, and both are read from here rather than written out again.
 """
 
+_PADLOCK_CLOSED = (
+    "M15.8 8H14V5.6C14 2.703 12.665 1 10 1 7.334 1 6 2.703 6 5.6V8H4c-.553 0-1 .646-1 "
+    "1.199V17c0 .549.428 1.139.951 1.307l1.197.387C5.672 18.861 6.55 19 7.1 19h5.8c.549 0 "
+    "1.428-.139 1.951-.307l1.196-.387c.524-.167.953-.757.953-1.306V9.199C17 8.646 16.352 8 "
+    "15.8 8zM12 8H8V5.199C8 3.754 8.797 3 10 3c1.203 0 2 .754 2 2.199V8z"
+)
+"""Swagger UI's closed padlock, as its own icon component draws it.
+
+Copied verbatim so the reference page can show the two states the other way round: see
+`SWAGGER_KEY_BAR`, which is the only place either glyph is used.
+"""
+
+_PADLOCK_OPEN = (
+    "M15.8 8H14V5.6C14 2.703 12.665 1 10 1 7.334 1 6 2.703 6 5.6V6h2v-.801C8 3.754 8.797 3 10"
+    " 3c1.203 0 2 .754 2 2.199V8H4c-.553 0-1 .646-1 1.199V17c0 .549.428 1.139.951 "
+    "1.307l1.197.387C5.672 18.861 6.55 19 7.1 19h5.8c.549 0 1.428-.139 "
+    "1.951-.307l1.196-.387c.524-.167.953-.757.953-1.306V9.199C17 8.646 16.352 8 15.8 8z"
+)
+"""Swagger UI's open padlock, from the same icon set — and from the same version, since the
+shapes only mean anything as a pair.
+"""
+
 DOCS_PARENT_ORIGIN = "https://docs.global-wheat.com"
 """The one site allowed to frame the reference page, and the one window it reports its height to.
 
@@ -149,12 +171,14 @@ message.
 """
 
 
-SWAGGER_KEY_BAR = """
+SWAGGER_KEY_BAR = (
+    """
 <style>
-  /* Layout only: the type, the input, and the buttons are Swagger UI's own, and so is the column
-     below — `wrapper` is the class the framework puts its own content in, which is what keeps this
-     row lined up with the title and the calls rather than flush to the band it sits in. The one
-     thing Swagger has no equivalent for is the state line. */
+  /* What this page adjusts about Swagger UI's own rendering: the row's layout, the column it sits
+     in, and one icon whose reading this page changes. The type, the input, and the buttons are the
+     framework's, and so is the column — `wrapper` is the class it puts its own content in, which
+     keeps this row lined up with the title and the calls rather than flush to the band it is in.
+     The state line is ours because Swagger has no equivalent for it. */
   #key-bar form {
     display: flex;
     flex-wrap: wrap;
@@ -170,6 +194,13 @@ SWAGGER_KEY_BAR = """
   #key-bar .key-state[data-set="yes"] { color: #1f7a4d; }
   html[data-scheme="dark"] #key-bar .key-state { color: #9aa4b2; }
   html[data-scheme="dark"] #key-bar .key-state[data-set="yes"] { color: #4ec07f; }
+  /* Swagger draws the closed padlock once a call is authorized and the open one when it is not,
+     which reads backwards on a page whose whole purpose is entering a key: a closed padlock should
+     mean the call still needs one. The two glyphs are exchanged — Swagger UI's own shapes, and
+     nothing else about the button changes — and a browser that does not know the `d` property keeps
+     the icons it had rather than losing them. */
+  .swagger-ui .authorization__btn svg.locked path { d: path("__OPEN__"); }
+  .swagger-ui .authorization__btn svg.unlocked path { d: path("__CLOSED__"); }
   /* One way in, and only once the field below has proved it works: a reader who found the standard
      button instead would meet a dialog that opens at the centre of a frame as tall as the page. */
   html.key-bar-ready .swagger-ui .auth-wrapper { display: none; }
@@ -195,6 +226,9 @@ SWAGGER_KEY_BAR = """
 </div>
 <div id="swagger-ui">
 """.replace("__HEADER__", API_KEY_HEADER)
+    .replace("__OPEN__", _PADLOCK_OPEN)
+    .replace("__CLOSED__", _PADLOCK_CLOSED)
+)
 """The field a participant puts their key into, and the little styling it adds.
 
 It is injected hidden — it belongs inside Swagger UI's own servers band, between the description
@@ -242,11 +276,15 @@ SWAGGER_KEY_BAR_SCRIPT = """
       try {
         const held = ui.authSelectors.authorized().get(SCHEME);
         state.dataset.set = held ? "yes" : "no";
-        state.textContent = held
+        const text = held
           ? "a key is in use — paste another to replace it"
           : "no key yet — paste your team's token, and every call below can be tried";
+        // Only when it changed: the observer that keeps this line true watches the container this
+        // line is in, and assigning the same text still replaces the text node — a mutation that
+        // changes nothing is a mutation, and the callback would call itself without yielding.
+        if (state.textContent !== text) state.textContent = text;
       } catch {
-        state.textContent = "";
+        if (state.textContent !== "") state.textContent = "";
       }
     };
 
@@ -272,20 +310,34 @@ SWAGGER_KEY_BAR_SCRIPT = """
       describe();
     });
 
-    // Placed, and kept placed: anything Swagger re-renders inside its container can take this node
-    // with it, and putting it back is two selectors and a comparison. The same observation keeps
-    // the state line true, because the two things that change it are re-renders of this container —
-    // the specification arriving, and Swagger restoring a remembered key when it mounts. `load`
-    // covers a restore that lands without one, so nothing here has to poll for either.
+    // Swagger's own words for the two states describe its idea of them — "locked" once a key is
+    // set — which is the opposite of what the exchanged icons say. The label follows the icon, so a
+    // reader who cannot see it hears what the picture shows.
+    const relabel = () => {
+      for (const button of document.querySelectorAll("#swagger-ui .authorization__btn")) {
+        const label = button.querySelector("svg.locked")
+          ? "this call sends your key"
+          : "this call needs your key";
+        if (button.getAttribute("aria-label") !== label) button.setAttribute("aria-label", label);
+        if (button.getAttribute("title") !== label) button.setAttribute("title", label);
+      }
+    };
+
+    // Placed, kept placed, and kept relabelled: anything Swagger re-renders inside its container
+    // can take this node with it or restore its own words, and putting both back is a few selectors
+    // The same observation keeps the state line true, because the two things that change it are
+    // re-renders of this container — the specification arriving, and Swagger restoring a remembered
+    // key when it mounts. `load` covers a restore that lands without one, so nothing polls.
     const settle = () => {
       place();
       describe();
+      relabel();
     };
     new MutationObserver(settle).observe(document.querySelector("#swagger-ui"), {
       childList: true,
       subtree: true,
     });
-    window.addEventListener("load", describe);
+    window.addEventListener("load", settle);
     settle();
     document.documentElement.classList.add("key-bar-ready");
   })();

@@ -133,3 +133,26 @@ What matters for this reference page is what the live page then did, against the
 
 The only console entry is the site's own request for repository facts from `api.github.com`, which
 404s — a pre-existing cosmetic thing in the site config, nothing to do with the reference.
+
+## The padlocks read backwards, and the observation loop that came with the fix
+
+Swagger UI marks a call it is authorized for with a **closed** padlock and one it is not with an open
+one — `AuthorizeOperationBtn` renders `LockAuthOperationIcon` when `isAuthorized`, and reads the same
+way in `aria-label` ("authorization button locked"). On a page whose purpose is entering a key that
+is exactly inverted from what a reader expects: a closed padlock should mean the call still needs one.
+Both glyphs are Swagger UI's own, taken from the bundle and exchanged in the page's stylesheet
+(`svg.locked` draws the open shape, `svg.unlocked` the closed one), and the button's label follows the
+icon so a reader who cannot see it hears the same thing. A browser without the CSS `d` property keeps
+the icons it had rather than losing them. Verified on a two-padlock rig built from the shipped
+constants, and the mapping is pinned by a test that reads the glyphs out of the served page.
+
+**The first version of this hung the browser.** The refactor that replaced the old twenty-poll loop
+with a `MutationObserver(settle)` callback pointed that observer at the same subtree `describe()`
+writes into, and `state.textContent = …` replaces the text node even when the text is identical — a
+childList mutation inside the observed subtree, so the callback called itself and the page never
+yielded again. It presented as a page that renders in no browser at all, and it cost an hour of
+bisecting: a bare Swagger UI page rendered in the same browser in 800 ms while ours hung, and removing
+the key-bar script alone made ours render again. The fix is two lines — write only when the text
+changed — and the reason is now a comment where the write happens. What made this worth the hour is
+that the *deployed* page (`951ff40`) still polls instead, so production never had the bug; the
+refactor that introduced it was committed but not yet deployed.
