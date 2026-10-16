@@ -135,39 +135,79 @@
     $("row").disabled = upload;
   };
 
-  $("connect").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    key = $("key").value.trim();
-    if (!key) {
-      say($("connect-state"), "paste your team's token first", false);
-      return;
-    }
+  // Connect with whatever key is in play: the one this browser holds, entered on the reference page
+  // or here on an earlier visit. The store is shared with the reference, so one key serves both pages
+  // and Forget on either clears it for both.
+  const connect = async () => {
     say($("connect-state"), "connecting…");
     try {
-      // One call each, and nothing polls: the lists are read when the reader connects, and a
-      // model's declaration again when they pick another model. A key that is refused says so
-      // here, before the reader has filled anything else in.
+      // One call each, and nothing polls: the lists are read when a key arrives, and a model's
+      // declaration again when the reader picks another model. A key that is refused says so here,
+      // before the reader has filled anything else in.
       const directory = await call("/models");
       fill(model, directory.models, (entry) =>
         entry.id + " — " + entry.backends_up +
         (entry.backends_up === 1 ? " backend up" : " backends up"));
       model.disabled = !directory.models.length;
       const datasets = await call("/datasets");
-      fill(dataset, datasets.datasets, (entry) => entry.id + " (" + entry.rows + " rows)");
+      fill(dataset, datasets.datasets, (entry) =>
+        entry.id + " (" + entry.rows + (entry.rows === 1 ? " row)" : " rows)"));
       syncSource();
       if (directory.models.length) await loadModel(directory.models[0].id);
       else say($("model-state"), "this gateway has no models configured", false);
-      say($("connect-state"), "connected — the key stays in this page", true);
+      say($("connect-state"), "connected — this is the key both pages use", true);
+      preview();
     } catch (error) {
       say($("connect-state"), error.message, false);
     }
+  };
+
+  /** Go back to where the page started: every control on it was filled in with the key that has gone. */
+  const startOver = () => {
+    for (const id of ["model-state", "run-state", "check"]) say($(id), "");
+    model.replaceChildren();
+    model.disabled = true;
+    dataset.replaceChildren();
+    parameters.replaceChildren();
+    fields = [];
+    $("run").disabled = true;
+    figure.hidden = true;
+    $("response").hidden = true;
+    previewToken += 1;
+    syncSource();
+  };
+
+  $("connect").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const typed = $("key").value.trim();
+    if (!typed) {
+      say($("connect-state"), "paste your team's token first", false);
+      return;
+    }
+    // Set before the store announces, so this page's own watcher stays quiet and the call below is
+    // the only one: the watcher is for changes made somewhere else.
+    key = typed;
+    apiKeyStore.set(typed);
+    $("key").value = "";
+    connect();
+  });
+
+  $("forget").addEventListener("click", () => {
+    key = "";
+    apiKeyStore.clear();
+    $("key").value = "";
+    startOver();
+    say($("connect-state"), "no key — paste your team's token", false);
   });
 
   model.addEventListener("change", () => {
     loadModel(model.value).catch((error) => say($("model-state"), error.message, false));
   });
 
-  $("source").addEventListener("change", syncSource);
+  $("source").addEventListener("change", () => {
+    syncSource();
+    if ($("source").value === "row") preview();
+  });
   syncSource();
 
   // No `crossorigin`: `data.global-wheat.com` sends no `access-control-allow-origin` header, and an
@@ -216,7 +256,8 @@
     return {overlay: offscreen, painted: painted};
   };
 
-  const draw = async (url, answer) => {
+  /** Draw one image, with whatever objects belong on it, and say what was drawn. */
+  const paint = async (url, objects) => {
     const image = await loadImage(url);
     const scale = Math.min(1, MAX_SIDE / Math.max(image.naturalWidth, image.naturalHeight));
     canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
@@ -229,7 +270,6 @@
     const down = canvas.height / image.naturalHeight;
 
     const decoder = typeof rleDecode === "function";
-    const objects = answer.objects || [];
     let decoded = 0, declared = 0, checked = 0;
     for (const object of objects) {
       if (object.rle && decoder) {
@@ -251,8 +291,6 @@
       }
     }
     figure.hidden = false;
-    $("response-body").textContent = JSON.stringify(answer, null, 2);
-    $("response").hidden = false;
     // Show the reader what the model found. The figure is a box as tall as it can be and a portrait
     // photograph is taller than that, so without this the object — and the whole canvas — sits below
     // the fold of a blank grey box, which reads as a model that found nothing.
@@ -261,31 +299,65 @@
     // the box's width divided by the image's, while the mask's own coordinates are the image's. Using
     // the bitmap's scale here instead is the same number only when the two happen to agree.
     const found = objects.find((object) => object.bbox);
-    if (found) {
-      requestAnimationFrame(() => {
-        const shown = canvas.clientHeight / image.naturalHeight;
-        figure.scrollTop = Math.max(
-          0, (found.bbox[1] + found.bbox[3] / 2) * shown - figure.clientHeight / 2,
-        );
-      });
-    }
+    requestAnimationFrame(() => {
+      const shown = canvas.clientHeight / image.naturalHeight;
+      figure.scrollTop = found
+        ? Math.max(0, (found.bbox[1] + found.bbox[3] / 2) * shown - figure.clientHeight / 2)
+        : 0;
+    });
+    return {decoder: decoder, decoded: decoded, declared: declared, checked: checked};
+  };
 
-    if (!decoder) {
+  const draw = async (url, answer) => {
+    const objects = answer.objects || [];
+    const painted = await paint(url, objects);
+    $("response-body").textContent = JSON.stringify(answer, null, 2);
+    $("response").hidden = false;
+
+    if (!painted.decoder) {
       // Said rather than left blank: an empty canvas would read as a model that found nothing.
       say($("check"),
         "the decoder did not load from the documentation site, so no mask is drawn here — " +
         "the response body below is complete", false);
-    } else if (!checked) {
+    } else if (!painted.checked) {
       say($("check"), objects.length + " objects, none carrying an area and an RLE to check", null);
     } else {
       // The cheapest check that a decoder is right, and the one the documentation makes in prose:
       // the decoded pixel count equals the published area. It reads the decoded array, never the
       // canvas, which is the only thing the tainted canvas allows.
-      const equal = decoded === Math.round(declared);
+      const equal = painted.decoded === Math.round(painted.declared);
       say($("check"),
-        "Σ decoded mask = " + decoded.toLocaleString() + " px, Σ area = " +
-        Math.round(declared).toLocaleString() + " px" + (equal ? " — equal" : " — they differ"),
+        "Σ decoded mask = " + painted.decoded.toLocaleString() + " px, Σ area = " +
+        Math.round(painted.declared).toLocaleString() + " px" +
+        (equal ? " — equal" : " — they differ"),
         equal);
+    }
+  };
+
+  // The image the reader has chosen, drawn as soon as the choice is complete — an address is two
+  // values and nothing else, so there is no reason to make them press a button to find out whether
+  // they got it right, and a row that does not exist says so before a model is asked to fetch it.
+  //
+  // The token is what keeps a preview from overwriting a result: a preview in flight while Run is
+  // pressed belongs to a choice the reader has moved on from.
+  let previewToken = 0;
+  const preview = async () => {
+    if (!key || !dataset.options.length || $("source").value !== "row") return;
+    const token = ++previewToken;
+    const index = Number($("row").value);
+    try {
+      const row = await call(
+        "/datasets/" + encodeURIComponent(dataset.value) + "/images/" + index);
+      if (token !== previewToken) return;
+      await paint(row.image_url, []);
+      if (token !== previewToken) return;
+      $("response").hidden = true;
+      say($("check"),
+        row.dataset + " row " + row.row + " — " + row.width + "×" + row.height +
+        " px, press Run to segment it", null);
+    } catch (error) {
+      if (token !== previewToken) return;
+      say($("check"), error.message, false);
     }
   };
 
@@ -299,6 +371,9 @@
     }
     $("run").disabled = true;
     say(state, "running…");
+    // A preview still in flight belongs to a choice this run has moved past, and must not be allowed
+    // to draw over the result.
+    previewToken += 1;
     try {
       const chosen = encodeURIComponent(model.value);
       const search = query();
@@ -313,8 +388,8 @@
           {method: "POST", body: form});
       } else {
         const index = Number($("row").value);
-        // The image the box and the mask sit on is addressed through the dataset surface, so
-        // the URL is resolved by the API rather than assembled here — and it needs no key.
+        // The mask's boxes sit on the image, and the address resolves the same way a preview's did,
+        // so it is read again here rather than remembered from one.
         const row = await call(
           "/datasets/" + encodeURIComponent(dataset.value) + "/images/" + index);
         imageUrl = row.image_url;
@@ -334,4 +409,30 @@
       $("run").disabled = false;
     }
   });
+
+  // The address is two values, so it is worth previewing on either of them changing. The number field
+  // also fires per keystroke, and "12" would otherwise fetch rows 1 and 12: the typing waits.
+  let rowTimer = null;
+  $("row").addEventListener("input", () => {
+    clearTimeout(rowTimer);
+    rowTimer = setTimeout(preview, 400);
+  });
+  $("row").addEventListener("change", preview);
+  dataset.addEventListener("change", preview);
+
+  // A key this browser already holds — entered on the reference page, or here on an earlier visit —
+  // is used without being typed again: one key, one place, and both pages start on the same one.
+  apiKeyStore.onChange((value) => {
+    if (value === key) return; // this page's own change, already acted on
+    key = value;
+    if (value) connect();
+    else startOver();
+  });
+  const stored = apiKeyStore.get();
+  if (stored) {
+    key = stored;
+    connect();
+  } else {
+    say($("connect-state"), "no key — paste your team's token", false);
+  }
 })();

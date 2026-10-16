@@ -276,13 +276,33 @@ def test_the_reference_page_carries_a_key_field(client: TestClient) -> None:
     assert page.count('<div id="swagger-ui">') == 1  # the field is inserted before it, not over it
 
 
-def test_the_reference_page_remembers_the_key_it_was_given(client: TestClient) -> None:
-    """Ask Swagger UI to remember the key.
+def test_the_reference_page_leaves_remembering_to_the_shared_store(client: TestClient) -> None:
+    """Swagger UI is asked *not* to persist the key; the store the model page shares does that.
 
-    A key is good for the whole event, and re-pasting it on every visit is friction a participant
-    does not need.
+    Deliberately the opposite of what this page asked for until now. Two remembered copies of a
+    secret cannot be cleared together, and the copy Swagger keeps is one the model page cannot
+    clear — so the store is the only place a key is written, and both pages clear that one.
     """
-    assert '"persistAuthorization": true' in client.get("/docs").text
+    page = client.get("/docs").text
+
+    assert '"persistAuthorization": false' in page
+    assert "biohack-gateway/api-key" in page
+    assert "apiKeyStore" in page
+
+
+def test_both_framed_pages_share_one_store_for_the_key(client: TestClient) -> None:
+    """One key, one place: set it on either page and the other uses it; clear it, both lose it."""
+    reference = client.get("/docs").text
+    play = client.get(PLAY_PATH).text
+
+    for page in (reference, play):
+        assert "biohack-gateway/api-key" in page
+        assert "apiKeyStore.get()" in page
+    # The model page offers the same two actions the reference does, because they act on one
+    # key: one to use it, one to forget it everywhere.
+    assert ">Use key<" in reference and ">Use key<" in play
+    assert ">Forget<" in reference and ">Forget<" in play
+    assert "apiKeyStore.clear()" in play
 
 
 def test_the_reference_page_may_only_be_framed_by_the_site(client: TestClient) -> None:

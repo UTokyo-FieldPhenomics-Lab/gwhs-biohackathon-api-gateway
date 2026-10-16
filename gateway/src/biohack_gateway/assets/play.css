@@ -126,6 +126,16 @@ html[data-scheme="dark"] #play {
   background: var(--accent);
   border-color: var(--accent);
 }
+/* The run button closes the row it belongs to rather than standing on a line of its own: the address
+   is what has to be right before pressing it, and the row above has just set that. */
+#play #run {
+  margin-left: auto;
+}
+#play .key-buttons {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
 #play button:disabled {
   opacity: 0.5;
   cursor: not-allowed;

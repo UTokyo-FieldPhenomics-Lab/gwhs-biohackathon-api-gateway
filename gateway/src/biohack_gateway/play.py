@@ -1,16 +1,16 @@
 """The page a participant runs one model from, served by the API host itself.
 
-Serving it from here is what makes the live call possible at all: the page is same-origin with the
-API, so **no CORS is involved anywhere**, and the reader's key is typed into the page that uses it,
-on the host that checks it. The documentation site frames this page and does nothing else — the site
-never sees the key, and the key is held in a variable for the page's lifetime and written nowhere.
+Serving it from here is what makes the live call possible at all: the page is same-origin with
+the API, so **no CORS is involved anywhere**, and the key it uses is one the reference page and
+this page share — one entry on the API's origin, set or cleared from either. The documentation
+site frames this page and does nothing else: the site never sees the key.
 
-The page is five rows and nothing more: a key field and a model selector filled from ``GET
-/models``; the image, either a published row or an upload; the model's own parameters; one button;
-and the result on a canvas. **The controls are built from the model's declaration**, never
-hard-coded, which is the point of the whole design: a model this page has never heard of works
-without a change to it, so a model it cannot render is an incomplete declaration rather than a page
-that is not clever enough.
+The page is four rows and nothing more: a key field and a model selector filled from ``GET
+/models``; the image, either a published row or an upload; the model's own parameters; and the
+result on a canvas, with Run at the end of the row that chooses the image. **The controls are
+built from the model's declaration**, never hard-coded, which is the point of the whole design:
+a model this page has never heard of works without a change to it, so a model it cannot render
+is an incomplete declaration rather than a page that is not clever enough.
 
 Two facts from the browser shape the drawing code, and both are in the script where they bite.
 ``data.global-wheat.com`` sends no ``access-control-allow-origin`` header, so the image is loaded
@@ -42,14 +42,16 @@ PLAY_PAGE = (
     (_ASSETS / "play.html")
     .read_text(encoding="utf-8")
     .replace("__PLAY_CSS__", (_ASSETS / "play.css").read_text(encoding="utf-8"))
+    .replace("__API_KEY_JS__", (_ASSETS / "api_key.js").read_text(encoding="utf-8"))
     .replace("__PLAY_JS__", (_ASSETS / "play.js").read_text(encoding="utf-8"))
 )
-"""The page's markup, with its own stylesheet and script inlined where the placeholders are.
+"""The page's markup, with its own stylesheet and scripts inlined where the placeholders are.
 
 Three files, one language each, so the page is edited as a page and this module is Python: what
-makes the five rows work is `assets/play.js`, what they look like is `assets/play.css`, and
-neither is a string in this file. Two placeholders are left for when the page is served,
-because what goes in them depends on the site that asked: the decoder's URL, and the frame's
+makes the five rows work is `assets/play.js`, what they look like is `assets/play.css`, and neither
+is a string in this file. `assets/api_key.js` is the one store both framed pages remember a key in,
+so it is inlined here as well as in the reference. Two placeholders are left for when the page is
+served, because what goes in them depends on the site that asked: the decoder's URL, and the frame's
 height reporter.
 """
 

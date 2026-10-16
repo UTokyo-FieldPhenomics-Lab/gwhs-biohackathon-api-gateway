@@ -16,7 +16,10 @@ __PLAY_CSS__
     <label for="key">Your key</label>
     <input id="key" name="key" type="password" autocomplete="off" spellcheck="false"
            placeholder="X-API-Key" aria-describedby="connect-state">
-    <button type="submit">Connect</button>
+    <span class="key-buttons">
+      <button type="submit">Use key</button>
+      <button id="forget" type="button">Forget</button>
+    </span>
     <span id="connect-state" class="state" role="status"></span>
   </form>
 
@@ -37,14 +40,11 @@ __PLAY_CSS__
       <input id="row" type="number" min="0" step="1" value="0" disabled aria-label="row number">
     </span>
     <input id="file" type="file" accept="image/*" hidden aria-label="your photograph">
+    <button id="run" type="button" class="primary" disabled>Run</button>
+    <span id="run-state" class="state" role="status"></span>
   </div>
 
   <div class="row" id="parameters"></div>
-
-  <div class="row">
-    <button id="run" type="button" disabled>Run</button>
-    <span id="run-state" class="state" role="status"></span>
-  </div>
 
   <figure hidden>
     <figcaption id="check"></figcaption>
@@ -57,6 +57,9 @@ __PLAY_CSS__
   </details>
 </main>
 <script src="__DECODER__"></script>
+<script>
+__API_KEY_JS__
+</script>
 <script>
 __PLAY_JS__
 </script>
