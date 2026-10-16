@@ -186,7 +186,11 @@ Two more things came out of the same measurements:
 **How to measure this rather than guess:** the `chrome-devtools` MCP in this workspace runs
 `npx chrome-devtools-mcp@latest` with no arguments, so it drives a *local* Chromium — which reaches
 `docs.global-wheat.com` but not `api.*` from the campus network, so the live frame still cannot be
-inspected from here. Pointing it at the machine that can reach the API host is a one-line change: run
+inspected from here. *(Corrected 2026-10-16: `api.*` is reachable from this campus — the failure was
+the host's own reply path, see
+[`2026101513_host-unreachable-from-the-utokyo-network.md`](2026101513_host-unreachable-from-the-utokyo-network.md);
+a local Chromium now reaches both.)* Pointing it at the machine that can reach the API host is a
+one-line change: run
 Chromium there with `--remote-debugging-port=9222`, tunnel it (`ssh -N -L 9222:127.0.0.1:9222 <host>`),
 and pass `--browser-url http://127.0.0.1:9222` to the MCP.
 

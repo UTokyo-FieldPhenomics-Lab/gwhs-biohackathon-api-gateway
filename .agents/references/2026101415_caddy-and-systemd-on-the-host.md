@@ -2,8 +2,8 @@
 
 Date: 2026-10-14.
 Topic: the first real run of `deploy/setup-gateway.sh`, on the host as it is today — Debian 13
-trixie, `t3.small`, Elastic IP `52.28.155.227`, reached over the tailnet because port 22 on the
-Elastic IP is not reachable from this workstation. Constraints this run produced are in
+trixie, `t3.small`, Elastic IP `52.28.155.227`, reached over the tailnet because the security group's
+TCP 22 rule is an address allow-list this workstation is not on. Constraints this run produced are in
 [`../rules/deploy.md`](../rules/deploy.md); the plan it verifies is in
 [`../plans/2026101414_✅tls-and-systemd-on-the-gateway-host.md`](../plans/2026101414_✅tls-and-systemd-on-the-gateway-host.md).
 
