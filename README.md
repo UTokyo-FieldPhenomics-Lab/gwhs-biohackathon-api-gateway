@@ -210,6 +210,20 @@ uv run --project docs zensical serve -a 127.0.0.1:8765
 the content root silently stops the build putting `site/assets/` in the output, which serves an
 unstyled site. The hand steps behind the domain are [`deploy/README.md`](deploy/README.md) §6.
 
+### GPU backends
+
+Not a subproject of this repository: the model containers live in a private one, checked out here as
+`models/`. Every backend machine runs one container per model, named after the model id it serves, and
+a participant never touches one — the gateway does.
+
+On a machine you are sitting at, the whole lifecycle is four commands: `docker ps -a` to see it,
+`docker start|stop|restart <model>` to move it, `docker logs --tail 40 <model>` to see why it refused,
+and `docker rm -f <model>` followed by the run line when something it was *created* with has to change.
+Nothing has to be repeated to start it, because the card, the port and the backend token live in the
+container's own configuration rather than in the image — which is exactly why the full `docker run` line
+is written out, with the Windows and Linux differences, in
+[`deploy/gpu-backends.md`](deploy/gpu-backends.md#controlling-a-container-on-a-machine-you-are-sitting-at).
+
 ## Changing dependencies
 
 Edit the subproject's `pyproject.toml`, then re-lock so CI stays reproducible:

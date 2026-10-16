@@ -17,7 +17,7 @@ Two things make a machine reachable, and neither is a client on the machine:
 1. It sits on one of the LANs below. That LAN's **router is the tailnet node**, advertising its `/24`,
    and the gateway host accepts routes — so a private address inside the `/24` is reachable from
    Frankfurt with nothing installed on the machine.
-2. **A container publishes its port on the LAN interface**, which is `docker run -p 8000:8000`: the
+2. **A container publishes its port on the LAN interface**, which is `docker run -p 12711:12711`: the
    default binding is `0.0.0.0`, and that is what the router forwards into.
 
 Binding the container to `127.0.0.1` and publishing it with `tailscale serve` is an *alternative* that
@@ -27,7 +27,11 @@ running on **Windows**, which is exactly the interface the router forwards to; i
 Docker Desktop it is not, and LAN access would need `netsh portproxy` or mirrored networking — the
 reason the Windows machine below uses Desktop.
 
-Convention: the inference port is **8000**, which is what the plan's examples assume.
+Convention: the inference port is **12711**, inside the container and on the host alike — one number,
+never a mapping. It is not a service port, and it sits outside both ephemeral ranges that could take it
+from under us (Linux `32768–60999`, Windows `49152–65535`). It is also deliberately **not 8000**: the
+gateway's own socket is `127.0.0.1:8000` on its host, and a document where one number means two things
+is how a backend ends up answering on the gateway's port.
 
 Convention: **a container is admitted against the card minus 1 GB, never against the card.** These are
 workstations whose desktop drives the same display, so a 24 GB card is placed against **23 GB** and the
@@ -102,8 +106,8 @@ decide what it can serve** — that follows from the arithmetic.
 pool in `~/.config/biohack-gateway/` — the same reasoning as §1.5 of the runbook. The file is
 `models.json`, the same shape and the same place as `tokens.json`, one entry per model:
 
-    {"sam3.1-meta": ["http://<address>:8000"],
-     "yolo":       ["http://<address>:8000", "http://<address>:8000"]}
+    {"sam3.1-meta": ["http://<address>:12711"],
+     "yolo":       ["http://<address>:12711", "http://<address>:12711"]}
 
 A file that does not parse means **no models**, never all of them: the surface fails closed the way
 the request gate does, so a typo in host configuration cannot become a gateway that answers for
@@ -135,7 +139,7 @@ the pool used the 42; the 43 was in a message that quoted the value rather than 
 leading underscore in prose is exactly the character a renderer or a reader drops. The authority is
 the file, and the check is one request — with the candidate in a shell variable on the host:
 
-    curl -s -o /dev/null -w '%{http_code}\n' -X POST http://<backend>:8000/models/<model>/predict \
+    curl -s -o /dev/null -w '%{http_code}\n' -X POST http://<backend>:12711/models/<model>/predict \
       -H "X-Backend-Token: $T" -H 'Content-Type: application/json' -d '{}'
 
 `401` carrying `bad or missing X-Backend-Token` is the value being wrong. **Any other 4xx means the
@@ -163,7 +167,7 @@ a backend ever lives where the caller's address both survives and is stable, whi
 today.
 
 **To measure a path, ask the container and not the machine.** Start the container, then from the
-gateway run `curl -s http://<backend-lan-address>:8000/health` and read the client address in the
+gateway run `curl -s http://<backend-lan-address>:12711/health` and read the client address in the
 container's own log (`INFO: <address>:<port> - "GET /health HTTP/1.1" 200 OK`). On Linux that agrees
 with `sshd`; on Windows it does not, because Docker Desktop's port proxy is a hop of its own — the hop
 no router setting can remove.
@@ -178,7 +182,7 @@ machine rather than written down here a second time.
 **One budget per attempt, and a window that outlives it — measured, wrong, and then fixed.** With the
 list as `[5090, labpc]` and the 5090's container stopped, a request first answered in **61.2 s**: the
 gateway waited a whole request timeout (then 60) before trying the second backend, labpc then answered
-the same request correctly in the remainder, and the journal said `backend http://<address>:8000
+the same request correctly in the remainder, and the journal said `backend http://<address>:12711
 failed a sam3.1-meta: unreachable`. The failed backend was then passed over for 30 s — **shorter than
 the failure it remembered** — so the request arriving after that window paid the same minute again, and
 every request arriving during it queued behind.
@@ -251,8 +255,8 @@ publish their ports *inside the WSL VM*, where the router cannot reach them.
    ever does not answer, the fallback is:
 
    ```powershell
-   New-NetFirewallRule -DisplayName "biohack backend 8000" -Direction Inbound -Protocol TCP `
-     -LocalPort 8000 -RemoteAddress <the 5090's LAN>/24,100.64.0.0/10 -Action Allow
+   New-NetFirewallRule -DisplayName "biohack backend 12711" -Direction Inbound -Protocol TCP `
+     -LocalPort 12711 -RemoteAddress <the 5090's LAN>/24,100.64.0.0/10 -Action Allow
    ```
 
    Both address ranges are in there because the router may forward the original tailnet source
@@ -298,6 +302,98 @@ This is the part that fails during an event and looks like a network fault.
   hibernation off and Windows Update reboots deferred for the event window.
 - Verify by actually rebooting the machine and watching the container come back. It is the only test
   that finds a broken auto-sign-in, and it is cheap now.
+
+## Controlling a container on a machine you are sitting at
+
+Everything below is `docker`, and it is the same on both systems: one container per model, named after
+the model id it serves. What differs is how you get a shell and what starts the engine after a reboot.
+
+**The parameters live in the container, not in the image**, and that is the whole reason this section
+ends in a complete run line. `docker run` puts each flag into the container's own configuration:
+
+| flag | stored as | read it back with |
+|---|---|---|
+| `--name <model>` | the container's name | `docker ps -a` |
+| `--gpus all` | `HostConfig.DeviceRequests` | `docker inspect --format '{{.HostConfig.DeviceRequests}}' <model>` |
+| `--restart unless-stopped` | `HostConfig.RestartPolicy` | `docker inspect --format '{{.HostConfig.RestartPolicy.Name}}' <model>` |
+| `-p 12711:12711` | `HostConfig.PortBindings` | `docker port <model>` |
+| `-e BACKEND_TOKEN=…` | `Config.Env` | `docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' <model>` |
+
+So `docker start` needs no flags: everything is already recorded, which is why stopping and starting is
+safe and why a *changed* value means creating the container again. **Only the restart policy can be
+changed in place** (`docker update --restart unless-stopped <model>`, not exercised here); an
+environment variable, a port, the GPU access or the name cannot, and each needs `docker rm -f` and the
+run line below.
+
+### The five things you will actually do
+
+    docker ps                      # what is running
+    docker ps -a                   # including anything you stopped
+    docker stop <model>            # stop it, and it stays stopped
+    docker start <model>           # start it again, with everything it was created with
+    docker restart <model>         # stop and start, which is not the same as re-creating it
+    docker logs --tail 40 <model>  # what it printed, including why it refused to start
+
+**Creating it, with every flag, because none of it is recoverable later:**
+
+    docker run -d --gpus all --restart unless-stopped -p 12711:12711 \
+      -e BACKEND_TOKEN=<the value in the host's env> --name <model> <image>
+
+- `-e BACKEND_TOKEN=…` is **mandatory** — the entrypoint refuses to start without it — and it must equal
+  the host's `BIOHACK_BACKEND_TOKEN`. A different value is not a stale backend, it is a dead model: it
+  answers `401`, and the gateway abandons the whole model rather than trying the next machine.
+- `--gpus all` is what puts the card inside the container. Without it the container finds no GPU and
+  refuses to start, which is the entrypoint's admission check doing its job.
+- `--restart unless-stopped` is what brings the backend back after a reboot. Never `always`: the
+  entrypoint refuses to start when the card cannot take it, and `always` turns that refusal into a loop.
+- `-p 12711:12711` publishes on the LAN. Do not bind loopback, and do not publish a different host port
+  than the container's: the gateway's list, the router and the Windows firewall rule all name one number.
+
+**Started is not ready.** `/health` answers `503` while the checkpoint loads and one throwaway prompt
+runs; `docker logs` prints `budget ok: needs … GB` and then `ready: load … s`, and only then does it
+serve. The gateway treats a `503` as "still loading" and asks again, so a restart costs the pool
+seconds, not a restart of anything else.
+
+**Prove it from the gateway host, not from the machine.** `curl http://<private address>:12711/health`
+is the path a participant's request takes. From the machine itself, `curl http://127.0.0.1:12711/health`
+proves only that the container listens — on Windows that is a different interface from the one the router
+forwards to.
+
+**A backend left stopped while it is still in a model's list costs the pool one wait.** Measured: the
+first request that meets it takes ~4.25 s and is then answered by the other machine, and the request
+after each 30-second window pays it again — the numbers are in the routing section above. If a machine
+is going to be down for a while, remove its address from `models.json` on the host and restart the
+gateway; that is one line and no second copy of the truth.
+
+### Windows 11: the GUI controls, the CLI creates
+
+- **Docker Desktop's Containers pane runs the lifecycle.** The row for `<model>` has Start, Stop,
+  Restart and Delete, and its Logs tab is the same text as `docker logs`. It is the same engine as the
+  CLI, so a container started in the GUI and one started from a shell are indistinguishable.
+- **Create from the CLI anyway.** The run dialog is not where to go hunting for the GPU flag and the
+  restart policy, and one line with every flag is unambiguous. (The dialog's fields are not verified
+  here; the CLI path is what this project used.)
+- Reaching a shell: SSH, PowerShell, or WSL — `docker` is on the PATH in all three, which is one of the
+  few things on this machine that *is* straightforward. This project drove it as
+  `ssh lab-5090 'wsl -e docker ps'`. In an SSH session the default shell is `cmd`, so commands are
+  separated with `&`, not `;`, and a quoted argument has to survive that shell on its way to WSL.
+- Coming back after a reboot is Docker Desktop's problem, not the container's: see
+  [Surviving a reboot, unattended](#surviving-a-reboot-unattended) immediately below.
+
+### Linux: systemd, the group, and no GUI
+
+- **The engine is a systemd service**: `systemctl status docker`, and `sudo systemctl enable --now
+  docker` if it is not up. A machine with no GUI has no other interface than this section.
+- Either prefix the commands with `sudo`, or join the group once and log back in — membership is read at
+  login, so the second command looks like a typo until you do:
+
+      sudo usermod -aG docker "$USER"
+
+- One container, one card, one port, exactly as on Windows: the same `docker start|stop|restart`, the
+  same run line, the same `/health` check from the gateway host.
+- If the container starts and then refuses, check the card is visible to the engine at all: `nvidia-smi`
+  on the host, and `nvidia-container-toolkit` configured, or `--gpus all` silently finds nothing. The
+  per-OS bring-up recipe above is where that is set up.
 
 ## Reaching a machine to look at it
 
@@ -387,11 +483,11 @@ signed in with. One trap: if the account signs in with a **PIN**, SSH still asks
    declaration and check the machine can take it: `docker image inspect` for the label,
    `nvidia-smi --query-gpu=index,memory.free --format=csv` for the cards.
 3. Start it detached, publishing on the LAN, **with the value the host already holds in `env`**:
-   `docker run -d --restart unless-stopped -p 8000:8000 -e BACKEND_TOKEN=… --name <model> <image>`.
+   `docker run -d --restart unless-stopped -p 12711:12711 -e BACKEND_TOKEN=… --name <model> <image>`.
    A machine started with a different value is worse than a machine that is absent: it answers the
    requests that reach it with `401`, and that stops the model's whole list from working.
 4. Prove it in this order: `docker logs` for the admission line and for `ready`, then **from the host**
-   `curl -s http://<private address>:8000/health`, and `nc -vz <private address> 8000` if that fails.
+   `curl -s http://<private address>:12711/health`, and `nc -vz <private address> 12711` if that fails.
    Only then wire it up.
 5. Add that address to the model's list on the host and add this machine's row above. **The list's order
    decides which backend answers**, because routing is first-healthy-wins: the second entry is a fault
@@ -406,7 +502,7 @@ ssh -i ~/.ssh/gwhs-demo.pem <user>@gwhs-host \
 
 # reachability, run on the host: the subnet routes live in their own table, so `ip route` shows none
 ssh -i ~/.ssh/gwhs-demo.pem <user>@gwhs-host \
-  'ip route get lab-3090; nc -vz lab-3090 8000'
+  'ip route get lab-3090; nc -vz lab-3090 12711'
 ```
 
 Two traps this already cost us once each: a **refused port** is not an unreachable host (the laboratory
