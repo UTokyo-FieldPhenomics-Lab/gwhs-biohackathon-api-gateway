@@ -19,7 +19,7 @@ by either of the two above, so it stays readable while the host is stopped.
 | Certificate | ACM in **`us-east-1`**, because CloudFront requires it there whatever the origin's region is |
 | Domains | `api.global-wheat.com` → the host's Elastic IP, TLS terminated on the host by Caddy (§1.5); `data.global-wheat.com` → the distribution; `docs.global-wheat.com` → GitHub Pages (§6), which is not ours to run |
 | Docs site | static, on GitHub Pages, published from an Actions artifact (§6) — no host, no bucket, and no certificate we manage |
-| GPU backends | the compute plane's machines, which nothing here creates: the inventory, the fault domains the routers define, and the list format the gateway is configured from are in [`backends.md`](backends.md) |
+| GPU backends | the compute plane's machines, which nothing here creates: the inventory, the fault domains the routers define, and the list format the gateway is configured from are in [`gpu-backends.md`](gpu-backends.md) |
 | Region and zone | the region is environment configuration and the host and bucket share one (`eu-central-1`); no zone is pinned, so a replacement instance may land in any of them |
 
 Three facts behind that table, each measured rather than assumed:
@@ -132,7 +132,7 @@ the constraint behind them is in [`../.agents/rules/deploy.md`](../.agents/rules
 
 **A backend machine needs no client of its own.** The node in that console per location is a router
 advertising its own `/24`, so the machines behind it are reached by their own private addresses with
-nothing installed on them — [`backends.md`](backends.md) holds that inventory, the fault domains the
+nothing installed on them — [`gpu-backends.md`](gpu-backends.md) holds that inventory, the fault domains the
 routers define, and the list the gateway is configured from.
 
 ## 1.4 Bind the API domain
