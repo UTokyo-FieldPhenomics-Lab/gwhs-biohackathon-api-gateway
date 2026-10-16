@@ -285,6 +285,7 @@ ssh -i ~/.ssh/gwhs-demo.pem admin@100.88.197.115 \
 ```
 
 Two traps this already cost us once each: a **refused port** is not an unreachable host (the laboratory
-3090 refused 22 only because it runs no `sshd`), and **a missing ping reply** is not one either (the
-Windows machine blocks ICMP while answering HTTP). Ask for a TCP connection, and ask the machine what
-it listens on (`ss -lnt`) before concluding anything about the path.
+3090 refused 22 that morning with no `sshd` listening and took a key at 22 the same afternoon once it
+was enabled), and **a missing ping reply** is not one either (the Windows machine blocks ICMP while
+answering HTTP). Ask for a TCP connection, and ask the machine what it listens on (`ss -lnt`) before
+concluding anything about the path.
