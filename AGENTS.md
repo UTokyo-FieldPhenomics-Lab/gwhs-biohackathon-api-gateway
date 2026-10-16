@@ -12,7 +12,7 @@ image and getting a model result are each a single HTTP call.
 
 ## Architecture
 
-Two planes joined only by a frozen contract, plus the compute the model surface will route to:
+Two planes joined only by a frozen contract, plus the compute the model surface routes to:
 
 - **Image plane** (live) — private S3 behind CloudFront. Image objects only, written once at publish
   by a PUT from the publishing host in the bucket's own region: no server to go down, and no mutable
@@ -20,9 +20,9 @@ Two planes joined only by a frozen contract, plus the compute the model surface 
 - **Metadata plane** (live) — the publisher generates one index per dataset from a pinned upstream
   revision; the gateway loads it at startup and serves it from memory, so a republish arrives as a
   restart. This is the one deliberate exception to static-first.
-- **Compute plane** (model surface not built yet) — the same gateway on one EC2 host authenticates,
-  and will route inference work to GPU backends. Its region is environment configuration: the host
-  runs in `eu-central-1`. A backend is any Docker-capable GPU resource reachable over an
+- **Compute plane** (surface implemented and rehearsed against a real backend; **not deployed**) — the
+  same gateway on one EC2 host authenticates and routes inference work to GPU backends. Its region is
+  environment configuration: the host runs in `eu-central-1`. A backend is any Docker-capable GPU resource reachable over an
   authenticated, non-public link — a lab machine, a GPU VPS, or a rented GPU container; the provider
   is a deployment choice, not a fixed route. The backends' containers live in a **private**
   repository that this one links as the submodule at `models/`, so the containers and the weights
