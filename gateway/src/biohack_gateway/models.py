@@ -576,8 +576,8 @@ class ModelRegistry:
             parameters=declared.parameters if declared else [],
         )
 
-    def eligible(self, model: str) -> list[Backend]:
-        """Return the backends a request for one model may be tried against, in order.
+    def _begin(self, model: str) -> list[Backend]:
+        """Order a model's live backends and reserve the one that will be tried first.
 
         Parameters
         ----------
@@ -587,9 +587,9 @@ class ModelRegistry:
         Returns
         -------
         list of Backend
-            The backends not currently passed over, **with those that have nothing in flight
-            first**. Empty means the caller should be told the model is unavailable rather than
-            made to wait for a machine that has just failed.
+            The backends not currently passed over, with those that have nothing in flight first,
+            and the first of them already counted as in flight. Empty means the caller should be
+            told the model is unavailable rather than made to wait for a machine that has failed.
 
         Raises
         ------
@@ -598,57 +598,54 @@ class ModelRegistry:
 
         Notes
         -----
-        The idle-first order is what keeps one dead backend from holding a burst. A backend is
-        only known to be unhealthy *after* an attempt against it fails, so without this every
-        request that arrives during the failure waits it out as well; with it, the first request
-        discovers the failure and the rest of the burst is served by the other backend before the
-        happens. A backend with something in flight is still returned, last, so a model with one
-        backend is unaffected.
+        Ordering and reserving happen in one critical section on purpose. A request that read the
+        order and only then counted itself would still choose a backend another request had just
+        taken, which is exactly the case the preference exists for: a backend is only known to be
+        unhealthy *after* an attempt against it fails, so a burst arriving during the failure would
+        all pick it. Measured on 2026-10-16 with the laboratory 5090 stopped and three requests sent
+        at once: two of the three still queued behind the failure until this was made atomic.
         """
         if model not in self._backends:
             raise HTTPException(status_code=404, detail="no such model")
-        now = time.monotonic()
-        eligible = [backend for backend in self._backends[model] if not backend.is_passed_over(now)]
         with self._lock:
-            busy = {id(backend) for backend in eligible if backend.in_flight}
-        return [backend for backend in eligible if id(backend) not in busy] + [
-            backend for backend in eligible if id(backend) in busy
-        ]
+            backends = self._order(self._backends[model])
+            if backends:
+                backends[0].in_flight += 1
+        return backends
 
-    def _attempt(
-        self, backend: Backend, url: str, headers: Mapping[str, str], body: bytes | None
-    ) -> Reply:
-        """Send one request to one backend, counting it for as long as it runs.
+    def _order(self, backends: Sequence[Backend]) -> list[Backend]:
+        """Return the live backends with those that have nothing in flight first.
 
         Parameters
         ----------
-        backend : Backend
-            The backend to call; its counter is raised for the duration.
-        url : str
-            The absolute URL of this model's route on that backend.
-        headers : mapping of str to str
-            Headers to send, including `X-Backend-Token`.
-        body : bytes or None
-            The request body.
+        backends : sequence of Backend
+            One model's backends, in the order the host listed them.
 
         Returns
         -------
-        Reply
-            Whatever the transport made of it.
-
-        Notes
-        -----
-        The counter is what :meth:`eligible` reads to keep a burst off a backend that is failing,
-        so it is raised before the call and lowered in a `finally`: an exception here must not
-        leave a backend looking permanently busy, which would take it out of the pool for good.
+        list of Backend
+            The same backends, still in list order within each group, with a busy backend last: a
+            model with one backend is unaffected, and one with two spreads a burst over both.
         """
+        now = time.monotonic()
+        live = [backend for backend in backends if not backend.is_passed_over(now)]
+        idle = [backend for backend in live if not backend.in_flight]
+        busy = [backend for backend in live if backend.in_flight]
+        return idle + busy
+
+    def _reserve(self, backend: Backend) -> None:
+        """Count one attempt against a backend, a fallback reached later in the same request."""
         with self._lock:
             backend.in_flight += 1
-        try:
-            return self._transport("POST", url, headers, body, RESPONSE_TIMEOUT_SECONDS)
-        finally:
-            with self._lock:
-                backend.in_flight -= 1
+
+    def _release(self, backend: Backend) -> None:
+        """Stop counting one attempt.
+
+        Always called from a `finally`: an exception on this path must not leave a backend looking
+        permanently busy, which would take it out of the pool for the life of the process.
+        """
+        with self._lock:
+            backend.in_flight -= 1
 
     def forward(
         self,
@@ -687,7 +684,7 @@ class ModelRegistry:
             configured none for this model; or when every backend that was tried failed, reported as
             an upstream failure with the status the last one gave.
         """
-        backends = self.eligible(model)
+        backends = self._begin(model)
         if not self._token:
             # Fail closed and say whose fault it is. Without a token every backend would answer 401,
             # which the surface maps to a client error — a misconfigured gateway reported as a bad
@@ -709,9 +706,15 @@ class ModelRegistry:
         }
         suffix = f"?{query}" if query else ""
         failures: list[Reply] = []
-        for backend in backends:
+        for index, backend in enumerate(backends):
+            if index:
+                # A fallback was not reserved with the list, because it was not being tried yet.
+                self._reserve(backend)
             url = f"{backend.url}/models/{model}/{path}{suffix}"
-            reply = self._attempt(backend, url, headers, body)
+            try:
+                reply = self._transport("POST", url, headers, body, RESPONSE_TIMEOUT_SECONDS)
+            finally:
+                self._release(backend)
             if 200 <= reply.status < 300:
                 backend.unhealthy_until = 0.0
                 return reply

@@ -617,3 +617,66 @@ def test_a_refused_connection_is_not_reported_as_a_timeout() -> None:
 
     assert reply.status == 0
     assert reply.timed_out is False
+
+
+def test_choosing_a_backend_and_reserving_it_are_one_step() -> None:
+    """Two requests choosing at the same instant do not both take the same backend.
+
+    Reaches for `_begin` deliberately: the property *is* that choosing and counting happen in one
+    critical section, and no arrangement of two public calls can show it without racing. Measured on
+    2026-10-16: with the two steps apart, two of three simultaneous requests still queued behind a
+    stopped backend.
+    """
+    registry = ModelRegistry({MODEL: [FIRST, SECOND]}, BACKEND_TOKEN, FakeBackends())
+
+    chosen = [registry._begin(MODEL)[0].url for _ in range(2)]  # noqa: SLF001 — see the docstring
+
+    assert chosen == [FIRST, SECOND]
+
+
+def test_a_burst_of_requests_is_spread_over_both_backends(tmp_path: Path, index_dir: Path) -> None:
+    """Every request in a burst gets an answer, and only the first meets the failed backend.
+
+    One authenticated request goes first, deliberately. The token pool reads its file on the first
+    request that needs it and marks itself checked *before* the pool it read is in place, so a burst
+    arriving inside that window is refused by the request gate — a real race in `auth.py`, unrelated
+    to routing, that eight simultaneous requests could not reproduce against the live gateway.
+    `GET /models` is used to warm it because it authenticates and touches no backend.
+    """
+    hanging = threading.Event()
+    released = threading.Event()
+    met: list[str] = []
+
+    def transport(
+        method: str, url: str, headers: Mapping[str, str], body: bytes | None, timeout: float
+    ) -> Reply:
+        if "/health" in url:
+            return Reply(status=200, body=json.dumps(DECLARATION).encode())
+        met.append(url)
+        if url.startswith(FIRST):
+            hanging.set()
+            released.wait(5)
+            return Reply(status=0, body=b"", timed_out=True)
+        return Reply(status=200, body=json.dumps(PREDICTION).encode())
+
+    client = next(build_client(tmp_path, index_dir, transport))  # type: ignore[arg-type]
+    assert client.get("/models", headers=KEY).status_code == 200, "warm the token pool first"
+
+    ask = {"dataset": "gwhd", "row": 0}
+    answers: list[int] = []
+
+    def send() -> None:
+        answers.append(client.post(f"/models/{MODEL}/predict", headers=KEY, json=ask).status_code)
+
+    burst = [threading.Thread(target=send) for _ in range(4)]
+    for thread in burst:
+        thread.start()
+    assert hanging.wait(5), "no request ever reached the hanging backend"
+    released.set()
+    for thread in burst:
+        thread.join(10)
+
+    assert answers == [200, 200, 200, 200]
+    assert sum(1 for url in met if url.startswith(FIRST)) == 1, (
+        "the burst queued behind the failure"
+    )
