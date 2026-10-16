@@ -1,0 +1,39 @@
+/* Two trims to the reference page: chrome this contract makes meaningless.
+ *
+ * Deliberately not in `swagger_dark.css`, which is a palette and states that every one of its rules
+ * begins with `html[data-scheme="dark"]`. Neither of these has anything to do with the palette — a
+ * reader in light mode is looking at the same two useless controls — so they live apart, in a file
+ * whose rules are scoped to nothing, and the discipline of that one stays true.
+ *
+ * Selectors are Swagger UI's own class names, taken from the bundle the page loads rather than
+ * guessed, and they are stable across the v5 line the page floats on: `response-col_links` is on
+ * both the header cell and the body cells, and `response-control-media-type` wraps the label, the
+ * select, and the sentence under it.
+ */
+
+/* The Links column can only ever say "No links": it reports the `links` object of a response, and no
+   operation in this contract defines one. Hiding the column gives its width to Description, which is
+   the column a reader is actually reading. */
+.swagger-ui .response-col_links {
+  display: none;
+}
+
+/* Every response here is `application/json` and there is no second one to choose between, so the
+   chooser has nothing to choose — and the line under it, "Controls Accept header.", describes a
+   control that does not exist. The upload route's request body is the case that stays: its media type
+   (`multipart/form-data`) is a different class and is the one thing a reader cannot infer from the
+   example beside it. */
+.swagger-ui .response-control-media-type {
+  display: none;
+}
+
+/* And the row it sat in goes with it: the section keeps 16px of top padding, which is a visible band
+   of nothing once the chooser inside it is hidden. The guard is what keeps this honest — Swagger
+   renders a response's named examples inside the same section in contracts that define any, and this
+   one defines none, so the guard costs nothing today and is the difference between trimming a seat
+   that is empty and hiding an examples row that is not. */
+.swagger-ui .response-controls:has(> .response-control-media-type):not(
+    :has(.response-control-examples)
+  ) {
+  display: none;
+}
