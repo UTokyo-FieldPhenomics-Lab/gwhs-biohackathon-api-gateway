@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Run one model — Global Wheat API</title>
+<style>
+__PLAY_CSS__
+</style>
+</head>
+<body>
+<main id="play">
+  <h1>Run one model</h1>
+
+  <form id="connect" class="row" autocomplete="off">
+    <label for="key">Your key</label>
+    <input id="key" name="key" type="password" autocomplete="off" spellcheck="false"
+           placeholder="X-API-Key" aria-describedby="connect-state">
+    <button type="submit">Connect</button>
+    <span id="connect-state" class="state" role="status"></span>
+  </form>
+
+  <div class="row">
+    <label for="model">Model</label>
+    <select id="model" disabled></select>
+    <span id="model-state" class="state" role="status"></span>
+  </div>
+
+  <div class="row" role="radiogroup" aria-labelledby="image-legend">
+    <span class="legend" id="image-legend">Image</span>
+    <label><input type="radio" name="source" value="row" checked> a published row</label>
+    <select id="dataset" disabled aria-label="dataset"></select>
+    <input id="row" type="number" min="0" step="1" value="0" disabled aria-label="row number">
+    <label><input type="radio" name="source" value="upload"> your own photograph</label>
+    <input id="file" type="file" accept="image/*" disabled aria-label="your photograph">
+  </div>
+
+  <div class="row" id="parameters"></div>
+
+  <div class="row">
+    <button id="run" type="button" disabled>Run</button>
+    <span id="run-state" class="state" role="status"></span>
+  </div>
+
+  <figure hidden>
+    <figcaption id="check"></figcaption>
+    <canvas id="canvas"></canvas>
+  </figure>
+
+  <details id="response" hidden>
+    <summary>The response body</summary>
+    <pre id="response-body"></pre>
+  </details>
+</main>
+<script src="__DECODER__"></script>
+<script>
+__PLAY_JS__
+</script>
+__REPORTER__
+</body>
+</html>

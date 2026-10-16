@@ -10,7 +10,7 @@ here.
 - **Every request is key-authenticated, and the gate is closed by default.** One middleware checks
   `X-API-Key` against the token pool before routing, so an endpoint added later is protected by
   existing rather than by remembering a decorator, and a path that does not exist is refused too. The
-  exceptions are named in the code — `/health` and the reference page the documentation site frames —
+  exceptions are named in the code — `/health` and the two pages the documentation site frames —
   because they carry no data and could not be opened in a browser if the page itself needed a header.
   An absent pool is a closed gateway rather than an open one, and a pool that has never parsed answers
   `503 unavailable` until it does. Per-key rate and concurrency limits are the intended next layer and
@@ -67,6 +67,21 @@ here.
   typed into the API's page and never reaches the documentation site, which frames the page and does
   nothing else — which is also why only that site may frame it (`frame-ancestors`, configured per
   app), since a field for a secret in a page anything may embed is a field anything may overlay.
+- **A page that runs a call is served by the API too, and framed the same way.** `/play` is served
+  from here because that makes it same-origin with the API: no CORS is involved anywhere, the key is
+  typed into the page that uses it and held in a variable for that page's lifetime, and nothing is
+  written to storage. It joins `OPEN_PATHS` and carries `frame-ancestors {DOCS_PARENT_ORIGIN}` for the
+  reference's reason: it carries no data of its own, and it is where a reader's key goes. Its controls
+  are built from the model's own declaration in `GET /models` and nothing else — a model the page
+  cannot render is an incomplete declaration, not a page that is not clever enough — and it draws with
+  the documentation site's published `post-processing/rle_decode.js`, loaded by URL, since a copy here
+  would be a second decoder to keep true.
+- **Page material lives in `assets/`, one language to a file.** The markup, scripts, and stylesheets
+  this package injects are read from beside the modules at import and inlined into the answer; nothing
+  is mounted, so what the host serves is a page the application carries rather than a directory whose
+  contents anything may fetch by guessing a name, and no code depends on the working directory. One
+  file is one language: a page edited as JavaScript is not a string inside a Python module. The frame
+  reporter and the model page are each one copy, shared by both framed pages.
 - **The reference reads as one document.** Its field wears Swagger UI's own controls and lives in the
   strip the framework keeps for page-wide settings, between the description and the calls, rather than
   in styling of our own. Its groups come out in the order of the paths in the document, which is why
