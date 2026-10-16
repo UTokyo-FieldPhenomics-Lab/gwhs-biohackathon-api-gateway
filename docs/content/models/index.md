@@ -132,9 +132,12 @@ parameter or a second model appears — the page you are about to use builds its
 </div>
 
 The page above is served by the API itself and framed here, so it is **same-origin with the API**: no
-cross-origin call is involved anywhere, and your key is typed into the page that uses it — this site
-never sees it, and nothing stores it. Paste your token, pick a row or a photograph, and press Run; the
-mask it returns is decoded in your browser by the same decoder this site hands you.
+cross-origin call is involved anywhere, and your key is typed into the API's own pages — this site
+never sees it. The reference and this page remember **one** key between them, in your browser on the
+API's origin: set it on either and the other uses it, and Forget on either clears it for both. Paste
+your token, pick a row or a photograph, and press Run; the image you chose is drawn as soon as the
+address is complete, and the mask the model returns is decoded in your browser by the same decoder
+this site hands you.
 
 ## A recorded call, decoded here
 

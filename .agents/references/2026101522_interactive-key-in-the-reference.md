@@ -51,6 +51,10 @@ written per operation in `_with_key_auth` rather than at the document root alone
   answer a question the first Try it out answers anyway.
 - The key is not stored by us. Swagger's own storage is the only copy, which is why the field shows
   *that* a key is in use rather than the key.
+  *(Reversed 2026-10-16: Swagger's storage is **no longer** the copy. Remembering is the shared store
+  in `assets/api_key.js`, one entry on the API's origin readable by both framed pages, and this page
+  now asks Swagger not to persist anything — see
+  [`2026101617_one-key-for-both-pages.md`](2026101617_one-key-for-both-pages.md).)*
 - Swagger's standard Authorize button is hidden — but only from the script that replaced it, so a page
   whose script failed keeps the door it always had. That also removes the reason the field exists: the
   built-in dialog is centred on the frame (`.dialog-ux .modal-ux` is `position: fixed; top: 50%`),
