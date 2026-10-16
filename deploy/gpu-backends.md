@@ -337,9 +337,9 @@ signed in with. One trap: if the account signs in with a **PIN**, SSH still asks
 ## Adding a machine
 
 1. Put it on one of the LANs above, and follow the recipe for its OS.
-2. Get the model's image onto it — build it there from the folder's archive (see
-   [`../models/README.md`](../models/README.md)), or load a saved one — then read its declaration and
-   check the machine can take it: `docker image inspect` for the label,
+2. Get the model's image onto it — build it there from the container folder's archive (the container
+   repository's README, which is private, carries the command), or load a saved one — then read its
+   declaration and check the machine can take it: `docker image inspect` for the label,
    `nvidia-smi --query-gpu=index,memory.free --format=csv` for the cards.
 3. Start it detached, publishing on the LAN, **with the value the host already holds in `env`**:
    `docker run -d --restart unless-stopped -p 8000:8000 -e BACKEND_TOKEN=… --name <model> <image>`.
