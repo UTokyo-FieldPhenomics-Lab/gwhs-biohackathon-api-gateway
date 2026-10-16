@@ -158,6 +158,13 @@ This is the part that fails during an event and looks like a network fault.
   once, and the policy carries it from then on. Moving to a new image is a deliberate act (`docker pull`
   the new digest, recreate the container), which is what pinning a digest means.
 - **`docker login ghcr.io` once** with a read-only token (`read:packages`). The credential persists.
+- **On Windows, the credential helper needs a logon session an SSH session does not have.** A pull
+  from an SSH connection fails before it reaches any registry: `error getting credentials - err: exit
+  status 1, out: A specified logon session does not exist. It may already have been terminated.`
+  Docker Desktop's helper cannot start there, so this hits *anonymous* pulls too — the 5090 could not
+  pull `hello-world` over SSH while its engine was otherwise healthy. Either turn the credential
+  helper off for that machine, or skip registries altogether: build the image on the workstation and
+  `docker save | docker load` across the link, which needs no registry and no internet on the target.
 - On **Manjaro** the chain is one link: `systemctl enable docker`, then the restart policy.
 - On **Windows the chain has a weak link**: Docker Desktop is a user-level program, so with nobody
   logged in after a reboot the engine never starts and no policy can help. Settings → General → *Start
