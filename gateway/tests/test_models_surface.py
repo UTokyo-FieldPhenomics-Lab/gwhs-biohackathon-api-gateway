@@ -9,7 +9,11 @@ a failure was. What a model actually computes is the container's business and is
 from __future__ import annotations
 
 import json
+import socket
+import threading
+import time
 from collections.abc import Iterator, Mapping
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +21,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from biohack_gateway.app import create_app
-from biohack_gateway.models import ModelRegistry, Reply
+from biohack_gateway.models import (
+    RESPONSE_TIMEOUT_SECONDS,
+    UNHEALTHY_SECONDS,
+    ModelRegistry,
+    Reply,
+    http_transport,
+)
 from biohack_gateway.tokens import TokenPool
 
 TEAM = "gw-01"
@@ -468,3 +478,142 @@ def test_a_backend_that_declared_nothing_is_not_asked_on_every_request(
     registry.directory()
 
     assert len(backends.asked) == 1
+
+
+def test_the_failure_memory_outlives_the_failure_it_remembers() -> None:
+    """A backend that just cost a request a full budget is not asked again before that is paid.
+
+    The arithmetic that `deploy/gpu-backends.md` measured the hard way: a fallback took 61.2 s
+    because the gateway waited a whole 60-second request timeout and then passed the backend
+    over for only 30 — shorter than the wait it had just caused, so the request after the window
+    paid it again.
+    """
+    assert UNHEALTHY_SECONDS >= RESPONSE_TIMEOUT_SECONDS
+
+
+def test_a_burst_is_served_by_the_idle_backend_while_the_first_one_hangs(
+    tmp_path: Path, index_dir: Path
+) -> None:
+    """The request that arrives while another is stuck does not wait for the stuck one.
+
+    A backend is only *known* to be unhealthy after an attempt fails, so without the in-flight
+    preference every request that arrives during the failure waits the failure out too.
+    """
+    hanging = threading.Event()
+    released = threading.Event()
+
+    def transport(
+        method: str, url: str, headers: Mapping[str, str], body: bytes | None, timeout: float
+    ) -> Reply:
+        if "/health" in url:
+            return Reply(status=200, body=json.dumps(DECLARATION).encode())
+        if url.startswith(FIRST):
+            hanging.set()
+            released.wait(5)
+            return Reply(status=0, body=b"", timed_out=True)
+        return Reply(status=200, body=json.dumps(PREDICTION).encode())
+
+    client = next(build_client(tmp_path, index_dir, transport))  # type: ignore[arg-type]
+    ask = {"dataset": "gwhd", "row": 0}
+
+    first = threading.Thread(
+        target=lambda: client.post(f"/models/{MODEL}/predict", headers=KEY, json=ask)
+    )
+    first.start()
+    assert hanging.wait(5), "the first request never reached the first backend"
+
+    started = time.monotonic()
+    second = client.post(f"/models/{MODEL}/predict", headers=KEY, json=ask)
+    elapsed = time.monotonic() - started
+
+    released.set()
+    first.join(5)
+
+    assert second.status_code == 200
+    assert elapsed < 2.0, "the second request queued behind the hanging backend"
+
+
+def test_the_transport_really_speaks_http_to_a_listening_backend() -> None:
+    """The one place the code that talks to a real backend is exercised.
+
+    Every other test injects a transport, so nothing else covers `http_transport`: `http.client`
+    rather than `urllib`, because the connect phase needs its own budget, and a redirect is not
+    followed — see the function's notes.
+    """
+    seen: list[tuple[str, Mapping[str, str]]] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        """A backend that records what arrived and answers a body."""
+
+        def do_POST(self) -> None:
+            """Record the request line and headers, and answer as a backend does."""
+            self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            seen.append((self.path, dict(self.headers)))
+            body = b'{"model": "sam3.1-meta", "objects": []}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args: Any) -> None:
+            """Keep the request log off the test's stderr."""
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    try:
+        port = server.server_address[1]
+        reply = http_transport(
+            "POST",
+            f"http://127.0.0.1:{port}/models/{MODEL}/predict?prompt=wheat%20head",
+            {"X-Backend-Token": BACKEND_TOKEN, "Content-Type": "application/json"},
+            b'{"input": {"url": "https://data.example/x.jpg"}}',
+            5.0,
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert reply.status == 200
+    assert json.loads(reply.body)["model"] == MODEL
+    path, headers = seen[0]
+    assert path == f"/models/{MODEL}/predict?prompt=wheat%20head", "the query is forwarded verbatim"
+    assert headers["X-Backend-Token"] == BACKEND_TOKEN
+
+
+def test_a_backend_that_accepts_and_never_answers_times_out_at_the_budget() -> None:
+    """Reproduce the shape a stopped container behind Docker Desktop's proxy has.
+
+    The socket opens — the port is still bound by the proxy — and then nothing answers. Nothing but
+    the clock can end this one, which is why the response budget is the whole of what a participant
+    waits for a dead backend.
+    """
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    port = listener.getsockname()[1]
+    budget = 0.4
+    try:
+        started = time.monotonic()
+        reply = http_transport("POST", f"http://127.0.0.1:{port}/x", {}, b"", budget)
+        elapsed = time.monotonic() - started
+    finally:
+        listener.close()
+
+    assert reply.status == 0
+    assert reply.timed_out is True
+    assert budget <= elapsed < 5.0, "the response budget, not the OS default"
+
+
+def test_a_refused_connection_is_not_reported_as_a_timeout() -> None:
+    """A port with nothing behind it is a different fact, and the two read differently in a log."""
+    probe = socket.socket()
+    probe.bind(("127.0.0.1", 0))
+    port = probe.getsockname()[1]
+    probe.close()
+
+    reply = http_transport("POST", f"http://127.0.0.1:{port}/x", {}, b"", 5.0)
+
+    assert reply.status == 0
+    assert reply.timed_out is False

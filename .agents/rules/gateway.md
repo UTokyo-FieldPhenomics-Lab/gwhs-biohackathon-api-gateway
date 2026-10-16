@@ -16,16 +16,21 @@ here.
   `503 unavailable` until it does. Per-key rate and concurrency limits are the intended next layer and
   are **not implemented**; [`project.md`](project.md) holds that decision and its trigger.
 - **Images reach clients through the public `data.*` plane**, so nothing has to be anonymous.
-- **Routing is a sequential retry over interchangeable backends.** Try backends in order, mark a
-  failed one unhealthy for 30 seconds, move on. A backend is any Docker-capable GPU resource behind
-  one uniform protocol; the gateway never special-cases a provider. No circuit-breaker, weighted
-  routing, or background health loop until there are more than three backends.
+- **Routing is a sequential retry over interchangeable backends.** Try backends in order, **idle ones
+  first** — a backend is only known to be unhealthy *after* an attempt fails, so without that a burst
+  arriving during the failure queues behind it — mark a failed one unhealthy, and move on. The window a
+  failed backend is passed over for must be **at least the response budget the failed attempt had**,
+  and `models.py` asserts the invariant, because a window shorter than the failure it remembers charges
+  the same wait again for every window. A backend is any Docker-capable GPU resource behind one uniform
+  protocol; the gateway never special-cases a provider. No circuit-breaker, weighted routing, or
+  background health loop until there are more than three backends.
 - **The model surface is four routes, and its error mapping decides what a caller retries.** `GET
   /models` and `GET /models/{model}` answer what the pool holds; `POST /models/{model}/predict` takes
   an address and `POST /models/{model}/predict/upload` takes bytes, because one handler branching on a
   content type would have two jobs. A backend's `4xx` is the request's fault: it is re-worded into this
   contract's error shape and never retried. A backend's `5xx` or a timeout is the backend's fault: mark
-  it unhealthy for 30 seconds and try the next, so a caller never learns there was more than one
+  it unhealthy for at least as long as the attempt's own budget and try the next, so a caller never
+  learns there was more than one
   machine. A backend refusing the gateway's own token is neither — it is this side's misconfiguration
   and answers `unavailable`, because telling a participant their key is wrong sends them to look in
   the wrong place.
