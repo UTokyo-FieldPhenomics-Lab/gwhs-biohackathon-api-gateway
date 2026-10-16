@@ -255,7 +255,9 @@ neither is in the repository; the model-to-backend list and the token it pairs w
 it presents to a GPU backend, it has to match what that backend was started with, and it is unset by
 default: a gateway without it answers every inference with `503` rather than letting a backend reply
 `401`, because that reply would read to a participant as their own key being wrong. Rotating it means
-changing both ends, which is one `EnvironmentFile=` and one container restart — there is no second
+changing **every** end — this file and a restart of every backend on every model's list, not one
+container, because a backend left on the old value answers `401` and takes its whole model down with
+it; the rule and the one-request probe are in [`gpu-backends.md`](gpu-backends.md). There is no second
 copy anywhere, and the value never enters the repository.
 
 **What `index/` holds today:** `gwhd.db`, `gwfss.db`, and `gwhs-temp.db` — the first ten rows of each

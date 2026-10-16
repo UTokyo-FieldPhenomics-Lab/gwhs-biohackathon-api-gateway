@@ -75,23 +75,43 @@ lesson is about the update path itself**: the unit on disk had been correct unti
 script, so "re-running it is the update path" needs to be *run* once after any change to that file —
 this one had never been exercised since the `%h` edit.
 
-**4. The 3090's token was not the one that was in hand.** The 5090 and the host were configured with the
-value the earlier session settled on, and the 3090 answered `401 bad or missing X-Backend-Token` to it —
-with the literal and the variable form both, so the header was not the problem. Nothing in the repository
-or on the host holds that value (the 3090's container environment does, and it is not reachable from the
-host). What matters for the design is the consequence, which is now a rule in
-[`gpu-backends.md`](../../deploy/gpu-backends.md): the gateway reads `401` from a backend as *its own*
-credential being refused and answers `503` **without trying the other backends**. So the 5090 is listed
-first, and the 3090 becomes a real fault domain only once it is restarted with the same value.
+**4. The token differed by one character, and `/health` could not show it.** The host and the 5090 were
+configured with the value the earlier session's *quoted message* carried; the 3090's container had been
+started, in that same session, with the same string **without its leading underscore** (42 characters
+against 43). It answered `401 bad or missing X-Backend-Token` to the 43, and
+`{"detail":"input.url is required…"}` — a body error, which only comes after the token check — to the 42,
+which is how the two ends were told apart without reading the 3090's container: it is not reachable from
+the host, which holds no key for it. Where each came from is in the stored session history: at 17:38 the
+value was quoted *with* the underscore and the reply restated it *without*, and every command that was
+actually executed afterwards — the `docker run` at 18:40 and the verification calls that followed — used
+the 42.
+
+Two things to carry forward, both now in [`gpu-backends.md`](../../deploy/gpu-backends.md): a backend
+whose token differs does not fall through to the next one (the gateway reads `401` as its own credential
+refused and answers `503` without trying the rest), and the mismatch is invisible from outside because
+`/health` needs no token — both ends declared themselves, `GET /models` read `backends_up: 2`, and every
+request simply went to the backend listed first. **Unified on the 42-character value**, which required no
+change to the 3090 at all: one `sed` on the host's `env` and one container recreated on the 5090.
+
+## Failover, measured once the two ends agreed
+
+With the list as `[5090, labpc]` and the 5090's container stopped, the same `predict` came back **200 with
+the identical geometry from labpc** — so the second entry is a real fault domain now, which it was not an
+hour earlier. It took **61.2 s**, and that number is the finding: the gateway waited the full request
+timeout (60) for the stopped backend before trying the next, because on Windows Docker Desktop's port
+proxy keeps the port bound and the connection hangs rather than being refused. The failed backend is then
+passed over for 30 s — **shorter than the failure it remembers — so the next request after that window
+pays the same minute again.** On Linux a stopped container refuses instantly and hides this. Recorded in
+`gpu-backends.md` with the reasoning, and left open: which constant moves is `gateway.md`'s call, since
+it fixes the 30.
 
 ## The order of the list, and a correction
 
-The first draft of this deployment recommended the 3090 first, on a warm-prompt figure of 0.34 s against
-the 5090's 0.909 s. That comparison does not survive: the 5090 measured 0.909 s for a dry run and 1.21 s
-for the real container, and a real request through the gateway came back in 0.90 s end to end. The two
-cards have never been measured on the same frame, so neither is ranked here — the 5090 is listed first
-because the token it holds is the one the host holds, and because it is the machine that was verified
-today.
+Nothing ranks the two cards: they have never been measured on the same frame, and the warm-prompt figure
+is not a proxy — it read 0.34 s on the 3090 and then 0.909, 1.209 and **0.406 s across three runs on the
+5090**, which is startup noise and lazy kernel compilation. A real request through the gateway answers in
+0.9–1.0 s on the 5090 with the 5090 listed first. The order is therefore a policy choice, not a
+correction, and the 5090 stays first because it is the machine that was verified end to end today.
 
 ## Open, and worth doing before the event
 
@@ -99,11 +119,12 @@ today.
   3812 MiB measurement on the 3090; on the 5090 the same container left ~7.7 GB used with ~1.1 GB of
   desktop, so roughly **6.5 GB**. Admission is unaffected at a 31 GB budget, but the number is what a
   human or the deploy script reads first, and `resident_gb` measurements belong per card.
-- **Restart policy: the container is running `--restart unless-stopped`, and the Dockerfile comment says
-  no restart policy anywhere.** `gpu-backends.md` is what asks for `unless-stopped` (a backend must come
-  back after a reboot with nobody logged in; on Windows, Docker Desktop needs a signed-in user as well),
-  so the deploy side is right and the comment in `sam31_official/Dockerfile` was the thing that needed
-  saying precisely.
+- **Restart policy, resolved here.** The container runs `--restart unless-stopped` (what
+  `gpu-backends.md` asks for: a backend must come back after a reboot with nobody logged in, and on
+  Windows Docker Desktop needs a signed-in user on top of that), while `sam31_official/Dockerfile` said
+  no restart policy anywhere and gave the refusal loop as the reason. The deploy side is right, so the
+  comment now says which side decides and what the policy costs: a card that cannot admit becomes a
+  container exiting every few seconds, visibly, instead of one that silently never returns.
 - **The 5090's load prints `missing_keys=['backbone.vision_backbone.convs.3.conv_1x1.weight', …]`.** Same
   weights and same code as the 3090's verified measurement, so it is not a property of this machine —
   but nothing here records whether it is expected, and the first person to see it will think it is.

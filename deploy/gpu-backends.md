@@ -126,6 +126,27 @@ when the 5090 was listed first with a token the 3090 had not been started with. 
 rotating it means editing `env` **and** restarting every container on the list, and a newly added
 machine is not a backend until that is done.
 
+**And transcribe the value from `env`, never from a message.** One character is a different token, and
+`/health` cannot show the difference: it needs no token, so a mismatched end still declares itself and
+`GET /models` still reads `backends_up: 2` while every request that actually reaches the odd end
+fails. Measured 2026-10-16: the host and the 5090 held the string *with* one leading underscore (43
+characters) and the 3090 held it *without* (42). The executed `docker run` in the session that started
+the pool used the 42; the 43 was in a message that quoted the value rather than copying it, and a
+leading underscore in prose is exactly the character a renderer or a reader drops. The authority is
+the file, and the check is one request — with the candidate in a shell variable on the host:
+
+    curl -s -o /dev/null -w '%{http_code}\n' -X POST http://<backend>:8000/models/<model>/predict \
+      -H "X-Backend-Token: $T" -H 'Content-Type: application/json' -d '{}'
+
+`401` carrying `bad or missing X-Backend-Token` is the value being wrong. **Any other 4xx means the
+token passed** and the deliberately empty body is what was refused — which is why the probe sends a
+body it knows is invalid rather than a real one: it never runs an inference.
+
+**One value, every end.** Rotating it is not one container restart: it is one `EnvironmentFile=` and a
+restart of every backend on every model's list, and a machine started with the old value is not merely
+stale, it is the failure above. There is no second copy anywhere and the value never enters the
+repository.
+
 **Why not an address allowlist instead: what a backend sees of its caller is a fact about the path.**
 
 | Path | What arrived | Measured |
@@ -152,6 +173,20 @@ on. A model's list is the **only** place its backends appear. What the model *is
 its control parameters, how many requests it can hold in flight — is declared by the backend itself
 at its `/health`, which the gateway reads once at startup and repeats in `GET /models`. Capability is
 therefore derived from the machine rather than written down here a second time.
+
+**Measured 2026-10-16, and the two numbers disagree: the unhealthy window is shorter than the failure
+it is meant to cover.** With the list as `[5090, labpc]` and the 5090's container stopped, a request
+answered in **61.2 s** — the gateway waited the full `PREDICT_TIMEOUT_SECONDS` (60) before trying the
+second backend, then labpc answered the same request correctly in the remainder — and the journal
+said `backend http://<address>:8000 failed a sam3.1-meta: unreachable`. The backend is then passed
+over for `UNHEALTHY_SECONDS` (30), so the next request that arrives after that window expires pays the
+same 60 s again: **a dead first backend costs a full minute once per 30-second window, and every
+request that arrives during that minute waits behind it.**
+On Linux a stopped container usually refuses the connection immediately, which hides this; on Windows
+Docker Desktop's port proxy keeps the port bound and the connection simply hangs, so the timeout is
+the whole cost. The fix is a relationship rather than a value — the window should be at least as long
+as the failure it remembers — and which of the two constants moves is
+[`gateway.md`](../.agents/rules/gateway.md)'s call, since it fixes the 30.
 
 **A backend that was loading when the gateway started is not lost.** The gateway asks an undeclared
 backend again — every 3 seconds while it answers "still loading", every 30 while it does not answer at
