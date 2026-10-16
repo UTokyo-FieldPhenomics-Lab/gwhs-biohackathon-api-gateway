@@ -62,26 +62,38 @@ here.
   multi-image loop appears as a need.
 - **The reference is usable with a key, and the key stays on the API's origin.** The contract declares
   the scheme the gate enforces and requires it on every operation but `/health`, without which
-  Swagger UI carries no credential and every Try it out answers `401`; the page hands the reader's key
-  to Swagger UI's own storage, so the browser remembers it between visits. What the field collects is
-  typed into the API's page and never reaches the documentation site, which frames the page and does
-  nothing else — which is also why only that site may frame it (`frame-ancestors`, configured per
-  app), since a field for a secret in a page anything may embed is a field anything may overlay.
+  Swagger UI carries no credential and every Try it out answers `401`. The page arms Swagger with the
+  key and asks the framework **not** to remember it (`persistAuthorization` is false): remembering is
+  the shared store's job, because a browser that holds two copies of a secret cannot clear them
+  together. What the field collects is typed into the API's page and never reaches the documentation
+  site, which frames the page and does nothing else — which is also why only that site may frame it
+  (`frame-ancestors`, configured per app), since a field for a secret in a page anything may embed is
+  a field anything may overlay.
+- **One key, one place: `assets/api_key.js` is the store both framed pages read and write.** The
+  reference and the model page are served by this host, so they are same-origin and see one
+  `localStorage` entry — a key entered on either is the key the other uses, and `Forget` on either
+  clears it for both, which is why both rows offer the same two actions. Nothing else persists a key
+  on this origin, and the store adopts and drops Swagger's old entry the first time it runs. Where
+  storage is unavailable — private mode, a blocked or partitioned third-party frame — the key is held
+  for that page's lifetime instead, and every caller already handles that: the store never throws and
+  never reports which of the two happened.
 - **A page that runs a call is served by the API too, and framed the same way.** `/play` is served
-  from here because that makes it same-origin with the API: no CORS is involved anywhere, the key is
-  typed into the page that uses it and held in a variable for that page's lifetime, and nothing is
-  written to storage. It joins `OPEN_PATHS` and carries `frame-ancestors {DOCS_PARENT_ORIGIN}` for the
-  reference's reason: it carries no data of its own, and it is where a reader's key goes. Its controls
-  are built from the model's own declaration in `GET /models` and nothing else — a model the page
-  cannot render is an incomplete declaration, not a page that is not clever enough — and it draws with
-  the documentation site's published `post-processing/rle_decode.js`, loaded by URL, since a copy here
-  would be a second decoder to keep true.
+  from here because that makes it same-origin with the API: no CORS is involved anywhere, and the key
+  it uses is the one the store holds, typed into one of the API's own pages and never into the site.
+  It joins `OPEN_PATHS` and carries `frame-ancestors {DOCS_PARENT_ORIGIN}` for the reference's reason:
+  it carries no data of its own, and it is where a reader's key goes. Its controls are built from the
+  model's own declaration in `GET /models` and nothing else — a model the page cannot render is an
+  incomplete declaration, not a page that is not clever enough — and it draws with the documentation
+  site's published `post-processing/rle_decode.js`, loaded by URL, since a copy here would be a second
+  decoder to keep true. It previews the image an address resolves to as soon as the address is
+  complete, because a row that does not exist should say so before a model is asked to fetch it.
 - **Page material lives in `assets/`, one language to a file.** The markup, scripts, and stylesheets
   this package injects are read from beside the modules at import and inlined into the answer; nothing
   is mounted, so what the host serves is a page the application carries rather than a directory whose
   contents anything may fetch by guessing a name, and no code depends on the working directory. One
   file is one language: a page edited as JavaScript is not a string inside a Python module. The frame
-  reporter and the model page are each one copy, shared by both framed pages.
+  reporter and the model page are each one copy, shared by both framed pages, and the key store is
+  one file inlined into both because it is one key they share.
 - **The reference reads as one document.** Its field wears Swagger UI's own controls and lives in the
   strip the framework keeps for page-wide settings, between the description and the calls, rather than
   in styling of our own. Its groups come out in the order of the paths in the document, which is why

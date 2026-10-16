@@ -168,11 +168,20 @@ SWAGGER_KEY_BAR_SCRIPT = (
 )
 """What makes the field work, injected at the end of the body where Swagger UI exists.
 
-It hands the key to the same action Swagger's own dialog hands it to, so the request carries the
-header and the browser remembers the key between visits; `preauthorizeApiKey` alone would do the
-first and not the second. A field that cannot do both removes itself, and only a field that did
-both hides the standard Authorize button — a page whose script did not run keeps the door it always
-had.
+It hands the key to Swagger's own session, so the request carries the header; remembering it is
+the shared store's job rather than Swagger's, which is why this page asks the framework not to
+persist anything — two remembered copies of a secret cannot be cleared together, and the model
+page has to be able to clear it too. A field that cannot do both removes itself, and only a
+field that did both hides the standard Authorize button — a page whose script did not run keeps
+the door it always had.
+"""
+
+API_KEY_STORE_SCRIPT = f"<script>{(_ASSETS / 'api_key.js').read_text(encoding='utf-8')}</script>"
+"""The one place a key is remembered, shared with the model page.
+
+Both framed pages are served by this host, so both read and write the same entry: a key entered on
+either is the key the other uses, and Forget on either clears it for both. The reference page is the
+one that *arms* Swagger UI, which is what makes a call carry the header; the store only remembers.
 """
 
 
@@ -453,7 +462,9 @@ def create_app(
         page = get_swagger_ui_html(
             openapi_url="/openapi.json",
             title=f"{app.title} — reference",
-            swagger_ui_parameters={"persistAuthorization": True},
+            # Swagger is asked not to remember the key: remembering is one entry, shared with the
+            # model page, and a second copy of a secret is one the other page cannot clear.
+            swagger_ui_parameters={"persistAuthorization": False},
         )
         html = bytes(page.body).decode()
         html = html.replace('<div id="swagger-ui">', SWAGGER_KEY_BAR, 1)
@@ -461,7 +472,8 @@ def create_app(
         return HTMLResponse(
             html.replace(
                 "</body>",
-                f"{SWAGGER_DARK_STYLE}{SWAGGER_TRIM_STYLE}{SWAGGER_KEY_BAR_SCRIPT}{reporter}</body>",
+                f"{SWAGGER_DARK_STYLE}{SWAGGER_TRIM_STYLE}"
+                f"{API_KEY_STORE_SCRIPT}{SWAGGER_KEY_BAR_SCRIPT}{reporter}</body>",
             ),
             headers={"Content-Security-Policy": f"frame-ancestors {docs_parent_origin}"},
         )

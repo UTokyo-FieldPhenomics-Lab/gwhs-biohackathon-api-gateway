@@ -28,44 +28,53 @@
       bar.hidden = false;
     };
 
-    // Read Swagger's state rather than keeping a copy: the key is stored by Swagger (the page asks
-    // it to persist one), and one copy of a secret is enough. A failure here says nothing rather
-    // than something wrong.
-    const describe = () => {
+    // What Swagger currently holds, if anything. Read rather than kept: the page that holds a key in
+    // its own store is Swagger, and one copy of a secret is enough. What Swagger no longer owns is
+    // *persistence* — this page asks it not to remember anything (`persistAuthorization` is false),
+    // because the key is remembered in one place shared with the model page, and two remembered copies
+    // cannot be cleared together.
+    const authorized = () => {
       try {
-        const held = ui.authSelectors.authorized().get(SCHEME);
-        state.dataset.set = held ? "yes" : "no";
-        const text = held
-          ? "a key is in use — paste another to replace it"
-          : "no key yet — paste your team's token, and every call below can be tried";
-        // Only when it changed: the observer that keeps this line true watches the container this
-        // line is in, and assigning the same text still replaces the text node — a mutation that
-        // changes nothing is a mutation, and the callback would call itself without yielding.
-        if (state.textContent !== text) state.textContent = text;
+        return ui.authSelectors.authorized().get(SCHEME) || null;
       } catch {
-        if (state.textContent !== "") state.textContent = "";
+        return null; // Swagger has not finished loading its spec, which is not an error to report
       }
+    };
+
+    const describe = () => {
+      const held = authorized();
+      state.dataset.set = held ? "yes" : "no";
+      // Only when it changed: the observer that keeps this line true watches the container this
+      // line is in, and assigning the same text still replaces the text node — a mutation that
+      // changes nothing is a mutation, and the callback would call itself without yielding.
+      const text = held
+        ? "a key is in use — paste another to replace it"
+        : "no key yet — paste your team's token, and every call below can be tried";
+      if (state.textContent !== text) state.textContent = text;
+    };
+
+    // Arm Swagger for this page, and let the store handle remembering: `preauthorizeApiKey` sets the
+    // key for the session and stops there, which is exactly right — the browser remembers it because
+    // the store wrote it down, and nothing remembers it twice.
+    const arm = (value) => {
+      ui.preauthorizeApiKey(SCHEME, value);
     };
 
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       const value = input.value.trim();
       if (!value) return;
-      // Swagger remembers a key only when it is handed in the variant its own dialog uses, with the
-      // definition it applies to; `preauthorizeApiKey` sets it for this page and loses it on the
-      // next visit, which is the one thing this page asks Swagger to do for it.
-      const schema = ui.specSelectors.securityDefinitions().get(SCHEME);
-      if (schema && ui.authActions.authorizeWithPersistOption) {
-        ui.authActions.authorizeWithPersistOption({[SCHEME]: {value: value, schema: schema}});
-      } else {
-        ui.preauthorizeApiKey(SCHEME, value);
-      }
+      arm(value);
+      apiKeyStore.set(value);
       input.value = "";
       describe();
     });
     document.getElementById("key-forget").addEventListener("click", () => {
       const forget = ui.authActions.logoutWithPersistOption || ui.authActions.logout;
       forget([SCHEME]);
+      // Ours is the copy that matters; `logoutWithPersistOption` also drops the one the previous
+      // version of this page left behind in Swagger's own storage.
+      apiKeyStore.clear();
       describe();
     });
 
@@ -83,12 +92,16 @@
     };
 
     // Placed, kept placed, and kept relabelled: anything Swagger re-renders inside its container
-    // can take this node with it or restore its own words, and putting both back is a few selectors
-    // The same observation keeps the state line true, because the two things that change it are
-    // re-renders of this container — the specification arriving, and Swagger restoring a remembered
-    // key when it mounts. `load` covers a restore that lands without one, so nothing polls.
+    // can take this node with it or restore its own words, and putting both back is a few selectors.
+    // The same observation keeps the state line true, and it is also where a remembered key is
+    // applied: `preauthorizeApiKey` does nothing until Swagger has loaded the document's security
+    // definitions, and this script runs before that fetch has answered. Applying the store's key here
+    // — every time the page settles, and only while Swagger has none — is what makes a key the reader
+    // entered on the model page work on this one without being pasted again.
     const settle = () => {
       place();
+      const stored = apiKeyStore.get();
+      if (stored && !authorized()) arm(stored);
       describe();
       relabel();
     };
@@ -97,6 +110,16 @@
       subtree: true,
     });
     window.addEventListener("load", settle);
+
+    // A key set or cleared on the model page reaches this one while it is open: the store announces
+    // it, and Swagger is armed or disarmed with what it now holds — or armed by `settle` as soon as
+    // the document's security definitions exist, if that fetch has not answered yet.
+    apiKeyStore.onChange((value) => {
+      if (value) arm(value);
+      else (ui.authActions.logout || ui.authActions.logoutWithPersistOption)([SCHEME]);
+      settle();
+    });
+
     settle();
     document.documentElement.classList.add("key-bar-ready");
   })();
