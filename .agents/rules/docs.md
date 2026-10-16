@@ -43,6 +43,15 @@ Package: `docs/`. Repo-wide invariants are in [`project.md`](project.md) and are
   data changes. It lives outside `docs/content/`, and it needs `--with pillow --with numpy` because
   the site's own environment carries neither.
 - **The frame's two files live in `docs/content/api/`.** That directory holds no page — the reference
-  is a frame inside `interactive.md` — so it holds the stylesheet that hides the page's heading and the
-  script that sizes the frame and passes the reader's palette into it.
+  is a frame inside `interactive.md`, and the run-a-model page is a frame inside `models/index.md` — so
+  it holds the stylesheet that hides the heading of a page that is nothing but a frame, and the script
+  that sizes every frame marked `data-api-frame` and passes the reader's palette into it. A frame is
+  matched by that attribute rather than by the id of the box it happens to sit in, so one file sizes
+  every frame the site shows and a new one needs no change here.
+- **One decoder file, and it is the site's own.** `post-processing/rle_decode.js` is what the
+  Post-processing page tells a participant to download and what the Models page's demo loads by URL;
+  the API's own run-a-model page loads that same file from this site rather than carrying a copy, so a
+  demo and a tutorial cannot disagree about what a correct decode is. Anything on a page that can fail
+  to load — a decoder, a recorded example — says so in words where the reader is looking, because a
+  blank canvas reads as a result.
 - **English only**, consistent with the rest of the repository.

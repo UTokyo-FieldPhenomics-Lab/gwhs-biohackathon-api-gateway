@@ -7,7 +7,7 @@ GPU**. Two calls carry the whole experience: fetch one image, and get one model 
 |---|---|
 | Dataset plane | **live** — what each dataset holds, its images, and one row's annotation |
 | Image plane | **live** — `https://data.global-wheat.com`, no key, long cache |
-| Model plane | **not reachable yet** — routing an inference request to a GPU backend is still being wired |
+| Model plane | **live** — one segmentation model: send an image address or your own photograph, get boxes and masks back |
 
 ## Call it
 
@@ -53,5 +53,6 @@ against. The full sets are published before the event, and the same calls then r
 ## Next
 
 - [Datasets](datasets/index.md) — what each one holds, and how a response maps onto the image
+- [Models](models/index.md) — the model you can call, what it accepts, and one you can run from this site
 - [Post-processing](post-processing/index.md) — palette masks and RLE geometry, in three languages
 - [Interactive API reference](interactive.md) — every route, with a try-it button, without leaving this site

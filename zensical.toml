@@ -24,8 +24,8 @@ repo_url = "https://github.com/UTokyo-FieldPhenomics-Lab/gwhs-biohackathon-api-g
 repo_name = "UTokyo-FieldPhenomics-Lab/gwhs-biohackathon-api-gateway"
 edit_uri = "edit/main/docs/content/"
 
-# The framed API reference needs two files: one sizes the frame and passes the reader's palette into
-# it, the other hides the heading of a page that carries nothing but the frame. They live in
+# The framed API pages need two files: one sizes each frame and passes the reader's palette into it,
+# the other hides the heading of a page that carries nothing but a frame. They live in
 # `docs/content/api/`, which holds no page of its own — the reference is an iframe inside
 # `interactive.md`, so that directory exists only for these two.
 extra_javascript = ["api/frame.js"]
@@ -38,6 +38,7 @@ extra_css = ["api/frame.css"]
 nav = [
   { "Start here" = "index.md" },
   { "Datasets" = "datasets/index.md" },
+  { "Models" = "models/index.md" },
   { "Post-processing" = "post-processing/index.md" },
   { "Interactive API reference" = "interactive.md" },
 ]
