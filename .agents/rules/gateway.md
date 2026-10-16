@@ -20,6 +20,20 @@ here.
   failed one unhealthy for 30 seconds, move on. A backend is any Docker-capable GPU resource behind
   one uniform protocol; the gateway never special-cases a provider. No circuit-breaker, weighted
   routing, or background health loop until there are more than three backends.
+- **The model surface is four routes, and its error mapping decides what a caller retries.** `GET
+  /models` and `GET /models/{model}` answer what the pool holds; `POST /models/{model}/predict` takes
+  an address and `POST /models/{model}/predict/upload` takes bytes, because one handler branching on a
+  content type would have two jobs. A backend's `4xx` is the request's fault: it is re-worded into this
+  contract's error shape and never retried. A backend's `5xx` or a timeout is the backend's fault: mark
+  it unhealthy for 30 seconds and try the next, so a caller never learns there was more than one
+  machine. A backend refusing the gateway's own token is neither — it is this side's misconfiguration
+  and answers `unavailable`, because telling a participant their key is wrong sends them to look in
+  the wrong place.
+- **A model's control parameters are the model's, never the gateway's.** The container declares what
+  it accepts, with defaults and bounds, in its own `/health`; the gateway repeats that declaration from
+  `GET /models` and forwards a request's values verbatim without knowing their names. That is what
+  keeps a new model to a configuration change — and it is why nothing here may name a parameter: a
+  `prompt` written into this package would be a second place the model's own contract lives.
 - **Two surfaces, one process.** The model surface does auth, gating, and routing; the dataset surface
   serves metadata, facets, and addressing. They share the error contract, authentication, and
   configuration. The dataset surface owns no bytes and calls no backend.

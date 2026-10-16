@@ -11,9 +11,12 @@ Rules state what must hold and why — never history, measurements, or anecdotes
 
 ## Architecture invariants
 
-- **Bytes never traverse the gateway.** The API answers with the public `data.*` URL of a static
-  object; it never serves bytes and never builds a per-request redirect. Inlining image bytes pulls
-  bandwidth back onto the gateway and voids the CDN and cost model.
+- **Bytes never traverse the gateway on the read path.** The API answers with the public `data.*` URL
+  of a static object; it never serves bytes and never builds a per-request redirect. Inlining image
+  bytes pulls bandwidth back onto the gateway and voids the CDN and cost model. One exception: a
+  participant's **upload**, which is a single write from a single client that voids no CDN read. It is
+  never persisted and never becomes a dataset object, and the rule beside it does not move — a
+  client-supplied URL is parsed into an address, never fetched.
 - **Static before dynamic, with one named exception.** If data can be delivered as objects, do that.
   Dataset metadata is the exception: the gateway serves it from memory, because a republish must take
   effect immediately and because no client should have to hold a copy. The exception carries
@@ -33,6 +36,10 @@ Rules state what must hold and why — never history, measurements, or anecdotes
 - **No hashing capability.** Nothing here computes or stores a content hash or checksum. Identity
   comes from names, keys, and platform tokens (`ETag`, S3 native checksums, image digests, object
   versions, upstream revisions). A content hash returns only against a measured failure.
+- **A container never claims a card's last gigabyte.** Admission is computed against the card minus
+  1 GB — 23 GB of a 24 GB card, 31 GB of a 32 GB — because these are workstations whose own desktop
+  draws on the same card. Stated here rather than left to the deploy script, because a hand-run
+  `docker run` bypasses the script while the person sitting at the machine still needs their screen.
 
 ## Security
 
@@ -44,9 +51,14 @@ Rules state what must hold and why — never history, measurements, or anecdotes
 - **A client-supplied URL is parsed, never fetched.** It is decoded into `(dataset, row)` and then
   resolved through the same lookup. Fetching it would turn the gateway into a proxy into the private
   network, GPU backends included.
-- **The overlay is not assumed to be ours alone.** A private network can carry other people's
-  devices, so anything bound to it is isolated by tag and access policy, with the per-service token
-  as the second lock rather than the first.
+- **The overlay is not assumed to be ours alone, and a network we share is not rewritten for us.** A
+  private network carries other people's devices, so the target is isolation by tag and access policy
+  with the per-service token as the second lock. Where that policy is one file for a network shared
+  with people outside the project, the deviation is **recorded rather than taken**: for this event the
+  tailnet keeps its everything-reaches-everything policy, so the per-service token is the *only* lock —
+  a backend cannot even see which peer called, because every arrival wears its router's address — and
+  what that leaves exposed is a peer reaching an inference port, never key material. The record, the
+  reasoning and the trigger to revisit are in [`../../deploy/README.md`](../../deploy/README.md) §1.3.
 - **GPU backends are never publicly reachable.** The gateway reaches them over an authenticated,
   non-public link and each requires its own token; CloudFront never forwards to them. The transport —
   a VPN, a private network, or a provider tunnel — is an implementation detail, not a fixed route.
