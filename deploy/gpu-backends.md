@@ -85,16 +85,27 @@ decide what it can serve** — that follows from the arithmetic.
 ## The list the gateway reads
 
 **Not in this repository.** It names running machines, so it is host configuration, beside the token
-pool and the environment file in `~/.config/biohack-gateway/` — the same reasoning as §1.5 of the
-runbook. The shape, one entry per model:
+pool in `~/.config/biohack-gateway/` — the same reasoning as §1.5 of the runbook. The file is
+`models.json`, the same shape and the same place as `tokens.json`, one entry per model:
 
-    sam3.1:  ["http://192.168.250.228:8000"]
-    yolo:    ["http://192.168.209.228:8000", "http://192.168.250.228:8000"]
+    {"sam3.1-meta": ["http://192.168.250.228:8000"],
+     "yolo":       ["http://192.168.209.228:8000", "http://192.168.250.228:8000"]}
 
-The gateway tries a model's backends in order and marks a failed one unhealthy for 30 seconds. A
-model's list is the **only** place its backends appear: each backend declares at startup which models
-it serves and how many it can hold in flight, so capability is derived from that declaration and the
-list rather than written down a second time here.
+A file that does not parse means **no models**, never all of them: the surface fails closed the way
+the request gate does, so a typo in host configuration cannot become a gateway that answers for
+models nobody configured.
+
+The gateway tries a model's backends in order, marks a failed one unhealthy for 30 seconds, and moves
+on. A model's list is the **only** place its backends appear. What the model *is* — its resolution,
+its control parameters, how many requests it can hold in flight — is declared by the backend itself
+at its `/health`, which the gateway reads once at startup and repeats in `GET /models`. Capability is
+therefore derived from the machine rather than written down here a second time.
+
+**A backend that was loading when the gateway started is not lost.** The gateway asks an undeclared
+backend again — every 3 seconds while it answers "still loading", every 30 while it does not answer at
+all — so the ordinary boot race where the gateway comes up first resolves itself without anyone
+restarting the gateway. A backend that has declared something is never re-read until the gateway
+restarts, which is what keeps this from being a health loop.
 
 ## Bringing a machine up
 

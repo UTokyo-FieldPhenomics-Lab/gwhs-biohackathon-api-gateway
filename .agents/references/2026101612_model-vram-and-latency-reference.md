@@ -56,7 +56,7 @@ cards. The pipeline inherits this, since CascadePSP is 73 % of its latency.
 question, not a result: the Ultralytics predictor keeps the current image on the instance, so two
 threads sharing one predictor can interleave a `set_image` with another request's `predict`. The
 timings are real; whether those four answers were correct was not checked, and the container's
-`/infer` must not reuse one predictor across requests without a lock or per-request state.
+the predict route must not reuse one predictor across requests without a lock or per-request state.
 
 ## Two corrections to what this project believed
 

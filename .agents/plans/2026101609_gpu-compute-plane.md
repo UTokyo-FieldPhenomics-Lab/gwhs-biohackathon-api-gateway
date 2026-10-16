@@ -142,18 +142,41 @@ them are still other people's measurements.
 
 ## The protocol
 
-```
-POST /infer            application/json      {model, input: {dataset, row}, params?}
-POST /infer/upload     multipart/form-data   (model, imgsz?, file)
-```
-
-Both routes share one response schema, one error contract, and therefore one decoder — which is what
-`gateway.md` already requires across the two surfaces. They are two routes rather than one
-content-type branch so each handler has one job.
+Four routes, shaped like the dataset surface so a participant who can read one surface can read the
+other, and named after the model rather than after the verb:
 
 ```
-200 {model, objects: [{bbox, category?, score?, rle?}], resolution_used?}
+GET  /models                          the directory: id, resolution, backends up, parameters
+GET  /models/{model}                  one model — the same entry the directory carries
+POST /models/{model}/predict          {"dataset": str, "row": int}  ?prompt=&confidence_threshold=
+POST /models/{model}/predict/upload   multipart `file`              ?prompt=&confidence_threshold=
 ```
+
+**Control parameters belong to the model, not to this contract.** A model declares what it accepts —
+its prompt, its threshold, with their defaults and bounds — the gateway repeats that declaration in
+`GET /models`, and it forwards the query string verbatim without adding or interpreting anything.
+A new model therefore needs no gateway change, which is the same bargain the dataset surface strikes
+with a published index.
+
+**`imgsz` is deliberately not here.** An earlier draft of this section had it on the upload route,
+which contradicts Decision 7: the resolution is the container's property, and a client-set one would
+make the memory peak a variable that admission cannot be computed from.
+
+Both predict routes share one response schema, one error contract, and therefore one decoder — which
+is what `gateway.md` already requires across the two surfaces. They are two routes rather than one
+content-type branch so each handler has one job, and the upload is the only one that carries bytes.
+
+```
+200 {model, objects: [{idx, bbox, category?, score?, area?, rle?}], resolution_used?}
+```
+
+- **`bbox` is COCO's `[x, y, width, height]`.** Not a preference: the geometry the dataset surface
+  publishes for an annotated object is XYWH, and one decoder across both surfaces is the rule.
+- **`area` is published** although nothing requires it, because the documentation site's own example
+  uses "the decoded pixel count equals `area`" as the cheapest check that a decoder is right.
+- **`GET /models` is the participant-facing half of "what is up".** It reports how many backends are
+  answering for each model, so a client learns a model is unavailable before waiting for a timeout.
+  It is not an operator dashboard: no addresses, no VRAM, no queues, no logs.
 
 - **Authentication is per backend**: the gateway presents `X-Backend-Token`. A participant's key
   never reaches a backend, and a backend knows nothing about the token pool.
@@ -181,7 +204,7 @@ Declared once, in the model's own directory, and published twice — as the cont
 an image label, so a host can read it with `docker image inspect` without starting anything:
 
 ```jsonc
-{ "model": "sam31-official",
+{ "model": "sam3.1-meta",
   "input_resolution": 1008,
   "vram": { "resident_gb": 3.7, "per_request_gb": 1.8 } }
 ```
@@ -224,7 +247,8 @@ Each is written in the pull request that implements the thing that needs it, wit
 - **`project.md`, the concurrency gate — add the per-model dimension.** It currently names a global
   and a per-key gate. A 24 GB card taking one sam3.1 and several yolo means the gate has to be
   per model as well, and the rule says to change it in the same pull request and explain why.
-- **`gateway.md`, the model surface** — the shape of `/infer` and its error mapping, once written.
+- **`gateway.md`, the model surface** — the shape of `/models/{model}/predict` and its error
+  mapping, once written.
 - **`project.md`, the memory budget — a container never claims the last gigabyte.** Admission is
   against the card minus 1 GB, because these are workstations whose desktop draws on the same
   display: 23 GB of a 24 GB card, 31 GB of a 32 GB card. Stated as a rule rather than left to the
@@ -281,7 +305,8 @@ hand.
    the container exists: SAM 3.1 and CascadePSP **concurrently on separate streams**, the one
    arrangement whose gain is not already known to be zero.
 2. **Define the protocol types** — the Pydantic models shared by the gateway and the container, and
-   the container's server implementing `/infer` and `/infer/upload` with the geometry contract the
+   the container's server implementing `/models/{model}/predict` and its upload sibling with the
+   geometry contract the
    public docs already describe. **The container's half exists**: `models/sam31_official`, proven end
    to end on the laboratory 3090 — 8.24 s to load, 0.36 s per 5184×3456 prompt, 3812 MiB resident and
    5644 MiB after a prompt, one object whose RLE decodes to the area it publishes. What is left of
