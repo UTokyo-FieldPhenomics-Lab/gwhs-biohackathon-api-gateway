@@ -35,9 +35,19 @@ them are still other people's measurements.
   GPUs". **Third-party, and to be replaced by our own measurement** — see Task 1.
 - **Cards on hand: 5090 = 32 GB, 4090 = 24 GB, 3090 = 24 GB.** One 5090 in the lab, a second
   borrowable.
-- **Campus ↔ Frankfurt over the tailnet measured 234–259 ms direct**, not relayed
+- **Both on-prem candidates already answer the gateway host on their private addresses, and neither
+  runs a tailscale client.** Measured 2026-10-16 from the host: `homepc-4090` (home, 4090)
+  answers TCP 22 and 22000 at **242–250 ms**; `lab-3090` (lab, 3090) answers TCP 2233, 8771
+  and 22000 at **337–350 ms**; both at 0% ICMP loss. Each `/24` is advertised by that location's own
+  GL.iNet router, so a machine joins the pool by being plugged in
+  ([`../references/2026101610_backend-reachability-over-the-room-routers.md`](../references/2026101610_backend-reachability-over-the-room-routers.md)).
+- **A closed port is not an unreachable host.** The laboratory machine refused 22 only because it
+  runs no `sshd`, while answering on three other ports. Routing and a listening service are two
+  separate questions and were measured separately.
+- **Tokyo→Frankfurt is 242–350 ms**, the physical floor and the reason the protocol stays at one round
+  trip per inference. The home path measured ~100 ms better than the laboratory path, and the
+  laboratory path jitters by hundreds of milliseconds within a single ping run
   ([`../references/2026101514_tailnet-topology-and-lab-reachability.md`](../references/2026101514_tailnet-topology-and-lab-reachability.md)).
-  That is the Tokyo→Frankfurt floor, and it is why the protocol stays one round trip per inference.
 - **Rental, on demand, quoted per hour and multiplied by a 120-hour window:** 24 GB ≈ $0.80/h →
   **$96**; 48 GB ≈ $1.80/h → **$216**; 80 GB ≈ $2.50/h → **$300**; 100 GB-class ≈ $4.50/h →
   **$540**. Watch these as magnitudes, not prices.
@@ -54,8 +64,10 @@ them are still other people's measurements.
    any Docker-capable GPU resource behind one uniform protocol, and the gateway never special-cases
    a provider. Three transports satisfy the "never publicly reachable" invariant and are invisible
    above them: a security group reference when the backend shares the gateway's VPC, the tailnet
-   when it does not, and a provider tunnel. A managed serverless endpoint satisfies none of them and
-   is therefore not a candidate.
+   when it does not, and a provider tunnel. On the tailnet the backend runs no client of its own:
+   each location's router advertises its `/24` and the host accepts routes, so the backend is a
+   container on a machine that is already on a routed LAN. A managed serverless endpoint satisfies
+   none of the three transports and is therefore not a candidate.
 2. **Interchangeability is per model, not global.** A 24 GB card and a 32 GB card cannot carry the
    same set of models, so "try backends in order" applies *within* one model's list.
 3. **Capability is derived, not tabulated.** Configuration holds the **set of backends** — the one
@@ -63,8 +75,11 @@ them are still other people's measurements.
    The routing table is the join. A hand-maintained machine→model table would be a second source of
    truth and would drift.
 4. **The redundancy target is two independent fault domains per model**, never three replicas. Fault
-   domains differ by network, power, and administrator; three machines in one laboratory share all
-   three, so their failures are correlated and the second and third add almost nothing.
+   domains differ by network, power, and administrator. Machines inside one `/24` share all three —
+   one router, one uplink, one power feed — so a second and third machine there add almost nothing,
+   while the home machine and the laboratory machine are genuinely independent of each other. On-prem
+   therefore already supplies two domains for the light models; the rented instance buys a third and a
+   contracted one, not the second.
 5. **What is scarce is concurrency, not fit.** One sam3.1 inference is ~12 GB, so a 24 GB card is
    filled by one request, not by the model. Every card added is a concurrency slot, which is the
    pool's first and least arguable justification.
@@ -90,10 +105,11 @@ them are still other people's measurements.
 10. **The concurrency a backend can sustain is reported, not guessed.** A backend declares
     `{model, max_in_flight}` when it starts, so the per-model gate is arithmetic on a measured
     number.
-11. **A rented instance is a concurrency and independence decision, not a fit decision.** After the
-    correction in Decision 8's measurements, sam3.1 fits on every card on hand; what the lab cannot
-    supply is a second *independent* domain, and what a demo with several teams calling at once
-    cannot supply is enough simultaneous slots.
+11. **A rented instance is a concurrency and contracted-availability decision, not a fit decision.**
+    After the correction in Decision 8's measurements, sam3.1 fits on every card on hand, and on-prem
+    already spans two independent domains, so nothing about fitting forces a rental. What the pool
+    cannot supply for free is enough simultaneous slots when several teams call at once, and a domain
+    whose availability is bought rather than borrowed.
 12. **ZeroGPU is a participant-owned path, not pool capacity** — the pool's contract is a
     persistent, privately reachable endpoint whose latency is bounded by its own timeout, and a
     per-call shared queue behind a public hostname is none of those. It stays a legitimate thing for
@@ -131,8 +147,8 @@ content-type branch so each handler has one job.
 - **A backend's `/health` is for a human and the deploy script, never the gateway.**
 - **Normalisation happens in the container**, so the gateway adds nothing to the geometry and keeps
   zero ML dependencies.
-- **One round trip per inference.** No streaming and no multi-step handshake: the campus backends
-  sit 250 ms away, and a second round trip doubles a cost that is already the reason to prefer a
+- **One round trip per inference.** No streaming and no multi-step handshake: the on-prem backends
+  sit 242–350 ms away, and a second round trip doubles a cost that is already the reason to prefer a
   nearer backend.
 
 ## Backend configuration and admission
@@ -179,19 +195,32 @@ Each is written in the pull request that implements the thing that needs it, wit
   and a per-key gate. A 24 GB card taking one sam3.1 and several yolo means the gate has to be
   per model as well, and the rule says to change it in the same pull request and explain why.
 - **`gateway.md`, the model surface** — the shape of `/infer` and its error mapping, once written.
+- **`project.md`, the overlay rule — record the deviation rather than the tag.** The rule asks for a
+  tag and an access policy on the grounds that "the overlay is not assumed to be ours alone", which
+  the inventory confirms: the tailnet carries `labvpn@`, `labdevices@`, `guowei@` and
+  `haozhou-wang@` nodes, none tagged, under a default policy of everything-reaches-everything. A
+  tailnet ACL is one file for the whole tailnet, so tightening it changes four other people's network
+  policy and can break access they rely on. The decision is to accept the exposure for the event and
+  write it down: the per-backend token becomes the only lock, what that leaves exposed is a peer
+  reaching an inference port and bypassing the gateway's concurrency gate — not a leak, since no key
+  material crosses the overlay — and the compensating control that costs nothing is already there,
+  the container bound to `127.0.0.1` behind `tailscale serve`, which also keeps the port off the
+  laboratory LAN. Revisit if a node from outside the project joins the tailnet, or if a backend
+  outlives the event window. `../rules/deploy.md` and `deploy/README.md` §1.3 currently prescribe the
+  tag, and both still say so.
 
 ## Resource options
 
 | Option | 120 h, magnitude | What it buys |
 |---|---|---|
-| Pure on-prem | $0 | Everything for yolo and SPROUT; sam3.1 replicas that share one fault domain |
-| 24 GB rented | ~$96 | One sam3.1 slot in an independent domain |
+| Pure on-prem | $0 | Everything for yolo and SPROUT; sam3.1 in two independent domains (home and laboratory), neither of them contracted |
+| 24 GB rented | ~$96 | One sam3.1 slot, a third domain, and availability that is bought instead of borrowed |
 | 48 GB rented | ~$216 | Two or three sam3.1 slots, all models resident at once |
 | 80 GB rented | ~$300 | Comfortable headroom on both axes |
 
 Sizing order: **measure (Task 1) → decide the concurrency the demo needs → pick the card.** Renting
-a card so a model fits is no longer a reason; the measurements above put sam3.1 on every card in the
-lab.
+a card so a model fits is no longer a reason; the measurements above put sam3.1 on every card on
+hand.
 
 ## Tasks, in order
 
@@ -203,8 +232,9 @@ lab.
    the container's server implementing `/infer` and `/infer/upload` with the geometry contract the
    public docs already describe.
 3. **Bring up one real backend** over its private link and prove the link end to end with the
-   cheapest model. `labpc-tailnet` is the cheapest rehearsal host that exists; a rented 24 GB instance
-   is the cheapest rehearsal of the rented path.
+   cheapest model. Both on-prem candidates are already reachable, so this needs no new hardware: a
+   container on `lab-3090` rehearses the tailnet path, and a rented 24 GB instance rehearses
+   the rented path.
 4. **Demonstrate failover** by stopping that backend mid-run, which is also what calibrates the
    timeout.
 5. **Then** decide the rental, and ask ETH for what it can commit.
@@ -215,7 +245,8 @@ lab.
 |---|---|---|
 | 1 | The timeout value, and the global gate's size | What a dead backend costs a participant |
 | 2 | Whether the gate gains the per-model dimension, and how it is expressed | Rule change above |
-| 3 | 24 vs 48 vs 80 GB rented, and whether it is rented at all | Task 1's measurements plus the demo's concurrency |
+| 3 | 24 vs 48 GB rented, and whether it is rented at all | Task 1's measurements plus the demo's concurrency. 48 GB is the ceiling for a single GPU on EC2 (`g6e` = L40S); 80 GB exists only inside eight-GPU instances, so that option means a different provider |
 | 4 | The ETH request: how many hosts, what memory, over which link, with whom as contact | The meeting |
-| 5 | The AWS GPU service quota increase | Nothing, but it must start now |
-| 6 | Whether the second borrowed 5090 arrives, and where it stands | sam3.1's second on-prem replica |
+| 5 | The AWS GPU service quota — requested 2026-10-16 for `L-DB2E81BA` in `eu-central-1` | Nothing, but the region and the requested value still need confirming, and approval can take days |
+| 6 | Whether the second borrowed 5090 arrives | Concurrency, not redundancy: it lands inside the laboratory's existing fault domain |
+| 7 | `../rules/deploy.md` and `deploy/README.md` §1.3 still prescribe a tailnet tag and access policy | The deviation above has to be written where those two currently contradict it |
