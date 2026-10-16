@@ -7,14 +7,15 @@ else. Every other path, including paths that do not exist, needs a participant t
 people this serves are somewhere else on the internet and nothing but that token stands between them
 and the host.
 
-Key authentication, the error contract, and liveness live here. The dataset surface is included
-from here, and the model surface will arrive the same way: both inherit the gate by adding a route
-rather than by remembering to.
+Key authentication, the error contract, and liveness live here. The dataset surface and the model
+surface are both included from here, and both inherit the gate by adding a route rather than by
+remembering to.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 from enum import StrEnum
 from importlib.metadata import version as installed_version
 from pathlib import Path
@@ -31,6 +32,14 @@ from starlette.middleware.base import RequestResponseEndpoint
 from biohack_gateway.auth import Authenticator
 from biohack_gateway.dataset_index import DEFAULT_INDEX_DIR, load_datasets
 from biohack_gateway.datasets import DEFAULT_DATA_BASE_URL, create_dataset_router
+from biohack_gateway.models import (
+    DEFAULT_MODELS_FILE,
+    ModelRegistry,
+    Transport,
+    create_model_router,
+    http_transport,
+    load_models,
+)
 from biohack_gateway.tokens import DEFAULT_TOKENS_FILE, TokenPoolError
 
 logger = logging.getLogger(__name__)
@@ -55,6 +64,16 @@ API_KEY_SCHEME = "ApiKeyAuth"
 Swagger UI carries a credential into a request only for a scheme the document declares, so without
 this the reference lists every endpoint and can try none of them. The name is arbitrary, the header
 is not, and both are read from here rather than written out again.
+"""
+
+BACKEND_TOKEN_ENV = "BIOHACK_BACKEND_TOKEN"
+"""The environment variable carrying the token the gateway presents to backends.
+
+An environment variable rather than a file, because it is the one setting here that is a secret: the
+token pool can be a file this package owns and prints team ids from, but this one is never written
+down by us at all. An unset value is a gateway that cannot reach any model, which the predict routes
+report as unavailable rather than letting a backend answer `401` that reads like the participant's
+fault.
 """
 
 _PADLOCK_CLOSED = (
@@ -414,12 +433,18 @@ _CODES_BY_STATUS: dict[int, ErrorCode] = {
     404: ErrorCode.NOT_FOUND,
     405: ErrorCode.INVALID_REQUEST,
     429: ErrorCode.QUOTA_EXCEEDED,
+    502: ErrorCode.UPSTREAM_ERROR,
     503: ErrorCode.UNAVAILABLE,
+    504: ErrorCode.UPSTREAM_TIMEOUT,
 }
 """The codes the framework's own rejections map onto.
 
 Only the ones we expect to raise ourselves or to inherit from the router are named; anything else
 falls back by class of status, which is the part of the contract a caller can act on anyway.
+
+The two upstream codes are here because the model surface raises them by hand, and without them a
+backend that failed would be reported as a crash in the gateway — the opposite of what the retry
+rule tells a caller to do about it.
 """
 
 
@@ -513,6 +538,9 @@ def create_app(
     index_dir: Path = DEFAULT_INDEX_DIR,
     data_base_url: str = DEFAULT_DATA_BASE_URL,
     docs_parent_origin: str = DOCS_PARENT_ORIGIN,
+    models_path: Path = DEFAULT_MODELS_FILE,
+    backend_token: str = "",
+    model_transport: Transport = http_transport,
 ) -> FastAPI:
     """Build the application.
 
@@ -531,6 +559,15 @@ def create_app(
     docs_parent_origin : str, optional
         The one origin allowed to frame the reference page, which is also the window it reports its
         height to. A harness that frames a local app passes its own origin here.
+    models_path : Path, optional
+        The host's model-to-backend list. It need not exist: a gateway with no models configured
+        answers an empty directory rather than refusing to start.
+    backend_token : str, optional
+        The token presented to backends as `X-Backend-Token`. Empty is a gateway that cannot reach
+        any model, which predicts report as unavailable rather than as a client error.
+    model_transport : Transport, optional
+        How the gateway reaches a backend. Injectable so a test can answer for one without starting
+        one, which is what lets the surface's tests exercise the real gate and error contract.
 
     Returns
     -------
@@ -570,7 +607,15 @@ def create_app(
         return HealthResponse(status="ok", version=APP_VERSION)
 
     authenticator = Authenticator(tokens_path)
-    app.include_router(create_dataset_router(load_datasets(index_dir), data_base_url))
+    datasets = load_datasets(index_dir)
+    app.include_router(create_dataset_router(datasets, data_base_url))
+    app.include_router(
+        create_model_router(
+            ModelRegistry(load_models(models_path), backend_token, model_transport),
+            datasets,
+            data_base_url,
+        )
+    )
 
     document = app.openapi
 
@@ -730,5 +775,10 @@ def create_app(
     return app
 
 
-app = create_app()
-"""The object uvicorn serves: ``uvicorn biohack_gateway.app:app``."""
+app = create_app(backend_token=os.environ.get(BACKEND_TOKEN_ENV, ""))
+"""The object uvicorn serves: ``uvicorn biohack_gateway.app:app``.
+
+The one setting read from the environment rather than passed in: the backend token is a secret, so
+it cannot live in a file this repository ships, and systemd supplies it from the host's environment.
+Nothing else about the host is read here — the paths have defaults and the tests pass their own.
+"""

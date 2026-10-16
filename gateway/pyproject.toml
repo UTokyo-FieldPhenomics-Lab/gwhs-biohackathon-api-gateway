@@ -7,6 +7,9 @@ dependencies = [
     "fastapi>=0.115",
     "pydantic>=2.7",
     "uvicorn[standard]>=0.30",
+    # Required by the model surface: an upload is multipart, and FastAPI refuses to build a
+    # Form/File route without it — it fails at import, taking every other route's tests with it.
+    "python-multipart>=0.0.12",
 ]
 
 [project.scripts]

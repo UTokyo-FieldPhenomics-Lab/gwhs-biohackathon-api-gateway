@@ -253,6 +253,11 @@ class ObjectOut(BaseModel):
         The upstream's attribute names, where the object has any.
     rle : RleMask or None
         The object's geometry, where the dataset publishes it as RLE.
+    score : float or None
+        How sure a model was, where the object came from one. Ground truth leaves it unset, which is
+        what keeps it out of a dataset response — the surface serializes with
+        `response_model_exclude_unset=True` — and it is declared here rather than in the model
+        surface because `gateway.md` fixes **one** object shape across the two surfaces.
     """
 
     idx: int
@@ -261,6 +266,7 @@ class ObjectOut(BaseModel):
     area: float | None = None
     attributes: list[str] | None = None
     rle: RleMask | None = None
+    score: float | None = None
 
 
 class ImageDetail(BaseModel):
@@ -514,7 +520,7 @@ def _object_url(base: str, dataset: str, kind: str, row: int, extension: str) ->
     return f"{base}/{dataset}/{kind}/{row:08d}.{extension}"
 
 
-def _addresses(dataset: Dataset, row: ImageRow, base: str) -> dict[str, Any]:
+def image_addresses(dataset: Dataset, row: ImageRow, base: str) -> dict[str, Any]:
     """Build the two object addresses every row response carries.
 
     Parameters
@@ -530,6 +536,12 @@ def _addresses(dataset: Dataset, row: ImageRow, base: str) -> dict[str, Any]:
     -------
     dict of str to Any
         `image_url`, and `mask_url` where the row has a mask.
+
+    Notes
+    -----
+    Public, and used by both surfaces: the model surface resolves a predict's address through this
+    function, so a row is addressed one way rather than two. The key layout it builds is a fact of
+    the published distribution, and a second copy of it is a second thing to keep true.
     """
     return {
         "image_url": _object_url(base, dataset.id, "images", row.row, row.image_ext),
@@ -667,7 +679,7 @@ def _row_summary(dataset: Dataset, row: ImageRow, base: str) -> ImageSummary:
         "split": row.split,
         "width": row.width,
         "height": row.height,
-        **_addresses(dataset, row, base),
+        **image_addresses(dataset, row, base),
         "statistics": _statistics(dataset, row),
     }
     payload.update(_extras(dataset, row))
@@ -697,7 +709,7 @@ def _row_detail(dataset: Dataset, row: ImageRow, base: str) -> ImageDetail:
         "split": row.split,
         "width": row.width,
         "height": row.height,
-        **_addresses(dataset, row, base),
+        **image_addresses(dataset, row, base),
     }
     payload.update(_extras(dataset, row))
     tags = dataset.tags.get(row.row, ())
