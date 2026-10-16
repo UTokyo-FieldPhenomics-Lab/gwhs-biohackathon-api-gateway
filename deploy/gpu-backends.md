@@ -42,7 +42,7 @@ the person sitting at the machine still has to use their desktop. For scale: the
 |---|---|---|---|---|---|---|---|
 | `labpc` (3090) — host `crest-nerv`, tailnet `nerv-linux` | laboratory | `isas-annex103-ap-room` (GL-BE9300), `192.168.250.0/24` | `192.168.250.228` | RTX 3090 | 24576 MiB | laboratory | 2026-10-16 — **`sshd` enabled and active** (22 was refused that morning and took a key that afternoon), **Docker 29.7.2 running** on Manjaro, 2233/8771/22000 also open, ICMP 337–350 ms, 0% loss. **The machine the model reference measurement was taken on** |
 | `homepc` (4090) | home | `higashimurayama-203` (GL-MT6000), `192.168.209.0/24` | `192.168.209.228` | RTX 4090 | 24576 MiB | home | 2026-10-16 — TCP 22/22000 open, ICMP 242–250 ms, 0% loss |
-| lab 5090 (Windows 11) | laboratory | `isas-217-pcinfo-room` (GL-MT6000), `192.168.253.0/24` | `192.168.253.91` | RTX 5090 | **32607 MiB** | laboratory | 2026-10-16 — SSH, Docker and **GPU inside a container** all verified; port 8000 answered HTTP from the host; driver 610.88; ICMP blocked by Windows |
+| lab 5090 (Windows 11) | laboratory | `isas-217-pcinfo-room` (GL-MT6000), `192.168.253.0/24` | `192.168.253.91` | RTX 5090 | **32607 MiB** | laboratory | 2026-10-16 — SSH, Docker and **GPU inside a container** all verified; driver 610.88; ICMP blocked by Windows. Then **built and serving** the same day: `sam3.1-meta` built on the machine from a 2.1 MB archive, `/health` 200 **from the gateway host**, declared ready with load 10.8 s and warm 1.2 s, and a `predict` through the gateway answered 200 in 0.9 s (`gwhs-temp` row 0: one `wheat head`, score 0.52, 173716 px). It held **~6.5 GB resident** where the label declares 3.7 — see the note below the table |
 | a second 5090 | borrowed from a company | ? | ? | RTX 5090 | 32 GB | likely laboratory | not delivered |
 | ~3 more 90-class | laboratory | ? | ? | unknown | ~24 GB | laboratory | not measured |
 | a rented instance | `eu-central-1` | its security group — same VPC as the gateway, so no tailnet at all | assigned on launch | L4, or L40S | 24 GB, or 48 GB | AWS | not created |
@@ -53,9 +53,23 @@ when it stops existing rather than deleting it quietly.
 
 **The 5090 is the largest card in the pool** (32607 MiB against 24576 MiB) and the only one on Windows.
 It is **not** the best candidate for concurrency, which is what an earlier version of this line assumed:
-concurrency buys nothing on these models — one request saturates a card, measured — so the 5090's value
-is a **faster serial lane** and a second fault domain, while it stays both the most expensive machine to
-bring up and the one with the SSH credential-helper obstacle below.
+concurrency buys nothing on these models — one request saturates a card, measured — so what it adds today
+is a **second fault domain**. Whether it is also a faster serial lane is **not established**: the two
+cards have never been measured on the same frame, and the one figure that looks comparable — the warm
+prompt at start-up — came out at 0.34 s on the 3090 and 0.91–1.21 s on the 5090 across three runs, which
+is startup noise and lazy kernel compilation rather than a ranking.
+
+Bringing it up is no longer expensive: one 2.1 MB archive plus a build that fetched its own 3.5 GB
+checkpoint on the machine's own downlink (3 m 33 s), against the alternative of moving a 14 GB image over
+one sender's uplink. What it cost instead was the credential-helper obstacle below — which applies to a
+**build**, not only to a pull.
+
+**The resident figure is the 3090's and understates this card.** The container declares
+`resident_gb 3.7` computed from a 3812 MiB measurement on the 3090; on the 5090 the same container left
+32607 − 24924 = ~7.7 GB used, of which ~1.1 GB was the desktop, so roughly **6.5 GB resident** and a
+larger CUDA context. Admission is unaffected here (31 GB budget against 5.5 GB requested), and a
+container's declaration is what the deploy script and a human read before starting it — so the number is
+worth re-measuring on this card before it becomes the machine the others are placed against.
 
 ## Fault domains
 
@@ -102,6 +116,15 @@ container environment); the gateway's copy is `BIOHACK_BACKEND_TOKEN` in the hos
 shared tailnet from taking the card the event is sharing, one request at a time — a denial of the
 event's scarcest resource rather than a leak. What it does **not** cover is an SSRF from a backend, and
 it does not have to: the container fetches only under the configured `data.*` suffix.
+
+**A backend whose token does not match does not fall through to the next one — it takes the model down
+with it.** The gateway reads `401`/`403` from a backend as *its own* credential being refused, which
+cannot be the caller's fault: it logs `a backend refused the gateway's token`, answers `503`, and never
+tries the model's other backends. So a list whose second entry was started with a different value is a
+model that serves fine until its first entry fails and then fails entirely — measured on 2026-10-16,
+when the 5090 was listed first with a token the 3090 had not been started with. Two ends, one value:
+rotating it means editing `env` **and** restarting every container on the list, and a newly added
+machine is not a backend until that is done.
 
 **Why not an address allowlist instead: what a backend sees of its caller is a fact about the path.**
 
@@ -213,9 +236,16 @@ This is the part that fails during an event and looks like a network fault.
   from an SSH connection fails before it reaches any registry: `error getting credentials - err: exit
   status 1, out: A specified logon session does not exist. It may already have been terminated.`
   Docker Desktop's helper cannot start there, so this hits *anonymous* pulls too — the 5090 could not
-  pull `hello-world` over SSH while its engine was otherwise healthy. Either turn the credential
-  helper off for that machine, or skip registries altogether: build the image on the workstation and
-  `docker save | docker load` across the link, which needs no registry and no internet on the target.
+  pull `hello-world` over SSH while its engine was otherwise healthy. **It hits `docker build` as well:**
+  building the model container died on `COPY --from=ghcr.io/astral-sh/uv:0.12` with that message, while
+  `docker manifest inspect` against the same registry, from the same session a minute earlier, had
+  succeeded — so that check is not the green light it reads as.
+  Three ways out, in the order worth trying: **point the CLI at an empty config directory**
+  (`DOCKER_CONFIG=/tmp/dcfg docker build …`), which skips the credential lookup without touching the
+  machine's Docker Desktop settings and is safe because every image a model container pulls is public;
+  **turn the helper off for that machine**; or **build on the workstation and `docker save | docker
+  load`** across the link, which needs no registry and no internet on the target and moves the whole
+  14 GB image over one sender's uplink.
 - On **Manjaro** the chain is one link: `systemctl enable docker`, then the restart policy.
 - On **Windows the chain has a weak link**: Docker Desktop is a user-level program, so with nobody
   logged in after a reboot the engine never starts and no policy can help. Settings → General → *Start
@@ -307,11 +337,20 @@ signed in with. One trap: if the account signs in with a **PIN**, SSH still asks
 ## Adding a machine
 
 1. Put it on one of the LANs above, and follow the recipe for its OS.
-2. Read its declaration and check the machine can take it — `docker image inspect` for the label,
+2. Get the model's image onto it — build it there from the folder's archive (see
+   [`../models/README.md`](../models/README.md)), or load a saved one — then read its declaration and
+   check the machine can take it: `docker image inspect` for the label,
    `nvidia-smi --query-gpu=index,memory.free --format=csv` for the cards.
-3. Start it detached and publishing on the LAN: `docker run -d --restart unless-stopped -p 8000:8000 …`
-4. **Prove it from the host, not from the machine**: `nc -vz <private address> 8000`.
-5. Add that address to the model's list on the host, and add this machine's row above.
+3. Start it detached, publishing on the LAN, **with the value the host already holds in `env`**:
+   `docker run -d --restart unless-stopped -p 8000:8000 -e BACKEND_TOKEN=… --name <model> <image>`.
+   A machine started with a different value is worse than a machine that is absent: it answers the
+   requests that reach it with `401`, and that stops the model's whole list from working.
+4. Prove it in this order: `docker logs` for the admission line and for `ready`, then **from the host**
+   `curl -s http://<private address>:8000/health`, and `nc -vz <private address> 8000` if that fails.
+   Only then wire it up.
+5. Add that address to the model's list on the host and add this machine's row above. **The list's order
+   decides which backend answers**, because routing is first-healthy-wins: the second entry is a fault
+   domain, not extra capacity.
 
 ## How to re-measure a row
 
