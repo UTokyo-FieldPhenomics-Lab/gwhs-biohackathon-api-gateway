@@ -11,10 +11,11 @@ Nothing here encodes geometry, holds a weight, or knows what a mask is. :class:`
 definition of the same body is the one thing this surface must not grow, and `gateway.md` asks for
 exactly one object shape across the two surfaces so a participant writes one decoder.
 
-Routing is the whole algorithm — try a model's backends in order, mark a failed one unhealthy for
-thirty seconds, move on. There is no circuit breaker and no weighted choice, which are for a pool
-larger than this one, and no health loop, which is what `gateway.md` forbids: the gateway learns a
-backend is gone from a real request's failure, and the timeout is what that costs.
+Routing is the whole algorithm — try a model's backends in order, idle ones first, mark a failed one
+unhealthy for at least as long as the failure cost, move on. There is no circuit breaker and no
+weighted choice, which are for a pool larger than this one, and no health loop, which is what
+`gateway.md` forbids: the gateway learns a backend is gone from a real request's failure, and
+:data:`RESPONSE_TIMEOUT_SECONDS` is what that costs.
 
 **Control parameters come from the model, not from here.** A model declares what it accepts — the
 prompt it can be given, the threshold it applies — and the gateway repeats that declaration in
@@ -25,11 +26,13 @@ index.
 
 from __future__ import annotations
 
+import http.client
 import json
 import logging
+import socket
+import threading
 import time
-import urllib.error
-import urllib.request
+import urllib.parse
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -56,6 +59,11 @@ UNHEALTHY_SECONDS = 30.0
 
 The number `gateway.md` fixes. It is long enough for a container to be restarted and short enough
 that a recovered backend is not shunned for the rest of an event.
+
+It is also the floor of an invariant, not a free number: it must be **at least**
+:data:`RESPONSE_TIMEOUT_SECONDS`, or a failure is retried before the wait it cost has
+passed, and the same minute is paid again. The assertion below is the invariant; the
+measurements behind it are in `deploy/gpu-backends.md`.
 """
 
 DECLARATION_TIMEOUT_SECONDS = 3.0
@@ -66,12 +74,31 @@ and a model whose backend is off appears in the directory with nothing declared 
 up the process.
 """
 
-PREDICT_TIMEOUT_SECONDS = 60.0
+CONNECT_TIMEOUT_SECONDS = 3.0
+"""How long one attempt may spend getting a socket to a backend.
+
+Separate from the response budget because the two failures are different facts. A machine
+that is off or rebooting drops the SYN and nothing answers, so only the clock ends the
+attempt, while a backend that is answering needs the whole budget for the work it is
+doing. Measured: a backend behind Docker Desktop's port proxy whose container is stopped
+*does* accept the connection and then never answers — the case this bound does not cover
+and the response budget does.
+"""
+
+RESPONSE_TIMEOUT_SECONDS = 10.0
 """How long one inference may take before the backend is treated as failed.
 
-The value is deliberately still open — it is the knob that decides what a dead backend costs a
-participant — and this default is the placeholder the plan carries until the rehearsal fixes it.
+**One number, and the only budget a request has.** Measured 2026-10-16 on the laboratory
+5090 through this gateway: 0.9–1.0 s for a published row, and 0.3 s at the backend for an
+18-megapixel upload whose mask came back 2.1 megapixels wide — the encoder runs at a fixed
+1008 side, so the input's size barely moves the figure. Ten seconds is therefore an order
+of magnitude of headroom, and what it buys is the participant's worst case: this is what a
+dead backend costs the request that finds it, once per :data:`UNHEALTHY_SECONDS`.
 """
+
+assert UNHEALTHY_SECONDS >= RESPONSE_TIMEOUT_SECONDS, (
+    "a failed backend must be passed over for at least as long as the failure it remembers cost"
+)
 
 DECLARATION_RETRY_SECONDS = 30.0
 """How long before a backend that did not answer at all is asked again.
@@ -204,6 +231,32 @@ so this package keeps depending on nothing but the standard library.
 """
 
 
+class _BoundedHTTPConnection(http.client.HTTPConnection):
+    """A plain HTTP connection whose connect phase has its own, much shorter, budget.
+
+    ``HTTPConnection.connect`` hands the *response* budget to ``socket.create_connection``,
+    and that is what makes a machine which is switched off cost a whole inference of
+    waiting: the SYN is dropped, nothing answers, and only the clock can end the attempt.
+    Bounding the handshake here limits that failure to :data:`CONNECT_TIMEOUT_SECONDS`; the
+    socket then takes the response budget back, which is what the backend needs for the
+    work it is actually doing.
+    """
+
+    def connect(self) -> None:
+        """Open the socket under the connect budget, then restore the response budget."""
+        self.sock = socket.create_connection((self.host, self.port), CONNECT_TIMEOUT_SECONDS)
+        self.sock.settimeout(self.timeout)
+
+
+# An `https` backend keeps the plain class. Bounding a TLS handshake the same way would mean
+# duplicating the wrapping `HTTPSConnection.connect` does, and no backend is https: they sit on a
+# private network and `models.json` names them `http://`. If one ever is, revisit this line.
+_CONNECTIONS: dict[str, type[http.client.HTTPConnection]] = {
+    "http": _BoundedHTTPConnection,
+    "https": http.client.HTTPSConnection,
+}
+
+
 def http_transport(
     method: str, url: str, headers: Mapping[str, str], body: bytes | None, timeout: float
 ) -> Reply:
@@ -220,7 +273,8 @@ def http_transport(
     body : bytes or None
         The request body, where there is one.
     timeout : float
-        Seconds to wait before calling it a timeout.
+        Seconds to wait for an answer, which is :data:`RESPONSE_TIMEOUT_SECONDS` in practice. The
+        connect phase is bounded separately and more tightly, by :data:`CONNECT_TIMEOUT_SECONDS`.
 
     Returns
     -------
@@ -228,22 +282,42 @@ def http_transport(
         The status and body, or a failure described as one. A refused connection and a timeout are
         both failures rather than exceptions here: every caller's next step is the same, and the
         difference only decides which code the participant sees.
+
+    Notes
+    -----
+    ``http.client`` rather than ``urllib``, for two reasons. The connect phase needs a budget of its
+    own, which ``urllib`` has no seam for. And a redirect is deliberately **not** followed: the
+    backend is ours and answers where it is asked, so a `3xx` is returned as the answer it is rather
+    than turning this gateway into a client that fetches whatever a named backend points it at.
     """
-    request = urllib.request.Request(url, data=body, headers=dict(headers), method=method)
+    parsed = urllib.parse.urlsplit(url)
+    factory = _CONNECTIONS.get(parsed.scheme)
+    if factory is None or not parsed.hostname:
+        logger.warning("backend url is not an http(s) address: %s", url)
+        return Reply(status=0, body=b"")
+
+    connection = factory(parsed.hostname, parsed.port, timeout=timeout)
+    target = parsed.path or "/"
+    if parsed.query:
+        target = f"{target}?{parsed.query}"
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
-            return Reply(status=response.status, body=response.read())
-    except urllib.error.HTTPError as error:
-        # A backend that answered with a status is answering, not failing to answer.
-        return Reply(status=error.code, body=error.read())
+        connection.request(method, target, body=body, headers=dict(headers))
+        response = connection.getresponse()
+        try:
+            payload = response.read()
+        finally:
+            response.close()
+        return Reply(status=response.status, body=payload)
     except TimeoutError:
         return Reply(status=0, body=b"", timed_out=True)
-    except OSError as error:
-        # Connection refused, no route, DNS — one outcome for all of them. `socket.timeout` is an
-        # OSError subclass on some platforms and a TimeoutError on others; the type is checked in
-        # that order by the except clauses above.
+    except (OSError, http.client.HTTPException) as error:
+        # Connection refused, no route, DNS, a bad status line, a truncated answer — one outcome
+        # for all of them. `socket.timeout` is an OSError subclass on some platforms and a
+        # TimeoutError on others; the type is checked in that order by the clauses above.
         logger.warning("backend unreachable: %s (%s)", url, error)
         return Reply(status=0, body=b"")
+    finally:
+        connection.close()
 
 
 def load_models(path: Path) -> dict[str, list[str]]:
@@ -304,6 +378,10 @@ class Backend:
         What it declared it accepts.
     unhealthy_until : float
         A monotonic deadline: while now is below it, this backend is passed over.
+    in_flight : int
+        Attempts this gateway currently has running against this backend. Read when choosing which
+        backend to try, so that a request arriving while another is in flight to one that is in fact
+        dead does not queue behind that backend's own timeout.
     """
 
     url: str
@@ -311,6 +389,7 @@ class Backend:
     max_in_flight: int = 1
     parameters: list[ModelParameter] = field(default_factory=list)
     unhealthy_until: float = 0.0
+    in_flight: int = 0
     declared: bool = False
     """Whether this backend has answered what it serves, ever. Once true it is never asked again."""
     answered: bool = False
@@ -363,6 +442,10 @@ class ModelRegistry:
         """
         self._token = backend_token
         self._transport = transport
+        # Guards `Backend.in_flight` only, and is held for an increment and a decrement. The sync
+        # predict routes run in FastAPI's thread pool, so two requests really do touch one backend's
+        # counter at the same time.
+        self._lock = threading.Lock()
         self._backends: dict[str, list[Backend]] = {
             model: [Backend(url=url) for url in urls] for model, urls in models.items()
         }
@@ -504,18 +587,68 @@ class ModelRegistry:
         Returns
         -------
         list of Backend
-            The backends not currently passed over. Empty means the caller should be told the model
-            is unavailable rather than made to wait for a machine that has just failed.
+            The backends not currently passed over, **with those that have nothing in flight
+            first**. Empty means the caller should be told the model is unavailable rather than
+            made to wait for a machine that has just failed.
 
         Raises
         ------
         HTTPException
             No model has that id.
+
+        Notes
+        -----
+        The idle-first order is what keeps one dead backend from holding a burst. A backend is
+        only known to be unhealthy *after* an attempt against it fails, so without this every
+        request that arrives during the failure waits it out as well; with it, the first request
+        discovers the failure and the rest of the burst is served by the other backend before the
+        happens. A backend with something in flight is still returned, last, so a model with one
+        backend is unaffected.
         """
         if model not in self._backends:
             raise HTTPException(status_code=404, detail="no such model")
         now = time.monotonic()
-        return [backend for backend in self._backends[model] if not backend.is_passed_over(now)]
+        eligible = [backend for backend in self._backends[model] if not backend.is_passed_over(now)]
+        with self._lock:
+            busy = {id(backend) for backend in eligible if backend.in_flight}
+        return [backend for backend in eligible if id(backend) not in busy] + [
+            backend for backend in eligible if id(backend) in busy
+        ]
+
+    def _attempt(
+        self, backend: Backend, url: str, headers: Mapping[str, str], body: bytes | None
+    ) -> Reply:
+        """Send one request to one backend, counting it for as long as it runs.
+
+        Parameters
+        ----------
+        backend : Backend
+            The backend to call; its counter is raised for the duration.
+        url : str
+            The absolute URL of this model's route on that backend.
+        headers : mapping of str to str
+            Headers to send, including `X-Backend-Token`.
+        body : bytes or None
+            The request body.
+
+        Returns
+        -------
+        Reply
+            Whatever the transport made of it.
+
+        Notes
+        -----
+        The counter is what :meth:`eligible` reads to keep a burst off a backend that is failing,
+        so it is raised before the call and lowered in a `finally`: an exception here must not
+        leave a backend looking permanently busy, which would take it out of the pool for good.
+        """
+        with self._lock:
+            backend.in_flight += 1
+        try:
+            return self._transport("POST", url, headers, body, RESPONSE_TIMEOUT_SECONDS)
+        finally:
+            with self._lock:
+                backend.in_flight -= 1
 
     def forward(
         self,
@@ -578,7 +711,7 @@ class ModelRegistry:
         failures: list[Reply] = []
         for backend in backends:
             url = f"{backend.url}/models/{model}/{path}{suffix}"
-            reply = self._transport("POST", url, headers, body, PREDICT_TIMEOUT_SECONDS)
+            reply = self._attempt(backend, url, headers, body)
             if 200 <= reply.status < 300:
                 backend.unhealthy_until = 0.0
                 return reply
