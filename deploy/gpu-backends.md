@@ -29,11 +29,18 @@ reason the Windows machine below uses Desktop.
 
 Convention: the inference port is **8000**, which is what the plan's examples assume.
 
+Convention: **a container is admitted against the card minus 1 GB, never against the card.** These are
+workstations whose desktop drives the same display, so a 24 GB card is placed against **23 GB** and the
+32 GB card against **31 GB**. The limit is imposed rather than trusted to be respected, and it is
+written here as well as in the deploy script because a manual `docker run` goes around the script while
+the person sitting at the machine still has to use their desktop. For scale: the demo model holds
+**8.5 GB resident**, so every card in the inventory below has room to spare.
+
 ## The inventory
 
 | Machine | Where | Advertised by | Private address | GPU | VRAM | Fault domain | Last measured |
 |---|---|---|---|---|---|---|---|
-| `labpc` (3090) | laboratory | `room-router-a` (GL-BE9300), `the laboratory LAN` | `lab-3090` | RTX 3090 | 24576 MiB | laboratory | 2026-10-16 — TCP 2233/8771/22000 open, ICMP 337–350 ms, 0% loss |
+| `labpc` (3090) — host `labpc-host`, tailnet `labpc-tailnet` | laboratory | `room-router-a` (GL-BE9300), `the laboratory LAN` | `lab-3090` | RTX 3090 | 24576 MiB | laboratory | 2026-10-16 — **`sshd` enabled and active** (22 was refused that morning and took a key that afternoon), **Docker 29.7.2 running** on Manjaro, 2233/8771/22000 also open, ICMP 337–350 ms, 0% loss. **The machine the model reference measurement was taken on** |
 | `homepc` (4090) | home | `home-router` (GL-MT6000), `the home LAN` | `homepc-4090` | RTX 4090 | 24576 MiB | home | 2026-10-16 — TCP 22/22000 open, ICMP 242–250 ms, 0% loss |
 | lab 5090 (Windows 11) | laboratory | `room-router-d` (GL-MT6000), `the 5090's LAN` | `lab-5090` | RTX 5090 | **32607 MiB** | laboratory | 2026-10-16 — SSH, Docker and **GPU inside a container** all verified; port 8000 answered HTTP from the host; driver 610.88; ICMP blocked by Windows |
 | a second 5090 | borrowed from a company | ? | ? | RTX 5090 | 32 GB | likely laboratory | not delivered |
@@ -44,8 +51,11 @@ Convention: the inference port is **8000**, which is what the plan's examples as
 Empty cells are **unknown, not absent** — fill them in when the machine is measured, and keep the row
 when it stops existing rather than deleting it quietly.
 
-**The 5090 is the largest card in the pool** (32607 MiB against 24576 MiB) and the only one on Windows,
-so it is both the best candidate for concurrency and the most expensive to bring up.
+**The 5090 is the largest card in the pool** (32607 MiB against 24576 MiB) and the only one on Windows.
+It is **not** the best candidate for concurrency, which is what an earlier version of this line assumed:
+concurrency buys nothing on these models — one request saturates a card, measured — so the 5090's value
+is a **faster serial lane** and a second fault domain, while it stays both the most expensive machine to
+bring up and the one with the SSH credential-helper obstacle below.
 
 ## Fault domains
 

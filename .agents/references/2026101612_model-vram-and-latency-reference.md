@@ -13,7 +13,10 @@ The foldio360 masking package (`packages/masking`, its own `.venv`: Python 3.12.
 checkpoints pulled from the weight store into `/tmp/opencode/weights`. Nothing was reimplemented:
 the harness calls `Sam3TextMasker`, `CascadePspRefiner` and `MaskingPipeline` as they are.
 
-- GPU: RTX 3090, 24,078 MiB visible, driver 610.57.04.
+- GPU: RTX 3090, 24,078 MiB visible, driver 610.57.04. **This machine is `labpc` itself** — hostname
+  `labpc-host`, `lab-3090`, tailnet `labpc-tailnet` — so these are a pool member's own numbers and
+  need no translating into a placement decision. Admitted against the **23 GB budget** of a 24 GB card
+  (Decision 8's 1 GB reserve), per [`../../deploy/gpu-backends.md`](../../deploy/gpu-backends.md).
 - Image: `packages/masking/tests/images/wheat head/DSC_001_20240619_154505_128521.jpg`, 3456×5184 —
   the demo's own domain and the resolution the pipeline is developed against.
 - Prompt: `wheat head`. SAM 3.1 `imgsz=1036`, CascadePSP `L=900`, `crop_expand=1.20`.
@@ -74,9 +77,10 @@ timings are real; whether those four answers were correct was not checked, and t
   throwaway request at start-up and keep the process alive, or the first live call is 9 s.
 - **One 3090 serves ~1,800 pipeline calls an hour** (0.509 rps). The on-prem pair — home 4090 and
   laboratory 5090 — is therefore roughly 4–5 thousand an hour, all of it with no rental.
-- **8.5 GB resident means every card in the pool fits it**, including the 12 GiB floor the foldio360
-  README states, so no card is chosen for fit. Renting buys throughput and contracted availability,
-  which is what the plan already says and now has numbers behind.
+- **8.5 GB resident means every card in the pool fits it** against its own budget (23 GB of a 24 GB
+  card, 31 GB of the 32 GB card), including the 12 GiB floor the foldio360 README states, so no card is
+  chosen for fit. Renting buys throughput and contracted availability, which is what the plan already
+  says and now has numbers behind.
 
 ## The laboratory 5090 as the host
 
@@ -98,5 +102,11 @@ Checked 2026-10-16 over SSH, read-only except one `docker pull`:
 
 - The same three configurations on the **5090** itself, which is where the demo will run.
 - Whether SAM 3.1 at concurrency above one returns correct masks, or only fast ones (above).
-- The pipeline on the other seven prompt classes: this is one image of one class, and CascadePSP's
-  cost is driven by the crop side, which the rough mask sets.
+- **What the refine stage's crop side does on a subject that fills the frame** — the one figure that
+  could invalidate the 8.5 GB declaration. The refine stage's input is the crop the rough mask defines,
+  so its side follows the object (1244² here) and CascadePSP's working set scales with crop area, not
+  with the input image. A large subject on a 3456×5184 frame could ask for several times the memory
+  measured, and nothing in the pipeline caps it. A sweep across crop sides is needed before `resident_gb`
+  8.5 is declared, and it is the strongest argument for the container imposing its own fixed refine
+  input rather than inheriting the object's size.
+- The pipeline on the other seven prompt classes: one image of one class is the whole sample so far.
