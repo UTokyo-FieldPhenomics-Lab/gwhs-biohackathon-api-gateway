@@ -92,6 +92,19 @@ here.
   site's published `post-processing/rle_decode.js`, loaded by URL, since a copy here would be a second
   decoder to keep true. It previews the image an address resolves to as soon as the address is
   complete, because a row that does not exist should say so before a model is asked to fetch it.
+- **The result is shown whole, and what is drawn on it is text over the raster.** The pane holding
+  the photograph has a fixed height and fits the image inside it; nothing inside a picture is ever
+  scrolled. A box and its score are placed as elements in the image's own fractions rather than
+  painted into the bitmap: the pane shows a photograph at whatever size fits it, so a score burned
+  into the bitmap is a smudge on a tall strip and a billboard on a wide crop, while text is the same
+  size in both and stays on its object. The height is in `rem` and never `vh` — this page reports its
+  own height to the frame that holds it, so a viewport-relative height would be a fraction of its own
+  content.
+- **What the page would send is published, and the key never is.** Every value the controls describe
+  is also shown as the `curl` command that sends it, built from those same controls and the page's own
+  origin, so nothing about the surface is written down twice. The key is left as `$KEY`: the one thing
+  a page holding a secret must not do is print it into its own DOM, where a screenshot or a command
+  line pasted into a chat would carry a team's token.
 - **Page material lives in `assets/`, one language to a file.** The markup, scripts, and stylesheets
   this package injects are read from beside the modules at import and inlined into the answer; nothing
   is mounted, so what the host serves is a page the application carries rather than a directory whose

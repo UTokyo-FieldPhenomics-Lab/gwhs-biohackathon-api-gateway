@@ -47,7 +47,7 @@ html[data-scheme="dark"] #play {
   font-weight: 700;
 }
 
-/* The five rows. Each is one line of controls that wraps rather than scrolling sideways, which is
+/* The four rows. Each is one line of controls that wraps rather than scrolling sideways, which is
    what makes the same markup work in a narrow frame and on a phone. */
 #play .row {
   display: flex;
@@ -152,7 +152,9 @@ html[data-scheme="dark"] #play {
 }
 
 /* The model's own parameters, generated from what it declares. A label wraps its control so a row
-   that has to wrap keeps each name beside the thing it names. */
+   that has to wrap keeps each name beside the thing it names. The row sits with the model rather
+   than below the button that runs it, and the value a slider is on is shown beside it: a slider
+   with no number is a control a reader can neither read nor set deliberately. */
 #play #parameters {
   gap: 0.4rem 1rem;
 }
@@ -166,39 +168,107 @@ html[data-scheme="dark"] #play {
   color: var(--muted);
   font-size: 0.9em;
 }
+#play #parameters output {
+  min-width: 2.5rem;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+}
 
 /* The result. The canvas is black until an image is drawn on it, so it stays hidden until there is
-   one — a blank rectangle would read as a model that found nothing. The image is shown at the
-   column's width, and the figure is a box of its own: a 2509-pixel-tall photograph would otherwise
-   be four viewports of page, with the object the model found somewhere in the middle of it. The
-   script scrolls that box to the object once it has drawn one. */
+   one — a blank rectangle would read as a model that found nothing.
+   
+   The pane is a fixed height and the photograph is fitted inside it whole: a 2509-pixel-tall row is
+   then a narrow strip rather than four viewports of page with the object somewhere in the middle of
+   it, and nothing here is ever scrolled. The height is in `rem` and not `vh` on purpose — this page
+   reports its own height to the frame that holds it, so a viewport-relative height would be a
+   fraction of this page's own content and the box would be sizing itself. */
 #play figure {
   margin: 0.75rem 0 0.5rem;
-  max-height: min(70vh, 40rem);
-  overflow-y: auto;
   border: 1px solid var(--line);
   border-radius: 6px;
-}
-#play canvas {
-  display: block;
-  width: 100%;
-  height: auto;
-  background: var(--band);
+  overflow: hidden;
 }
 #play figcaption {
-  position: sticky;
-  top: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
   padding: 0.4rem 0.6rem;
   background: var(--surface);
   border-bottom: 1px solid var(--line);
   color: var(--muted);
   font-size: 0.9em;
 }
-#play figcaption.good { color: var(--good); }
-#play figcaption.bad { color: var(--bad); }
+/* The caption carries the outcome, and the colour belongs to the outcome rather than to the box: it
+   is the `#check` line inside that is green or red, not the bar it sits in. */
+#play figcaption #check.good { color: var(--good); }
+#play figcaption #check.bad { color: var(--bad); }
+#play #full {
+  color: var(--accent);
+  white-space: nowrap;
+}
+#play #pane {
+  height: 32rem;
+  display: grid;
+  place-items: center;
+  background: var(--band);
+}
+/* The stage is the image's own box, and the script sizes it to what fits: the marks below are placed
+   in the image's fractions, and a percentage of the pane would be a percentage of the empty band
+   around the image as well as of the image. */
+#play #stage {
+  position: relative;
+}
+#play canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+#play #marks {
+  position: absolute;
+  inset: 0;
+}
+/* One object's box and the score the model gave it: a border and text over the raster, never pixels
+   inside it. The pane shows a photograph at whatever size it fits, so a score painted into the
+   bitmap would be a smudge on a tall strip and a billboard on a wide crop; as text it is the same
+   size either way, and it is text a reader can select. */
+#play .mark {
+  position: absolute;
+  border: 1.5px solid var(--accent);
+  border-radius: 2px;
+}
+#play .mark > span {
+  position: absolute;
+  left: -1.5px;
+  bottom: 100%;
+  padding: 0 4px;
+  border-radius: 2px 2px 0 0;
+  background: var(--accent);
+  color: var(--surface);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+}
+/* A box whose top edge is against the top of the image has no room above it, so its score goes
+   inside the box instead — where the object's own top is. */
+#play .mark.inside > span {
+  bottom: auto;
+  top: -1.5px;
+}
+#play #run-state:empty {
+  display: none;
+}
 #play details {
   margin-top: 0.5rem;
   color: var(--muted);
+}
+#play details p {
+  margin: 0.5rem 0 0;
+}
+#play details code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.95em;
 }
 #play summary {
   cursor: pointer;

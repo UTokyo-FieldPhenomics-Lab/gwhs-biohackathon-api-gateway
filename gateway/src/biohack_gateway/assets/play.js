@@ -1,13 +1,15 @@
 (() => {
   "use strict";
-  // The key is a variable for as long as the page is open: typed into the page that uses it,
-  // sent to this host and nowhere else, and written to no storage the browser keeps.
+  // The key this page calls with. It is typed into the page that uses it and sent to this host and
+  // nowhere else; the browser remembers it in the one store both this page and the reference share,
+  // and nothing else on this page writes it anywhere.
   let key = "";
   let fields = [];   // one entry per declared parameter: {name, read}
 
   const $ = (id) => document.getElementById(id);
   const model = $("model"), dataset = $("dataset"), parameters = $("parameters");
   const canvas = $("canvas"), figure = document.querySelector("#play figure");
+  const pane = $("pane"), stage = $("stage"), marks = $("marks");
 
   const say = (element, text, ok) => {
     element.textContent = text;
@@ -77,8 +79,25 @@
     return text === "" ? null : text;
   };
 
+  // A slider says nothing about the number it is on. The declaration carries the bounds and the
+  // default but no step, so the page chooses one — and the readout shows as many decimals as that
+  // step has places, which is what makes `0.5` read as `0.50` beside a step of `0.01`. No parameter
+  // name appears here either.
+  const readoutFor = (input) => {
+    const decimals = (input.step.split(".")[1] || "").length;
+    const output = document.createElement("output");
+    const show = () => { output.textContent = Number(input.value).toFixed(decimals); };
+    input.addEventListener("input", show);
+    show();
+    return output;
+  };
+
   const showParameters = (declaration) => {
     parameters.replaceChildren();
+    const legend = document.createElement("span");
+    legend.className = "legend";
+    legend.textContent = "Parameters";
+    parameters.append(legend);
     fields = [];
     for (const parameter of declaration.parameters || []) {
       const label = document.createElement("label");
@@ -87,6 +106,7 @@
       const input = controlFor(parameter);
       if (parameter.description) label.title = parameter.description;
       label.append(name, input);
+      if (input.type === "range") label.append(readoutFor(input));
       parameters.append(label);
       fields.push({name: parameter.name, read: () => readValue(input)});
     }
@@ -101,6 +121,44 @@
     return search.toString();
   };
 
+  // The same call, as a command line, so a reader can take it to a shell. Three things shape it, and
+  // each is the reason for something that would otherwise look like fuss:
+  //
+  //   * the origin is this page's own, which is the API's — the page is served by the host it calls,
+  //     so no address is written down here and there is nothing to keep in step;
+  //   * the key is left as `$KEY` and is never printed: a page that holds a secret must not put it in
+  //     its own DOM, where a screenshot or a pasted command line would carry a team's token;
+  //   * every value is single-quoted, because a parameter's value is whatever the model declared and
+  //     whatever the reader typed, and a shell is not the place to find out that one held a quote.
+  const shell = (text) => "'" + String(text).replace(/'/g, "'\\''") + "'";
+
+  const requestText = () => {
+    if (!model.value) return "";
+    const upload = $("source").value === "upload";
+    const search = query();
+    const address = location.origin + "/models/" + encodeURIComponent(model.value);
+    const lines = ["curl -s -X POST \\", '  -H "X-API-Key: $KEY" \\'];
+    if (upload) {
+      const chosen = $("file").files[0];
+      lines.push("  -F " + shell("file=@" + (chosen ? chosen.name : "photo.jpg")) + " \\");
+      lines.push("  " + shell(address + "/predict/upload" + (search ? "?" + search : "")));
+    } else {
+      lines.push('  -H "Content-Type: application/json" \\');
+      lines.push("  -d " + shell(JSON.stringify({
+        dataset: dataset.value, row: Number($("row").value),
+      })) + " \\");
+      lines.push("  " + shell(address + "/predict" + (search ? "?" + search : "")));
+    }
+    return lines.join("\n");
+  };
+
+  /** Show the call the controls currently describe, or hide the panel when they describe none. */
+  const refreshRequest = () => {
+    const text = requestText();
+    $("request-body").textContent = text;
+    $("request").hidden = !text;
+  };
+
   const fill = (select, entries, label) => {
     select.replaceChildren();
     for (const entry of entries) {
@@ -111,18 +169,32 @@
     }
   };
 
+  // The model's own attributes, as its declaration gives them: what it runs at, how many machines
+  // are answering for it, and how many requests they hold at once. They are shown as facts and not
+  // in the colour of something that succeeded — and each is said once. The resolution is quoted here
+  // because it belongs to the model; a run does not repeat it.
   const loadModel = async (id) => {
     const declaration = await call("/models/" + encodeURIComponent(id));
     showParameters(declaration);
-    if (!declaration.backends_up) {
-      // A reader who pressed Run would wait out a timeout to learn what this line already knows.
-      say($("model-state"),
-        "no backend is answering for " + id + " (backends_up: 0), so nothing can be run", false);
+    const facts = [];
+    if (declaration.resolution) facts.push("runs at " + declaration.resolution + " px");
+    if (declaration.backends_up) {
+      facts.push(declaration.backends_up +
+        (declaration.backends_up === 1 ? " backend up" : " backends up"));
+      if (declaration.max_in_flight) {
+        facts.push(declaration.max_in_flight +
+          (declaration.max_in_flight === 1 ? " request at a time" : " requests at a time"));
+      }
+      say($("model-state"), facts.join(" · "), null);
     } else {
-      say($("model-state"),
-        "runs at " + (declaration.resolution || "an undeclared resolution") + " px", true);
+      // A reader who pressed Run would wait out a timeout to learn what this line already knows.
+      facts.push("no backend is answering, so nothing can be run");
+      say($("model-state"), facts.join(" · "), false);
     }
     $("run").disabled = !declaration.backends_up;
+    // Refreshed after the declaration and not before: the command carries the parameters this model
+    // declares, and until the answer arrives those are still the previous model's.
+    refreshRequest();
   };
 
   // The image choice: one dropdown decides it, and the controls for the choice that is not taken are
@@ -145,9 +217,9 @@
       // declaration again when the reader picks another model. A key that is refused says so here,
       // before the reader has filled anything else in.
       const directory = await call("/models");
-      fill(model, directory.models, (entry) =>
-        entry.id + " — " + entry.backends_up +
-        (entry.backends_up === 1 ? " backend up" : " backends up"));
+      // The options are ids and nothing else: what a model runs at and how many machines answer for
+      // it are facts about the chosen model, and they are said once, beside it.
+      fill(model, directory.models, (entry) => entry.id);
       model.disabled = !directory.models.length;
       const datasets = await call("/datasets");
       fill(dataset, datasets.datasets, (entry) =>
@@ -155,7 +227,7 @@
       syncSource();
       if (directory.models.length) await loadModel(directory.models[0].id);
       else say($("model-state"), "this gateway has no models configured", false);
-      say($("connect-state"), "connected — this is the key both pages use", true);
+      say($("connect-state"), "connected", true);
       preview();
     } catch (error) {
       say($("connect-state"), error.message, false);
@@ -172,9 +244,13 @@
     fields = [];
     $("run").disabled = true;
     figure.hidden = true;
+    marks.replaceChildren();
+    $("full").hidden = true;
+    fitted = null;
     $("response").hidden = true;
     previewToken += 1;
     syncSource();
+    refreshRequest();
   };
 
   $("connect").addEventListener("submit", (event) => {
@@ -220,12 +296,13 @@
     image.src = url;
   });
 
-  // The canvas holds the image at close to its own size, so the mask's edge is the mask's edge rather
-  // than a resampling artifact. An upload can be far larger than any published row, which is what the
-  // cap is for: a 5184×3456 photograph would otherwise be 72 MB of canvas.
+  // The canvas bitmap holds the image at close to its own size, so the mask's edge is the mask's edge
+  // rather than a resampling artifact — how large that is *displayed* is a separate matter and
+  // belongs to the pane, which fits the whole canvas inside itself. An upload can be far larger than
+  // any published row, which is what the cap is for: a 5184×3456 photograph would otherwise be 72 MB
+  // of canvas.
   const MAX_SIDE = 2600;
   const MASK = [255, 105, 180, 110];
-  const BOX = "rgba(11, 107, 203, 0.9)";
 
   // One object's geometry as something drawable, without a single pixel being read back: the
   // mask goes into an offscreen canvas of its own size, which is then drawn onto the visible
@@ -256,6 +333,46 @@
     return {overlay: offscreen, painted: painted};
   };
 
+  // The pane shows the whole image at once: the photograph is fitted inside a box of fixed height, so
+  // a 2509-pixel-tall row is a narrow strip rather than four viewports with the object somewhere in
+  // the middle of it, and a picture never has to be scrolled inside.
+  //
+  // The stage is sized here rather than in CSS because the marks are placed in the image's fractions:
+  // a percentage of the pane would be a percentage of the empty band around the image as well. Only
+  // the box is sized — the bitmap is left alone — so a resize re-fits without redrawing anything, and
+  // the marks follow on their own.
+  let fitted = null;
+  const fit = (image) => {
+    const box = pane.getBoundingClientRect();
+    const scale = Math.min(box.width / image.naturalWidth, box.height / image.naturalHeight);
+    stage.style.width = Math.max(1, Math.round(image.naturalWidth * scale)) + "px";
+    stage.style.height = Math.max(1, Math.round(image.naturalHeight * scale)) + "px";
+  };
+  new ResizeObserver(() => { if (fitted) fit(fitted); }).observe(pane);
+
+  // One object's box, and the score that goes with it, as elements over the raster rather than pixels
+  // inside it: the pane draws a photograph at whatever size fits, so a score burned into the bitmap
+  // would be a smudge on a tall strip and a billboard on a wide crop. As text it is the same size in
+  // both, it is text a reader can select, and it carries the model's own number to two decimals.
+  const markFor = (object, image) => {
+    const [x, y, width, height] = object.bbox;
+    const mark = document.createElement("div");
+    mark.className = "mark";
+    mark.style.left = (x / image.naturalWidth) * 100 + "%";
+    mark.style.top = (y / image.naturalHeight) * 100 + "%";
+    mark.style.width = (width / image.naturalWidth) * 100 + "%";
+    mark.style.height = (height / image.naturalHeight) * 100 + "%";
+    if (typeof object.score === "number") {
+      const score = document.createElement("span");
+      score.textContent = object.score.toFixed(2);
+      mark.append(score);
+      // A box against the top edge of the image has no room above it, so its score goes inside the
+      // box — at the object's own top, which is where the label would have pointed.
+      if (y / image.naturalHeight < 0.06) mark.classList.add("inside");
+    }
+    return mark;
+  };
+
   /** Draw one image, with whatever objects belong on it, and say what was drawn. */
   const paint = async (url, objects) => {
     const image = await loadImage(url);
@@ -264,47 +381,30 @@
     canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
     const context = canvas.getContext("2d");
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    // The mask and the box are in the image's own pixels, so both are mapped to the canvas by the
-    // same two ratios.
-    const across = canvas.width / image.naturalWidth;
-    const down = canvas.height / image.naturalHeight;
 
     const decoder = typeof rleDecode === "function";
     let decoded = 0, declared = 0, checked = 0;
     for (const object of objects) {
-      if (object.rle && decoder) {
-        const drawn = overlayFor(object);
-        context.drawImage(drawn.overlay, 0, 0, canvas.width, canvas.height);
-        decoded += drawn.painted;
-        if (typeof object.area === "number") {
-          declared += object.area;
-          checked += 1;
-        }
-      }
-      if (object.bbox) {
-        context.lineWidth = 2;
-        context.strokeStyle = BOX;
-        context.strokeRect(
-          object.bbox[0] * across, object.bbox[1] * down,
-          object.bbox[2] * across, object.bbox[3] * down,
-        );
+      if (!object.rle || !decoder) continue;
+      const drawn = overlayFor(object);
+      context.drawImage(drawn.overlay, 0, 0, canvas.width, canvas.height);
+      decoded += drawn.painted;
+      if (typeof object.area === "number") {
+        declared += object.area;
+        checked += 1;
       }
     }
+
     figure.hidden = false;
-    // Show the reader what the model found. The figure is a box as tall as it can be and a portrait
-    // photograph is taller than that, so without this the object — and the whole canvas — sits below
-    // the fold of a blank grey box, which reads as a model that found nothing.
-    //
-    // In two steps on purpose: `scrollTop` counts the CSS pixels the canvas is *drawn* at, which is
-    // the box's width divided by the image's, while the mask's own coordinates are the image's. Using
-    // the bitmap's scale here instead is the same number only when the two happen to agree.
-    const found = objects.find((object) => object.bbox);
-    requestAnimationFrame(() => {
-      const shown = canvas.clientHeight / image.naturalHeight;
-      figure.scrollTop = found
-        ? Math.max(0, (found.bbox[1] + found.bbox[3] / 2) * shown - figure.clientHeight / 2)
-        : 0;
-    });
+    fit(image);
+    fitted = image;
+    marks.replaceChildren();
+    for (const object of objects) {
+      if (object.bbox) marks.append(markFor(object, image));
+    }
+    const full = $("full");
+    full.href = url;
+    full.hidden = false;
     return {decoder: decoder, decoded: decoded, declared: declared, checked: checked};
   };
 
@@ -314,20 +414,21 @@
     $("response-body").textContent = JSON.stringify(answer, null, 2);
     $("response").hidden = false;
 
+    const tally = objects.length + (objects.length === 1 ? " object" : " objects");
     if (!painted.decoder) {
       // Said rather than left blank: an empty canvas would read as a model that found nothing.
       say($("check"),
         "the decoder did not load from the documentation site, so no mask is drawn here — " +
         "the response body below is complete", false);
     } else if (!painted.checked) {
-      say($("check"), objects.length + " objects, none carrying an area and an RLE to check", null);
+      say($("check"), tally + " · none carrying an area and an RLE to check", null);
     } else {
       // The cheapest check that a decoder is right, and the one the documentation makes in prose:
       // the decoded pixel count equals the published area. It reads the decoded array, never the
       // canvas, which is the only thing the tainted canvas allows.
       const equal = painted.decoded === Math.round(painted.declared);
       say($("check"),
-        "Σ decoded mask = " + painted.decoded.toLocaleString() + " px, Σ area = " +
+        tally + " · Σ decoded mask = " + painted.decoded.toLocaleString() + " px, Σ area = " +
         Math.round(painted.declared).toLocaleString() + " px" +
         (equal ? " — equal" : " — they differ"),
         equal);
@@ -400,9 +501,10 @@
         });
       }
       await draw(imageUrl, answer);
-      const count = (answer.objects || []).length;
-      say(state, count + (count === 1 ? " object" : " objects") + ", at " +
-        (answer.resolution_used || "an undeclared resolution") + " px", true);
+      // What came back is in the figure's own caption, beside the picture it describes, and the
+      // resolution was said once beside the model: this line is for what is still happening, so it
+      // goes back to empty now that nothing is.
+      say(state, "");
     } catch (error) {
       say(state, error.message, false);
     } finally {
@@ -419,6 +521,17 @@
   });
   $("row").addEventListener("change", preview);
   dataset.addEventListener("change", preview);
+
+  // The command follows the controls, so a reader can set the call up on the page and then take it
+  // away to a shell. Every control that decides what is sent refreshes it — and the parameters row is
+  // listened to as a whole, because how many controls it holds is the model's business and not this
+  // page's. The model is deliberately not in this list: the command waits for its declaration, so the
+  // parameters in it are the ones that model declares rather than the ones the last one did.
+  for (const id of ["source", "dataset", "row", "file"]) {
+    $(id).addEventListener("input", refreshRequest);
+    $(id).addEventListener("change", refreshRequest);
+  }
+  parameters.addEventListener("input", refreshRequest);
 
   // A key this browser already holds — entered on the reference page, or here on an earlier visit —
   // is used without being typed again: one key, one place, and both pages start on the same one.

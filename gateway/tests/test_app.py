@@ -419,8 +419,84 @@ def test_the_model_page_maps_the_mask_into_canvas_order(client: TestClient) -> N
     page = client.get(PLAY_PATH).text
 
     assert "((index % height) * width + Math.floor(index / height)) * 4" in page
-    # And the scroll is in the pixels the canvas is drawn at, not the image's own.
-    assert "clientHeight / image.naturalHeight" in page
+    # And the box is placed in the image's own fractions, so it stays on its object at any size the
+    # pane gives the image. Nothing maps a scroll any more: the pane shows the whole photograph.
+    assert "(x / image.naturalWidth) * 100" in page
+    assert "scrollTop" not in page and "overflow-y: auto" not in page
+
+
+def test_the_model_page_labels_each_box_with_its_score(client: TestClient) -> None:
+    """The score is text over the raster, to two decimals, and never pixels inside it.
+
+    The pane draws a photograph at whatever size fits in it — a 592×2509 row is a narrow strip — so
+    a score painted into the bitmap would be a smudge there and a billboard on a wide crop. As an
+    element it is the same size in both, and it is text a reader can select. Two decimals, because
+    that is what a model's score is worth reading to.
+    """
+    page = client.get(PLAY_PATH).text
+
+    assert "object.score.toFixed(2)" in page
+    assert 'className = "mark"' in page
+    # The box is a border on that element rather than a stroke in the bitmap.
+    assert "strokeRect" not in page
+
+
+def test_the_model_page_shows_the_same_call_as_a_command(client: TestClient) -> None:
+    """What the controls send can be taken to a shell, and the key cannot be: it stays `$KEY`.
+
+    The command is built from the controls rather than written down, so there is no second
+    description
+    of the surface to keep true; its origin is the page's own, which is the API's; and the one thing
+    it must not carry is the key — a screenshot of this page, or a command line pasted into a chat,
+    would otherwise carry a team's token.
+    """
+    page = client.get(PLAY_PATH).text
+
+    assert "X-API-Key: $KEY" in page
+    assert "location.origin + " in page
+    assert "file=@" in page and "photo.jpg" in page
+    # The command follows the controls, however many the model declares.
+    assert 'parameters.addEventListener("input", refreshRequest)' in page
+
+
+def test_the_model_page_orders_the_model_before_the_image_it_runs_on(client: TestClient) -> None:
+    """A model, then the knobs it declares, then the image, and Run at the end of that last row.
+
+    The parameters used to sit below the button that runs the model, on the far side of the image
+    row, which read as a form with a stray line in it. Run belongs at the end of the last row — the
+    reader sets everything to the left of it and presses it once.
+    """
+    page = client.get(PLAY_PATH).text
+
+    assert page.index('id="model"') < page.index('id="parameters"') < page.index('id="run"')
+    assert ">Parameters<" in page
+
+
+def test_a_bounded_parameter_shows_the_number_it_is_set_to(client: TestClient) -> None:
+    """A slider a reader cannot read is a slider they cannot set deliberately.
+
+    The declaration carries the bounds and the default but no step, so the page picks one and shows
+    the value with as many decimals as that step has places — `0.5` reads as `0.50` — and it names
+    no parameter to do it.
+    """
+    page = client.get(PLAY_PATH).text
+
+    assert 'createElement("output")' in page
+    assert "toFixed(decimals)" in page
+    assert 'input.type === "range"' in page
+
+
+def test_the_model_page_says_what_came_back_once(client: TestClient) -> None:
+    """The count and the Σ check are one line in the figure's caption, and that is the only one.
+
+    It used to be two: a count beside the Run button, with the resolution repeated from the model
+    row. The reader needs one place to look after pressing Run, and it is the caption of the
+    picture the answer is drawn on.
+    """
+    page = client.get(PLAY_PATH).text
+
+    assert 'tally + " · Σ decoded mask = "' in page
+    assert 'say(state, "")' in page  # nothing is left beside the button once the run has answered
 
 
 def test_the_reference_and_the_model_page_share_one_reporter(client: TestClient) -> None:
