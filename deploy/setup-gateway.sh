@@ -126,9 +126,14 @@ fi
 # User= names the owner of the checkout, because that is who owns the virtualenv the unit starts, and
 # EnvironmentFile= follows their home. The committed unit carries this host's usual values so a
 # hand-install works, and both lines are rewritten here so a rebuilt host needs no edit.
+# `InaccessiblePaths=` takes a literal path rather than `%h`: that specifier is the home of the user
+# running the *manager* (root here) and systemd documents it as unaffected by `User=`, so a `%h/…`
+# names a directory that never exists and the unit fails at mount namespacing with 226/NAMESPACE.
+# Rewriting the line keeps the exclusion pointing at this host's state directory.
 UNIT_TMP="$(mktemp)"
 sed -e "s|^User=.*|User=$TARGET_USER|" \
   -e "s|^EnvironmentFile=.*|EnvironmentFile=$STATE_DIR/env|" \
+  -e "s|^InaccessiblePaths=.*|InaccessiblePaths=$STATE_DIR/publish|" \
   "$REPO_DIR/deploy/systemd/biohack-gateway.service" > "$UNIT_TMP"
 install -m 0644 "$UNIT_TMP" /etc/systemd/system/biohack-gateway.service
 rm -f "$UNIT_TMP"

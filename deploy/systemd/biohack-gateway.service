@@ -13,8 +13,8 @@
 # it (.agents/rules/deploy.md). `EnvironmentFile=` gets no `-` prefix, so a missing state file is a
 # startup failure rather than
 # a service that runs with defaults. deploy/setup-gateway.sh created `env` before installing this
-# unit, and rewrites both the User= and the EnvironmentFile= line below to the host it runs on, so a
-# rebuilt host with a different login needs no edit.
+# unit, and rewrites the User=, EnvironmentFile=, and InaccessiblePaths= lines below to the host it
+# runs on, so a rebuilt host with a different login needs no edit.
 
 [Unit]
 Description=Global Wheat API gateway
@@ -29,7 +29,12 @@ EnvironmentFile=/home/admin/.config/biohack-gateway/env
 # this makes the whole directory genuinely unreadable by the service rather than merely absent from
 # its environment. Excluding the directory, not the files, is what keeps a file added there later
 # from being readable by accident (.agents/rules/deploy.md).
-InaccessiblePaths=%h/.config/biohack-gateway/publish
+#
+# The path is literal rather than `%h/…`. `%h` is the home of the user running the *manager* — `/root`
+# under the system manager — and systemd documents it as unaffected by `User=`, so a `%h` here names a
+# directory that never exists, and `systemd` fails the unit at mount namespacing with 226/NAMESPACE
+# the first time it is started from this file.
+InaccessiblePaths=/home/admin/.config/biohack-gateway/publish
 ExecStart=/opt/gwhs-biohackathon-api-gateway/gateway/.venv/bin/uvicorn biohack_gateway.app:app --host 127.0.0.1 --port 8000
 Restart=on-failure
 RestartSec=2
