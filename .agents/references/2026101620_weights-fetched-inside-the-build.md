@@ -79,8 +79,21 @@ Two things this cost:
   happens to be in. The prefix is what makes "unzip and build" a sentence with no conditions.
 - **A relative `-o` with `git -C` writes into the wrong repository.** `git -C models archive -o
   prefixed.zip` put a 2 MB zip inside the submodule's working tree during this session (removed). Every
-  documented form therefore writes to `~/`, and the archive is kept out of both checkouts because it
-  contains the store's id — the same class of file as the `Dockerfile` itself now.
+  documented form therefore names a directory explicitly, and that directory is `build/` — see below.
+
+**Where the archives live, and why the directory exists.** `models/build/`, gitignored. That trap is
+what produced it: a package written wherever the shell happens to be ends up in the wrong repository or
+in someone's home, and a dedicated ignored directory is where "pack it" has exactly one answer — the
+next step after packing is `scp`, and it should not need a decision.
+
+    git archive --format=zip --prefix=sam31_official/ \
+        -o build/sam31_official-$(git rev-parse --short HEAD).zip HEAD:sam31_official
+
+It holds the **current** archive of each model folder, named `<folder>-<sha8>.zip`, and is regenerated
+rather than accumulated: a bare name that gets overwritten leaves two hosts looking identical when
+their code is not, which is why the commit id stays in the filename. The archive carries the store's
+id, so it stays inside the private submodule — which is also the first place a deployment looks for it,
+and the reason this is not a folder in someone's home.
 
 `weights/` is now in `.dockerignore`, so the build context stays a few megabytes even on a machine that
 does have a local checkpoint staged.
