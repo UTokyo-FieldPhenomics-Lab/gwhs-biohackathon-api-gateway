@@ -1,0 +1,221 @@
+# The GPU compute plane: the pool, the protocol, and what a container must declare
+
+Status: **planned, nothing implemented** (2026-10-16). The rule changes this plan owes are listed
+under [Rule changes owed at implementation](#rule-changes-owed-at-implementation) and are
+deliberately **not** written into `.agents/rules/` yet — each lands in the pull request that
+implements the thing needing it, per the process in [`../rules/project.md`](../rules/project.md).
+
+## Goal and acceptance
+
+Route inference work from the gateway to GPU backends that are never publicly reachable, over one
+protocol that is blind to who provides the hardware, so that a participant gets a segmentation
+result for one image with one key-authenticated call and never learns where it ran.
+
+Acceptance:
+
+- A new backend is added, replaced, or removed by **configuration alone** — no gateway code change
+  and no special-casing of a provider, a model, or a machine.
+- A backend that dies costs **one timeout**, and the request still succeeds on the next one.
+- A backend that cannot fit its model **refuses to start with a message naming the numbers**,
+  rather than OOMing on the first inference.
+- Every model has at least **two independent fault domains** behind it, or the plan records why not.
+
+## Measured facts this plan rests on
+
+Numbers this plan is built from, with where each came from. The first task exists because two of
+them are still other people's measurements.
+
+- **SAM 3 is 848M parameters and a 3.45 GB checkpoint** (Meta; Ultralytics lists 3450 MB).
+  **SAM 3.1** (2026-03-27) is a drop-in checkpoint whose addition, Object Multiplex, targets
+  multi-object video; **the image detector and the interactive point-prompt head are unchanged**, so
+  the image path's memory is SAM 3's.
+- **Single image at 1024px in FP16 is ~10–12 GB total** — 8–10 GB for the image encoder, plus the
+  prompt encoder and mask decoder (third-party deployment guide). The same source gives batch 8 →
+  22 GB, batch 32 → 40+ GB, video → 28 GB+; another puts SAM 3 as fitting "comfortably on 16 GB
+  GPUs". **Third-party, and to be replaced by our own measurement** — see Task 1.
+- **Cards on hand: 5090 = 32 GB, 4090 = 24 GB, 3090 = 24 GB.** One 5090 in the lab, a second
+  borrowable.
+- **Campus ↔ Frankfurt over the tailnet measured 234–259 ms direct**, not relayed
+  ([`../references/2026101514_tailnet-topology-and-lab-reachability.md`](../references/2026101514_tailnet-topology-and-lab-reachability.md)).
+  That is the Tokyo→Frankfurt floor, and it is why the protocol stays one round trip per inference.
+- **Rental, on demand, quoted per hour and multiplied by a 120-hour window:** 24 GB ≈ $0.80/h →
+  **$96**; 48 GB ≈ $1.80/h → **$216**; 80 GB ≈ $2.50/h → **$300**; 100 GB-class ≈ $4.50/h →
+  **$540**. Watch these as magnitudes, not prices.
+- **AWS GPU instance families start at zero quota on a new account** and need a service quota
+  increase before a single instance launches. This is a calendar risk, not a technical one.
+- **ZeroGPU is not an H200 and not per-participant.** It is an RTX Pro 6000 Blackwell, half (48 GB)
+  or full (96 GB); it is **Gradio SDK only**; quota is **per account per day** — 2 minutes
+  unauthenticated, 5 free, 40 PRO/Team, 60 Enterprise — resetting 24 hours after first use, and
+  $1 per 10 minutes beyond it.
+
+## Decisions
+
+1. **The protocol never learns what the hardware is.** `gateway.md` already states it: a backend is
+   any Docker-capable GPU resource behind one uniform protocol, and the gateway never special-cases
+   a provider. Three transports satisfy the "never publicly reachable" invariant and are invisible
+   above them: a security group reference when the backend shares the gateway's VPC, the tailnet
+   when it does not, and a provider tunnel. A managed serverless endpoint satisfies none of them and
+   is therefore not a candidate.
+2. **Interchangeability is per model, not global.** A 24 GB card and a 32 GB card cannot carry the
+   same set of models, so "try backends in order" applies *within* one model's list.
+3. **Capability is derived, not tabulated.** Configuration holds the **set of backends** — the one
+   fact that cannot be derived from anything — and each backend declares which models it serves.
+   The routing table is the join. A hand-maintained machine→model table would be a second source of
+   truth and would drift.
+4. **The redundancy target is two independent fault domains per model**, never three replicas. Fault
+   domains differ by network, power, and administrator; three machines in one laboratory share all
+   three, so their failures are correlated and the second and third add almost nothing.
+5. **What is scarce is concurrency, not fit.** One sam3.1 inference is ~12 GB, so a 24 GB card is
+   filled by one request, not by the model. Every card added is a concurrency slot, which is the
+   pool's first and least arguable justification.
+6. **Inputs are an address or an upload, never a client URL.** The default and scaling path is
+   `(dataset, row)`, resolved by lookup and handed to the backend as the public `data.*` URL.
+   Uploads are kept because a participant may need to send a photograph taken on site. A
+   client-supplied URL stays forbidden: parsing it is what stops the gateway becoming a proxy into
+   the private network.
+7. **Resolution is a property of the model, and coordinates come back in the participant's frame.**
+   The container resizes to its own fixed input before inference. This makes the memory peak a
+   constant whatever arrives, and — more importantly — it means the boxes and RLE are returned in
+   the coordinate frame of the image the participant actually sent, so a non-square image is never
+   silently stretched under the boxes they draw.
+8. **One config declares the resolution and the memory, because they determine each other.**
+   `input_resolution`, `resident_gb` (weights and framework, once per card), and `per_request_gb`
+   (the marginal peak of one inference). Admission is `free >= resident + per_request`; concurrency
+   is `1 + floor((free - resident - per_request) / per_request)`.
+9. **Admission is checked when a container is placed, and the gate guarantees it at run time.**
+   The deploy script is the only place that can *place* — if one card cannot take the container,
+   another may — so it decides, and the container's entrypoint repeats the check as a fallback for
+   a manual `docker run`. Neither substitutes for the other: a container admitted now can still be
+   crowded out by one started later, and only the concurrency gate covers that.
+10. **The concurrency a backend can sustain is reported, not guessed.** A backend declares
+    `{model, max_in_flight}` when it starts, so the per-model gate is arithmetic on a measured
+    number.
+11. **A rented instance is a concurrency and independence decision, not a fit decision.** After the
+    correction in Decision 8's measurements, sam3.1 fits on every card on hand; what the lab cannot
+    supply is a second *independent* domain, and what a demo with several teams calling at once
+    cannot supply is enough simultaneous slots.
+12. **ZeroGPU is a participant-owned path, not pool capacity** — the pool's contract is a
+    persistent, privately reachable endpoint whose latency is bounded by its own timeout, and a
+    per-call shared queue behind a public hostname is none of those. It stays a legitimate thing for
+    a team to do itself, which matches the position that the official API is the main path and
+    self-deployment is not blocked.
+
+## The protocol
+
+```
+POST /infer            application/json      {model, input: {dataset, row}, params?}
+POST /infer/upload     multipart/form-data   (model, imgsz?, file)
+```
+
+Both routes share one response schema, one error contract, and therefore one decoder — which is what
+`gateway.md` already requires across the two surfaces. They are two routes rather than one
+content-type branch so each handler has one job.
+
+```
+200 {model, objects: [{bbox, category?, score?, rle?}], resolution_used?}
+```
+
+- **Authentication is per backend**: the gateway presents `X-Backend-Token`. A participant's key
+  never reaches a backend, and a backend knows nothing about the token pool.
+- **Error mapping is what makes the retry rule executable** — `gateway.md` says a failed backend is
+  marked unhealthy for 30 seconds but does not define *failed*:
+
+  | Backend answer | Gateway |
+  |---|---|
+  | `4xx` | the request's fault — no retry, answered through the gateway's own error contract |
+  | `5xx`, timeout, connection failure | the backend's fault — mark unhealthy for 30 s, try the next |
+
+- **The timeout replaces a health loop.** `gateway.md` forbids polling, so a request is how the
+  gateway learns a backend is gone; the timeout is the only knob that decides what that costs. Its
+  value is deliberately left open below.
+- **A backend's `/health` is for a human and the deploy script, never the gateway.**
+- **Normalisation happens in the container**, so the gateway adds nothing to the geometry and keeps
+  zero ML dependencies.
+- **One round trip per inference.** No streaming and no multi-step handshake: the campus backends
+  sit 250 ms away, and a second round trip doubles a cost that is already the reason to prefer a
+  nearer backend.
+
+## Backend configuration and admission
+
+Declared once, in the model's own directory, and published twice — as the container's config and as
+an image label, so a host can read it with `docker image inspect` without starting anything:
+
+```jsonc
+{ "model": "sam3.1",
+  "input_resolution": 1024,
+  "vram": { "resident_gb": 4.0, "per_request_gb": 8.5 } }
+```
+
+```dockerfile
+LABEL io.biohack.vram.resident_gb="4.0" io.biohack.vram.per_request_gb="8.5"
+```
+
+A test asserts the label and the file agree, so the pair cannot drift.
+
+The deploy script, in order:
+
+1. Read the declaration from the image.
+2. Query every card — `nvidia-smi --query-gpu=index,memory.free --format=csv`.
+3. **Place** the container on a card that can take it; prefer the one left with the most room.
+4. If no card can, print what it needs and what is free, and continue — a skipped model is not a
+   failed deploy, and the script stays idempotent.
+5. Never `restart: always` on such a container, or a refused start becomes a restart loop.
+
+`memory.free` understates what the driver could eventually reclaim, because a running container's
+allocator holds what it has cached. For an admission check, being conservative is the correct
+direction.
+
+## Rule changes owed at implementation
+
+Each is written in the pull request that implements the thing that needs it, with the reason:
+
+- **`project.md`, the byte invariant — widen it to the read path.** It currently says bytes never
+  traverse the gateway, on the stated grounds that inlining them voids the CDN and the cost model.
+  An upload is a single write from a single client and voids no CDN read, so the invariant becomes:
+  read path addressed and never served; one exception, an upload, capped in size, never persisted,
+  and never a dataset object. The `client-supplied URL is parsed, never fetched` invariant beside it
+  does **not** move.
+- **`project.md`, the concurrency gate — add the per-model dimension.** It currently names a global
+  and a per-key gate. A 24 GB card taking one sam3.1 and several yolo means the gate has to be
+  per model as well, and the rule says to change it in the same pull request and explain why.
+- **`gateway.md`, the model surface** — the shape of `/infer` and its error mapping, once written.
+
+## Resource options
+
+| Option | 120 h, magnitude | What it buys |
+|---|---|---|
+| Pure on-prem | $0 | Everything for yolo and SPROUT; sam3.1 replicas that share one fault domain |
+| 24 GB rented | ~$96 | One sam3.1 slot in an independent domain |
+| 48 GB rented | ~$216 | Two or three sam3.1 slots, all models resident at once |
+| 80 GB rented | ~$300 | Comfortable headroom on both axes |
+
+Sizing order: **measure (Task 1) → decide the concurrency the demo needs → pick the card.** Renting
+a card so a model fits is no longer a reason; the measurements above put sam3.1 on every card in the
+lab.
+
+## Tasks, in order
+
+1. **Measure each model** at its own container resolution, FP16, inference mode, on the real
+   fine-tuned weights: `resident_gb`, and the peak at concurrency 1, 2, and 4. `per_request_gb` is
+   not a constant — batching amortises the encoder and concurrent streams do not — so the largest
+   concurrency that fits is read off the ladder, not divided. Output: the three configs.
+2. **Define the protocol types** — the Pydantic models shared by the gateway and the container, and
+   the container's server implementing `/infer` and `/infer/upload` with the geometry contract the
+   public docs already describe.
+3. **Bring up one real backend** over its private link and prove the link end to end with the
+   cheapest model. `labpc-tailnet` is the cheapest rehearsal host that exists; a rented 24 GB instance
+   is the cheapest rehearsal of the rented path.
+4. **Demonstrate failover** by stopping that backend mid-run, which is also what calibrates the
+   timeout.
+5. **Then** decide the rental, and ask ETH for what it can commit.
+
+## What is open
+
+| # | Item | Decides |
+|---|---|---|
+| 1 | The timeout value, and the global gate's size | What a dead backend costs a participant |
+| 2 | Whether the gate gains the per-model dimension, and how it is expressed | Rule change above |
+| 3 | 24 vs 48 vs 80 GB rented, and whether it is rented at all | Task 1's measurements plus the demo's concurrency |
+| 4 | The ETH request: how many hosts, what memory, over which link, with whom as contact | The meeting |
+| 5 | The AWS GPU service quota increase | Nothing, but it must start now |
+| 6 | Whether the second borrowed 5090 arrives, and where it stands | sam3.1's second on-prem replica |
