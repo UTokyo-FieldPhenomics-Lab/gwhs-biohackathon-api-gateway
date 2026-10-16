@@ -19,6 +19,7 @@ by either of the two above, so it stays readable while the host is stopped.
 | Certificate | ACM in **`us-east-1`**, because CloudFront requires it there whatever the origin's region is |
 | Domains | `api.global-wheat.com` → the host's Elastic IP, TLS terminated on the host by Caddy (§1.5); `data.global-wheat.com` → the distribution; `docs.global-wheat.com` → GitHub Pages (§6), which is not ours to run |
 | Docs site | static, on GitHub Pages, published from an Actions artifact (§6) — no host, no bucket, and no certificate we manage |
+| GPU backends | the compute plane's machines, which nothing here creates: the inventory, the fault domains the routers define, and the list format the gateway is configured from are in [`backends.md`](backends.md) |
 | Region and zone | the region is environment configuration and the host and bucket share one (`eu-central-1`); no zone is pinned, so a replacement instance may land in any of them |
 
 Three facts behind that table, each measured rather than assumed:
@@ -115,12 +116,24 @@ rule. Then two things in the Tailscale admin console → Machines:
 
 1. **Disable key expiry.** Expiry runs on the clock, not on activity, so a host stopped between events
    would otherwise drop off the tailnet exactly when it is needed.
-2. **Tag the node and narrow the access policy.** The tailnet carries other owners' devices, and the
-   gateway's internal surface inherits that audience — its token has to be a second lock.
+2. **Leave the access policy as it is, knowingly.** The tailnet carries other owners' devices under a
+   single policy of everything-reaches-everything, so the gateway's internal surface inherits that
+   audience. The fix would be one ACL file — and it is one file for the *whole* tailnet, so tightening
+   it rewrites four other owners' policy and can break access they rely on. For the event we accept
+   the exposure and let the per-service token be the only lock, which leaves a tailnet peer able to
+   reach an inference port and bypass the gateway's concurrency gate, while exposing no key material.
+   The invariant this deviates from is in [`../.agents/rules/project.md`](../.agents/rules/project.md);
+   the reasoning, and the trigger to revisit, are in
+   [`../.agents/plans/2026101609_gpu-compute-plane.md`](../.agents/plans/2026101609_gpu-compute-plane.md).
 
 If a room then cannot reach the host, the two checks and the cause are in
 [`.agents/references/2026101513_host-unreachable-from-the-utokyo-network.md`](../.agents/references/2026101513_host-unreachable-from-the-utokyo-network.md);
 the constraint behind them is in [`../.agents/rules/deploy.md`](../.agents/rules/deploy.md).
+
+**A backend machine needs no client of its own.** The node in that console per location is a router
+advertising its own `/24`, so the machines behind it are reached by their own private addresses with
+nothing installed on them — [`backends.md`](backends.md) holds that inventory, the fault domains the
+routers define, and the list the gateway is configured from.
 
 ## 1.4 Bind the API domain
 
