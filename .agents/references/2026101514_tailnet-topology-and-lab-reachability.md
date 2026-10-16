@@ -66,7 +66,7 @@ default policy of "everything reaches everything" is in force today.
   people's devices, and today nothing separates them; the per-backend token is the second lock, not the
   first. **`deploy/README.md` §1.3 now records the event's decision to deviate from this** — one ACL
   file rewrites four other owners' policy — so the invariant stands and the exception is written down.
-  The inventory and the per-OS bring-up recipes are in [`../../deploy/backends.md`](../../deploy/backends.md).
+  The inventory and the per-OS bring-up recipes are in [`../../deploy/gpu-backends.md`](../../deploy/gpu-backends.md).
 - Latency to campus over this overlay measures 234–259 ms direct, which is the physical Tokyo→Frankfurt
   floor, so routing through the relay costs little latency but a shared relay costs throughput and
   jitter — relevant for image payloads. Whether a given lab machine punches through directly is one

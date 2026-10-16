@@ -162,6 +162,73 @@ This is the part that fails during an event and looks like a network fault.
 - Verify by actually rebooting the machine and watching the container come back. It is the only test
   that finds a broken auto-sign-in, and it is cheap now.
 
+## Reaching a machine to look at it
+
+**Only the gateway host can reach a backend's address.** It is the one machine that accepts the
+tailnet's subnet routes, so every administrative connection goes through it as a jump host. A
+workstation on the laboratory LAN routes `192.168.253.91` to its own default gateway and gets nowhere —
+a backend is unreachable "from the lab" even while it is sitting in it.
+
+    Host gwhs-host
+      HostName 100.88.197.115
+      User admin
+      IdentityFile ~/.ssh/gwhs-demo.pem
+
+    Host gwhs-5090
+      HostName 192.168.253.91
+      User <windows account>
+      IdentityFile ~/.ssh/gwhs-5090
+      ProxyJump gwhs-host
+
+On **Manjaro**, `sshd` is normally installed and only needs enabling: `systemctl enable --now sshd`.
+**Windows ships no SSH server at all**, so it needs one before any of the above means anything.
+
+### Windows 11: an administrative shell
+
+```powershell
+Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+Start-Service sshd
+Set-Service -Name sshd -StartupType Automatic
+New-NetFirewallRule -Name sshd -DisplayName "OpenSSH Server" -Enabled True -Direction Inbound `
+  -Protocol TCP -Action Allow -LocalPort 22 -RemoteAddress 192.168.253.0/24,100.64.0.0/10
+```
+
+`-RemoteAddress` is the **source**. `100.64.0.0/10` is the tailnet itself and is what lets the gateway
+host connect; the local `/24` covers the case where the router NATs the source rather than preserving
+it. **Never widen it to `Any`** — that is the public internet, and it is the whole difference between
+"the tailnet can reach it" and "anyone can".
+
+Then the key — and the three ways one mistake presents itself as the same symptom:
+
+```powershell
+$key = 'ssh-ed25519 AAAA… gwhs-5090 backend'
+$p = "$env:ProgramData\ssh\administrators_authorized_keys"      # NOT %USERPROFILE%\.ssh
+Set-Content -Path $p -Value $key -Encoding ascii                # ascii: no BOM
+icacls $p /inheritance:r /grant "Administrators:F" /grant "SYSTEM:F"
+Restart-Service sshd
+```
+
+- **An administrator's key goes in the program-data file, not the profile.** The stock `sshd_config`
+  ends in a `Match Group administrators` block that redirects that group to
+  `__PROGRAMDATA__/ssh/administrators_authorized_keys`, so a key written into the profile is ignored,
+  with no message.
+- **`icacls` is not decoration.** A file that non-administrators can write is refused, silently: the
+  symptom is a password prompt with the correct key in the correct file.
+- **A BOM breaks the line.** `Set-Content -Encoding ascii`, not `Out-File`, and not `Add-Content` onto a
+  file that is already UTF-16. The first byte should be `115`, the `s` of `ssh-ed25519`.
+
+To tell a client problem from a server one: `ssh -v` prints `Offering public key: …`, and
+`Get-WinEvent -LogName 'OpenSSH/Operational' -MaxEvents 10` names the file sshd consulted and why it did
+not use it. **That machine is not up yet** (2026-10-16: the client offers the key and the server refuses
+it), so one of the three faults above is live there.
+
+**Password authentication stays enabled on purpose.** The machine is on an overlay whose reachability
+the event already accepts, and a colleague who wants a shell should not have to exchange keys first.
+What that accepts is that the account password is now one way into a machine that will also hold a
+`ghcr.io` read token — so it should be one of its own rather than the password the account is normally
+signed in with. One trap: if the account signs in with a **PIN**, SSH still asks for the account's
+*password*, and a wrong guess there looks exactly like a wrong password.
+
 ## Adding a machine
 
 1. Put it on one of the LANs above, and follow the recipe for its OS.
