@@ -63,6 +63,7 @@ html[data-scheme="dark"] #play {
 }
 #play input,
 #play select {
+  box-sizing: border-box;
   font: inherit;
   color: var(--ink);
   background: var(--surface);
@@ -88,6 +89,26 @@ html[data-scheme="dark"] #play {
 }
 #play select {
   flex: 0 1 20rem;
+}
+/* The controls under the image dropdown, which come and go with it. `display` has to be stated for
+   the hidden state too: a rule that makes this a flex row would otherwise override `[hidden]`, and
+   the controls for the choice not taken would stay on the page looking available. The pair itself
+   never wraps — the row around it does, as one unit — so the dataset and the row number stay on one
+   line and stay lined up with the dropdown that chose them. */
+#play #row-choice {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+#play #row-choice[hidden] {
+  display: none;
+}
+#play #row-choice #dataset {
+  flex: 0 1 18rem;
+}
+#play #row-choice input[type="number"] {
+  flex: 0 0 5rem;
 }
 #play button {
   font: inherit;
