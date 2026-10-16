@@ -168,25 +168,35 @@ container's own log (`INFO: <address>:<port> - "GET /health HTTP/1.1" 200 OK`). 
 with `sshd`; on Windows it does not, because Docker Desktop's port proxy is a hop of its own — the hop
 no router setting can remove.
 
-The gateway tries a model's backends in order, marks a failed one unhealthy for 30 seconds, and moves
-on. A model's list is the **only** place its backends appear. What the model *is* — its resolution,
-its control parameters, how many requests it can hold in flight — is declared by the backend itself
-at its `/health`, which the gateway reads once at startup and repeats in `GET /models`. Capability is
-therefore derived from the machine rather than written down here a second time.
+The gateway tries a model's backends in order, preferring one with nothing in flight, marks a failed
+one unhealthy for a window that outlives the failure it remembers, and moves on. A model's list is the
+**only** place its backends appear. What the model *is* — its resolution, its control parameters, how
+many requests it can hold in flight — is declared by the backend itself at its `/health`, which the
+gateway reads once at startup and repeats in `GET /models`. Capability is therefore derived from the
+machine rather than written down here a second time.
 
-**Measured 2026-10-16, and the two numbers disagree: the unhealthy window is shorter than the failure
-it is meant to cover.** With the list as `[5090, labpc]` and the 5090's container stopped, a request
-answered in **61.2 s** — the gateway waited the full `PREDICT_TIMEOUT_SECONDS` (60) before trying the
-second backend, then labpc answered the same request correctly in the remainder — and the journal
-said `backend http://192.168.253.91:8000 failed a sam3.1-meta: unreachable`. The backend is then passed
-over for `UNHEALTHY_SECONDS` (30), so the next request that arrives after that window expires pays the
-same 60 s again: **a dead first backend costs a full minute once per 30-second window, and every
-request that arrives during that minute waits behind it.**
-On Linux a stopped container usually refuses the connection immediately, which hides this; on Windows
-Docker Desktop's port proxy keeps the port bound and the connection simply hangs, so the timeout is
-the whole cost. The fix is a relationship rather than a value — the window should be at least as long
-as the failure it remembers — and which of the two constants moves is
-[`gateway.md`](../.agents/rules/gateway.md)'s call, since it fixes the 30.
+**One budget per attempt, and a window that outlives it — measured, wrong, and then fixed.** With the
+list as `[5090, labpc]` and the 5090's container stopped, a request first answered in **61.2 s**: the
+gateway waited a whole request timeout (then 60) before trying the second backend, labpc then answered
+the same request correctly in the remainder, and the journal said `backend http://192.168.253.91:8000
+failed a sam3.1-meta: unreachable`. The failed backend was then passed over for 30 s — **shorter than
+the failure it remembered** — so the request arriving after that window paid the same minute again, and
+every request arriving during it queued behind.
+
+Fixed the same day in [`../gateway/src/biohack_gateway/models.py`](../gateway/src/biohack_gateway/models.py),
+as a relationship rather than a number: one response budget per attempt (`RESPONSE_TIMEOUT_SECONDS`,
+10 s — an order of magnitude over the 0.3 s a backend needs for an 18-megapixel frame), a window that
+`models.py` asserts is at least that long, the connect phase bounded on its own (3 s), and routing that
+prefers a backend with nothing in flight so a burst spreads rather than queues. `gateway.md` carries
+the invariant; the constants carry the measurements.
+
+Re-measured with the same four-request burst and the 5090 stopped: **4.25 s for the one request that
+meets the dead backend**, and 1.4–1.7 s for the other three, with **exactly one** attempt against the
+dead backend in the journal — the other three never touched it. The 4.25 s decomposes as the 3-second
+connect bound plus labpc's 1.34 s, which is also the correction to what this file said earlier: a
+stopped container on that Windows host does **not** accept the connection, so the *connect* bound is
+what its death costs, and the response budget is a ceiling for a backend that accepts and then goes
+quiet. A machine that is switched off drops the SYN and costs the same 3 s.
 
 **A backend that was loading when the gateway started is not lost.** The gateway asks an undeclared
 backend again — every 3 seconds while it answers "still loading", every 30 while it does not answer at

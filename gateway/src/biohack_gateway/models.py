@@ -77,12 +77,13 @@ up the process.
 CONNECT_TIMEOUT_SECONDS = 3.0
 """How long one attempt may spend getting a socket to a backend.
 
-Separate from the response budget because the two failures are different facts. A machine
-that is off or rebooting drops the SYN and nothing answers, so only the clock ends the
-attempt, while a backend that is answering needs the whole budget for the work it is
-doing. Measured: a backend behind Docker Desktop's port proxy whose container is stopped
-*does* accept the connection and then never answers — the case this bound does not cover
-and the response budget does.
+Separate from the response budget because the two failures are different facts. A machine that
+is off or rebooting drops the SYN and nothing answers, so only the clock ends the attempt,
+while a backend that is answering needs the whole budget for the work it is doing. Measured
+2026-10-16: a *stopped* container on the laboratory 5090 does not accept the connection either
+— an attempt against it ended here, at 3 s, where the same attempt had run the full 60-second
+response budget before this bound existed. What the response budget covers instead is a
+backend that accepts and then goes quiet, which none of these machines does.
 """
 
 RESPONSE_TIMEOUT_SECONDS = 10.0
@@ -92,8 +93,9 @@ RESPONSE_TIMEOUT_SECONDS = 10.0
 5090 through this gateway: 0.9–1.0 s for a published row, and 0.3 s at the backend for an
 18-megapixel upload whose mask came back 2.1 megapixels wide — the encoder runs at a fixed
 1008 side, so the input's size barely moves the figure. Ten seconds is therefore an order
-of magnitude of headroom, and what it buys is the participant's worst case: this is what a
-dead backend costs the request that finds it, once per :data:`UNHEALTHY_SECONDS`.
+of magnitude of headroom, and it is the *ceiling* on what a dead backend costs: a backend
+that never accepts the connection costs :data:`CONNECT_TIMEOUT_SECONDS` instead, which is
+what every dead backend here has actually done.
 """
 
 assert UNHEALTHY_SECONDS >= RESPONSE_TIMEOUT_SECONDS, (
