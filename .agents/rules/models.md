@@ -34,14 +34,17 @@ normalisation belongs are [`gateway.md`](gateway.md)'s rules.
   outright, and a weight that reaches history is permanent: removing it rewrites the private
   repository and invalidates every pointer recorded here. The submodule's `.gitignore` blocks the
   usual extensions before the mistake is possible.
-- **The weight store is a Drive folder shared by link, and the link never appears in this
-  repository.** This repository is public, so the link is a credential. It belongs to the private
-  submodule alone, and the weights are downloaded onto the build host and copied into the image
-  rather than fetched by the image, so no image layer carries it either.
-- **A model's runtime identity is its container image digest.** Weights are pulled as "latest" by
-  decision and carry no recorded revision or checksum: the containers are frozen before the event,
-  and a participant addresses a model by its id. Nothing here computes or stores a weight hash, per
-  [`project.md`](project.md).
+- **The weight store is a Drive folder shared by link, and the link appears only in the private
+  submodule.** This repository is public, so the link is a credential. Inside the submodule a container
+  carries it as a `Dockerfile` `ARG` default and fetches its own checkpoint during the build, which
+  puts it in an image layer — taken deliberately, because the store is shared by link and revocable and
+  these images reach GPU backends and never a participant. An image that reaches a participant or a
+  published artifact is what would have to change first.
+- **Weights travel as a file the build fetches, identified by the id and the byte count it asserts.**
+  No revision and no content hash is recorded, per [`project.md`](project.md): the containers are frozen
+  before the event and a participant addresses a model by its id. For an image moved as an image, the
+  digest is that identity; for a build repeated on several hosts from one handed-over folder, it is the
+  submodule commit that folder came from, plus the id and the byte count its `Dockerfile` asserted.
 - **The submodule's own `AGENTS.md` points back here and repeats nothing.** Contributors work in that
   repository, so its entry point links this repository's `AGENTS.md` and `rules/`; a second copy of
   these constraints would be a second thing to keep true.
