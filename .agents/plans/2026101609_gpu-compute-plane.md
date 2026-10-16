@@ -206,8 +206,9 @@ Each is written in the pull request that implements the thing that needs it, wit
   material crosses the overlay — and the compensating control that costs nothing is already there,
   the container bound to `127.0.0.1` behind `tailscale serve`, which also keeps the port off the
   laboratory LAN. Revisit if a node from outside the project joins the tailnet, or if a backend
-  outlives the event window. `../rules/deploy.md` and `deploy/README.md` §1.3 currently prescribe the
-  tag, and both still say so.
+  outlives the event window. `deploy/README.md` §1.3 now records the deviation; `../rules/project.md`
+  states the invariant and is deliberately left to this implementation, and `../rules/deploy.md` never
+  stated it.
 
 ## Resource options
 
@@ -249,4 +250,4 @@ hand.
 | 4 | The ETH request: how many hosts, what memory, over which link, with whom as contact | The meeting |
 | 5 | The AWS GPU service quota — requested 2026-10-16 for `L-DB2E81BA` in `eu-central-1` | Nothing, but the region and the requested value still need confirming, and approval can take days |
 | 6 | Whether the second borrowed 5090 arrives | Concurrency, not redundancy: it lands inside the laboratory's existing fault domain |
-| 7 | `../rules/deploy.md` and `deploy/README.md` §1.3 still prescribe a tailnet tag and access policy | The deviation above has to be written where those two currently contradict it |
+| 7 | `../rules/project.md` still states the tag-and-access-policy invariant, which the event deviates from; `deploy/README.md` §1.3 records the deviation, and `../rules/deploy.md` never stated it — the plan listed that file in error | Amending the invariant lands with the implementation, per the note above |
