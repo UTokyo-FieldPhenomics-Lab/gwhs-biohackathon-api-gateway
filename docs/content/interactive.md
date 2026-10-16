@@ -1,5 +1,6 @@
 <div id="reference-frame">
   <iframe
+    data-api-frame
     src="https://api.global-wheat.com/docs"
     title="Global Wheat API — interactive reference"
     loading="lazy"
