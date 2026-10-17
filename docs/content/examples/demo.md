@@ -69,5 +69,5 @@ looking at the picture: sum the masks and compare with the `area` fields.
 
 The object count and the boxes are what an answer is really about. The pixel counts are **one machine's**
 — `computed_by` in this answer names `lab-3090` — and the same call on another card can differ by a
-pixel, by a percent of a mask's area, or by one object at the margin.
-[The model's page](../models/sam3.1-meta.md) is where the numbers behind that live.
+pixel, by a percent of a mask's area, or by one object at the margin. That field is what makes the two
+answers comparable rather than contradictory.

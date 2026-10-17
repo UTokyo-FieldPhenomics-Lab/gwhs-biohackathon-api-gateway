@@ -4,6 +4,10 @@ SAM 3.1 — text-prompted segmentation, [Meta's own code and checkpoint](https:/
 Send an image address (or a photograph) and a prompt; it answers with boxes, scores, and masks. The
 id says whose weights these are: `meta` is the upstream release, not a fine-tune.
 
+Expect a **conspicuous head in a close-up**, not a field count: on a 1024 px quadrat of small, dense
+heads it returns nothing, at any threshold. That is this checkpoint rather than the API, and a fine-tune
+served as an id of its own is where field counts would come from.
+
 ## Parameters
 
 Every parameter a model takes is **declared by that model**, repeated by `GET /models`, and forwarded
@@ -52,28 +56,8 @@ with `counts` truncated, because it is one long string:
   onto a 2509-pixel-tall photograph is upscaled about 2.5×, and its boundary is visibly coarse at full
   size.
 
-## What it does, measured
-
-Prompted with `wheat head`, on the published rows, at 1008:
-
-| image | result |
-|---|---|
-| `gwhs-temp` row 0 — 592×2509, one spike on dark ground | **1 object**, score 0.520, `area` 173,777, box 254×1461 — the whole head |
-| `gwhs-temp` row 1 | 1 object, score 0.715 |
-| `gwhs-temp` rows 2–3 | 0 objects |
-| `gwhd` row 0 — 1024×1024 field quadrat, **144 annotated heads** | **0 objects**, at every threshold from 0.5 down to 0.05 |
-| `gwfss` row 0 | 0 objects — and correct: that row's own palette holds no head pixels |
-| `gwfss` row 4 — 512×512, cut heads lying on straw | **18 objects** at `confidence_threshold` 0.25, `Σ mask` = `Σ area` = 109,419 px |
-
-Read together: at 1008 this model segments **a conspicuous head in a close-up** and finds **none of the
-small, dense heads in a field crop**. A head in `gwhd` is about 57 px across in a 1024 px image — near
-1:1 at 1008 — so the field case is probably not a resolution problem, and asking for a larger side may
-not change it.
-
-What it answers is a frame whose heads are separated and large: one spike filling a portrait frame, or
-cut heads on straw. What it does not answer is a field quadrat, whichever threshold you send.
-
 ## Try it
 
-[The live demo](../examples/demo.md) runs this model from this site with your key, and replays one
-recorded answer beside it. [The Jupyter quickstart](../examples/quickstart.md) calls it from Python in three lines.
+[The live demo](../examples/demo.md) runs this model from this site with your key, and shows one
+recorded answer as a figure you can check yours against. [The Jupyter
+quickstart](../examples/quickstart.md) calls it from Python in three lines.
