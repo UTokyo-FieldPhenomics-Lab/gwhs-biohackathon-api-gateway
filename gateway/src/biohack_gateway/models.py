@@ -309,8 +309,20 @@ class _BoundedHTTPConnection(http.client.HTTPConnection):
     """
 
     def connect(self) -> None:
-        """Open the socket under the connect budget, then restore the response budget."""
+        """Open the socket under the connect budget, then restore the response budget.
+
+        ``TCP_NODELAY`` is set here because this method replaces ``HTTPConnection.connect``, which
+        sets it, and a socket without it pays a delayed acknowledgement on the write that follows
+        another one — a request's headers and body go as two writes, so every call waited for the
+        peer's ACK before the body left. Measured on loopback 2026-10-17: 81 ms per call against
+        41 ms for a socket the standard library had configured, and on the 260 ms link to the
+        laboratory backends the same delay is bounded by the round trip instead of by 40 ms.
+        """
         self.sock = socket.create_connection((self.host, self.port), CONNECT_TIMEOUT_SECONDS)
+        try:
+            self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except OSError:  # an OS without it: the connect budget still matters more than the delay
+            logger.debug("TCP_NODELAY is not available on this platform")
         self.sock.settimeout(self.timeout)
 
 
@@ -321,6 +333,60 @@ _CONNECTIONS: dict[str, type[http.client.HTTPConnection]] = {
     "http": _BoundedHTTPConnection,
     "https": http.client.HTTPSConnection,
 }
+
+POOL_IDLE_PER_BACKEND = 4
+"""Idle connections kept per backend, which is the concurrency one machine is asked for anyway.
+
+More than a handful would sit unused: the pool is one backend per machine, each with a serial lane,
+and the gateway's own thread pool is what bounds simultaneous calls. Four is enough that a burst
+finds a warm socket without holding a descriptor open per thread.
+"""
+
+_IDLE: dict[tuple[str, str, int], list[http.client.HTTPConnection]] = {}
+_POOL_LOCK = threading.Lock()
+
+
+def _checkout(key: tuple[str, str, int]) -> http.client.HTTPConnection | None:
+    """Take an idle connection to one backend, if there is one.
+
+    Parameters
+    ----------
+    key : tuple of (str, str, int)
+        Scheme, host, and port — the identity of the machine a connection is to.
+
+    Returns
+    -------
+    http.client.HTTPConnection or None
+        A connection another request has finished with, or `None` when there is none to take. The
+        object is handed to exactly one caller, because a connection carries a response stream and
+        cannot be shared by two requests at once.
+    """
+    with _POOL_LOCK:
+        idle = _IDLE.get(key)
+        return idle.pop() if idle else None
+
+
+def _checkin(key: tuple[str, str, int], connection: http.client.HTTPConnection) -> None:
+    """Return a connection that answered completely and is still open.
+
+    Parameters
+    ----------
+    key : tuple of (str, str, int)
+        The backend it belongs to.
+    connection : http.client.HTTPConnection
+        The connection, whose response has been read to the end.
+
+    Notes
+    -----
+    The pool is capped rather than unbounded: an idle socket still costs a descriptor, and a burst
+    that opens forty at once should not leave forty of them open for the rest of the process.
+    """
+    with _POOL_LOCK:
+        idle = _IDLE.setdefault(key, [])
+        if len(idle) >= POOL_IDLE_PER_BACKEND:
+            connection.close()
+        else:
+            idle.append(connection)
 
 
 def http_transport(
@@ -355,6 +421,13 @@ def http_transport(
     own, which ``urllib`` has no seam for. And a redirect is deliberately **not** followed: the
     backend is ours and answers where it is asked, so a `3xx` is returned as the answer it is rather
     than turning this gateway into a client that fetches whatever a named backend points it at.
+
+    A connection that answered completely is kept for the next call to the same backend, because the
+    machines are hundreds of milliseconds away and a handshake per request was most of a call's
+    latency when a participant asked for one image at a time (measured 2026-10-17). A pooled
+    connection the peer has already closed is **retried once on a fresh one**: a keep-alive window
+    running out is not a failed backend, and without that retry pooling would turn a saving into the
+    first request after every quiet period failing.
     """
     parsed = urllib.parse.urlsplit(url)
     factory = _CONNECTIONS.get(parsed.scheme)
@@ -362,28 +435,51 @@ def http_transport(
         logger.warning("backend url is not an http(s) address: %s", url)
         return Reply(status=0, body=b"")
 
-    connection = factory(parsed.hostname, parsed.port, timeout=timeout)
+    key = (parsed.scheme, parsed.hostname, parsed.port or 0)
     target = parsed.path or "/"
     if parsed.query:
         target = f"{target}?{parsed.query}"
-    try:
-        connection.request(method, target, body=body, headers=dict(headers))
-        response = connection.getresponse()
+
+    for attempt in (0, 1):
+        connection = _checkout(key) if attempt == 0 else None
+        reused = connection is not None
+        if connection is None:
+            connection = factory(parsed.hostname, parsed.port, timeout=timeout)
+        connection.timeout = timeout
         try:
-            payload = response.read()
-        finally:
-            response.close()
+            connection.request(method, target, body=body, headers=dict(headers))
+            response = connection.getresponse()
+            try:
+                payload = response.read()
+            finally:
+                response.close()
+        except TimeoutError:
+            connection.close()
+            return Reply(status=0, body=b"", timed_out=True)
+        except ConnectionError as error:
+            # `RemoteDisconnected` is a `ConnectionResetError`, and a reset or a broken pipe here is
+            # the peer having closed a connection we were keeping. Retried once, never twice, and
+            # only when the connection came from the pool: one made for this attempt failing is a
+            # backend that is down, not a window that ran out.
+            connection.close()
+            if reused:
+                logger.info("a kept connection to %s had closed; asking again", parsed.hostname)
+                continue
+            logger.warning("backend unreachable: %s (%s)", url, error)
+            return Reply(status=0, body=b"")
+        except (OSError, http.client.HTTPException) as error:
+            # Connection refused, no route, DNS, a bad status line, a truncated answer — one outcome
+            # for all of them. `socket.timeout` is an OSError subclass on some platforms and a
+            # TimeoutError on others; the type is checked in that order by the clauses above.
+            connection.close()
+            logger.warning("backend unreachable: %s (%s)", url, error)
+            return Reply(status=0, body=b"")
+        if response.will_close:
+            connection.close()
+        else:
+            _checkin(key, connection)
         return Reply(status=response.status, body=payload)
-    except TimeoutError:
-        return Reply(status=0, body=b"", timed_out=True)
-    except (OSError, http.client.HTTPException) as error:
-        # Connection refused, no route, DNS, a bad status line, a truncated answer — one outcome
-        # for all of them. `socket.timeout` is an OSError subclass on some platforms and a
-        # TimeoutError on others; the type is checked in that order by the clauses above.
-        logger.warning("backend unreachable: %s (%s)", url, error)
-        return Reply(status=0, body=b"")
-    finally:
-        connection.close()
+    return Reply(status=0, body=b"")
 
 
 def load_models(path: Path) -> dict[str, list[str]]:
@@ -713,6 +809,36 @@ class ModelRegistry:
             # pass, so what a reader needs to know is when that pass happened.
             checked_seconds_ago=None if not checked else max(0, round(now - checked)),
         )
+
+    def pool_width(self) -> int:
+        """Report the widest a model's pool declares it can hold at once.
+
+        Returns
+        -------
+        int
+            The largest per-model sum of `max_in_flight` over the backends that are answering, at
+            least `1`. It is the number `GET /models` publishes, read as a capacity rather than as a
+            description, so the per-token cap that uses it cannot disagree with what a client is
+            told. One is the floor because a gateway with no backend live still authenticates and
+            must not refuse every request while it has nothing to route to — those requests answer
+            `503` from the model surface, which is the honest refusal.
+
+        Notes
+        -----
+        Taken under the same lock as routing, so a pool that is being re-probed cannot report a
+        width that never existed.
+        """
+        now = time.monotonic()
+        with self._lock:
+            widths = [
+                sum(
+                    backend.max_in_flight
+                    for backend in backends
+                    if backend.alive and not backend.is_passed_over(now)
+                )
+                for backends in self._backends.values()
+            ]
+        return max(widths, default=1) or 1
 
     def _begin(self, model: str) -> list[Backend]:
         """Order a model's live backends and reserve the one that will be tried first.
@@ -1163,6 +1289,10 @@ def create_model_router(
         response_model=ModelPrediction,
         response_model_exclude_unset=True,
         summary="Run one inference on your own image",
+        # The limit itself is enforced at the edge (deploy/Caddyfile): that is where the bytes
+        # arrive, and where a chunked upload can be counted honestly. This entry is what tells a
+        # reader of the reference that the limit exists at all.
+        responses={413: {"description": "Over the 15 MB limit: compress or convert to JPEG."}},
         description=(
             "The participant's own photograph, sent as multipart and forwarded to the backend as "
             "bytes. It is never stored: this is the one path that carries bytes through the "

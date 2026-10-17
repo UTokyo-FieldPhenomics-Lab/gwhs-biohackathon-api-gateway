@@ -29,6 +29,7 @@ from biohack_gateway.models import (
     UNHEALTHY_SECONDS,
     ModelRegistry,
     Reply,
+    _BoundedHTTPConnection,
     http_transport,
     watch_pool,
 )
@@ -42,6 +43,7 @@ BASE = "https://data.example"
 MODEL = "sam3.1-meta"
 FIRST = "http://192.0.2.10:8000"
 SECOND = "http://192.0.2.11:8000"
+THIRD = "http://192.0.2.12:8000"
 BACKEND_TOKEN = "backend-secret"
 
 WEIGHTS = ["prompt", "confidence_threshold"]
@@ -175,6 +177,7 @@ def build_client(
     backends: FakeBackends,
     models: Any = None,
     backend_token: str = BACKEND_TOKEN,
+    max_concurrent_per_token: int | None = None,
 ) -> Iterator[TestClient]:
     """Build a client whose model surface answers through the fake backends.
 
@@ -190,6 +193,9 @@ def build_client(
         The model-to-backend list to write. `None` writes the fixture's two backends.
     backend_token : str
         The token the gateway presents to backends.
+    max_concurrent_per_token : int or None
+        The per-token cap to build with. `None` follows the pool's width, and `0` disables it,
+        which is what a test of routing alone wants.
 
     Returns
     -------
@@ -210,6 +216,7 @@ def build_client(
         models_path=models_path,
         backend_token=backend_token,
         model_transport=backends,
+        max_concurrent_per_token=max_concurrent_per_token,
     )
     with TestClient(app, raise_server_exceptions=False) as client:
         yield client
@@ -821,7 +828,11 @@ def test_a_burst_of_requests_is_spread_over_both_backends(tmp_path: Path, index_
             return Reply(status=0, body=b"", timed_out=True)
         return Reply(status=200, body=json.dumps(PREDICTION).encode())
 
-    client = next(build_client(tmp_path, index_dir, transport))  # type: ignore[arg-type]
+    # The cap is off so this measures routing and nothing else: a burst of four from one key is
+    # refused after two by the pool's width, which is a different test's property.
+    client = next(
+        build_client(tmp_path, index_dir, transport, max_concurrent_per_token=0)  # type: ignore[arg-type]
+    )
     assert client.get("/models", headers=KEY).status_code == 200, "warm the token pool first"
 
     ask = {"dataset": "gwhd", "row": 0}
@@ -966,10 +977,23 @@ def _pool_path(tmp_path: Path) -> Path:
     return pool
 
 
-def _models_path(tmp_path: Path) -> Path:
-    """Write a model list naming the fixture's two backends."""
+def _models_path(tmp_path: Path, backends: list[str] | None = None) -> Path:
+    """Write a model list naming the fixture's backends, two of them unless told otherwise.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        The test's temporary directory.
+    backends : list of str, optional
+        The backend addresses. Defaults to :data:`FIRST` and :data:`SECOND`.
+
+    Returns
+    -------
+    Path
+        The file to hand `create_app`.
+    """
     path = tmp_path / "models.json"
-    path.write_text(json.dumps({MODEL: [FIRST, SECOND]}), encoding="utf-8")
+    path.write_text(json.dumps({MODEL: backends or [FIRST, SECOND]}), encoding="utf-8")
     return path
 
 
@@ -1001,7 +1025,7 @@ def test_a_token_cannot_hold_more_than_three_requests_at_once(
         tokens_path=pool,
         index_dir=index_dir,
         data_base_url=BASE,
-        models_path=_models_path(tmp_path),
+        models_path=_models_path(tmp_path, [FIRST, SECOND, THIRD]),
         backend_token=BACKEND_TOKEN,
         model_transport=transport,
     )
@@ -1042,3 +1066,195 @@ def test_a_token_cannot_hold_more_than_three_requests_at_once(
         assert freed.status_code == 200, "the cap was never released"
     finally:
         next(served, None)
+
+
+def test_the_cap_can_be_raised_for_one_measurement(tmp_path: Path, index_dir: Path) -> None:
+    """A host may override the ceiling, which is how one key carries a load test.
+
+    The alternative was a second class of credential that exists only for us and is the thing most
+    likely to be forgotten before an event; an environment variable read once at startup leaves no
+    standing bypass, because the pool's width is the default again after the restart.
+    """
+    _assert_admitted(tmp_path, index_dir, cap=5, concurrent=6, served=5)
+
+
+def test_the_cap_can_be_disabled_entirely(tmp_path: Path, index_dir: Path) -> None:
+    """`0` is a measurement of the pool rather than a wider cap: nothing is refused."""
+    _assert_admitted(tmp_path, index_dir, cap=0, concurrent=6, served=6)
+
+
+def _assert_admitted(
+    tmp_path: Path, index_dir: Path, cap: int, concurrent: int, served: int
+) -> None:
+    """Send `concurrent` calls from one key and count how many the gateway admitted.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        The test's temporary directory.
+    index_dir : Path
+        The fixture index.
+    cap : int
+        The `max_concurrent_per_token` override to build the app with.
+    concurrent : int
+        How many requests to send at once.
+    served : int
+        How many of them the cap should admit.
+    """
+    delay = 0.5
+
+    def transport(
+        method: str, url: str, headers: Mapping[str, str], body: bytes | None, timeout: float
+    ) -> Reply:
+        if "/health" in url:
+            return Reply(status=200, body=json.dumps(DECLARATION).encode())
+        time.sleep(delay)
+        return Reply(status=200, body=json.dumps(PREDICTION).encode())
+
+    app = create_app(
+        tokens_path=_pool_path(tmp_path),
+        index_dir=index_dir,
+        data_base_url=BASE,
+        models_path=_models_path(tmp_path),
+        backend_token=BACKEND_TOKEN,
+        model_transport=transport,
+        max_concurrent_per_token=cap,
+    )
+    running = _served_by_uvicorn(app)
+    port = next(running)
+    base = f"http://127.0.0.1:{port}"
+    ask = {"dataset": "gwhd", "row": 0}
+    try:
+        gate = threading.Barrier(concurrent)
+        answers: list[int] = []
+        lock = threading.Lock()
+
+        def send() -> None:
+            gate.wait()
+            code = httpx.post(
+                f"{base}/models/{MODEL}/predict", headers=KEY, json=ask, timeout=30
+            ).status_code
+            with lock:
+                answers.append(code)
+
+        senders = [threading.Thread(target=send) for _ in range(concurrent)]
+        for sender in senders:
+            sender.start()
+        for sender in senders:
+            sender.join(30)
+
+        assert sorted(answers) == [200] * served + [429] * (concurrent - served)
+    finally:
+        next(running, None)
+
+
+class _KeepAliveBackend(BaseHTTPRequestHandler):
+    """A backend that speaks HTTP/1.1 and counts how many connections it accepted.
+
+    Class attributes, because `BaseHTTPRequestHandler` is re-instantiated per request and the test
+    needs to count what the *server* did, not what one handler instance saw.
+    """
+
+    protocol_version = "HTTP/1.1"
+    accepted = 0
+    close_after_response = False
+
+    def setup(self) -> None:
+        """Count the connection before the framework reads anything from it."""
+        type(self).accepted += 1
+        super().setup()
+
+    def do_POST(self) -> None:
+        """Answer one prediction, and die abruptly if the test asked for that."""
+        self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        body = b'{"model": "sam3.1-meta", "objects": []}'
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+        self.wfile.flush()
+        if type(self).close_after_response:
+            # No `Connection: close` header — the peer simply goes away, which is what a keep-alive
+            # window running out looks like to the client. This is the case a pool must survive.
+            self.close_connection = True
+            self.connection.close()
+
+    def log_message(self, *args: Any) -> None:
+        """Keep the request log off the test's stderr."""
+
+
+def _serve_keepalive(close_after_response: bool) -> tuple[ThreadingHTTPServer, int]:
+    """Start the counting backend on an ephemeral port and answer its port."""
+    handler = type("Counting", (_KeepAliveBackend,), {})
+    handler.accepted = 0
+    handler.close_after_response = close_after_response
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, server.server_address[1]
+
+
+def test_the_transport_reuses_one_connection_between_requests() -> None:
+    """Two calls to one backend go over one socket, which is most of a call's latency.
+
+    Measured against the live pool on 2026-10-17: the laboratory cards are 260 ms away, and the
+    transport opened a TCP connection per call — so every request paid a handshake that overlapped
+    with nothing when a participant called one image at a time.
+    """
+    server, port = _serve_keepalive(close_after_response=False)
+    url = f"http://127.0.0.1:{port}/models/{MODEL}/predict"
+    try:
+        first = http_transport("POST", url, {}, b"{}", 5.0)
+        second = http_transport("POST", url, {}, b"{}", 5.0)
+        accepted = server.RequestHandlerClass.accepted
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert (first.status, second.status) == (200, 200)
+    assert accepted == 1, "the second call opened a new connection instead of reusing one"
+
+
+def test_a_connection_the_peer_closed_is_retried_once_on_a_new_one() -> None:
+    """A keep-alive window that ran out is not a failed backend.
+
+    Without the retry, the first request after a quiet period fails — the cost of pooling paid as a
+    new class of outage rather than as a saving.
+    """
+    server, port = _serve_keepalive(close_after_response=True)
+    url = f"http://127.0.0.1:{port}/models/{MODEL}/predict"
+    try:
+        first = http_transport("POST", url, {}, b"{}", 5.0)
+        time.sleep(0.05)
+        second = http_transport("POST", url, {}, b"{}", 5.0)
+        accepted = server.RequestHandlerClass.accepted
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert (first.status, second.status) == (200, 200)
+    assert accepted == 2, "the dead connection was not replaced"
+
+
+def test_the_transport_disables_nagle_like_the_standard_library_does() -> None:
+    """The overriding `connect` must keep `TCP_NODELAY`, or every call pays a delayed ACK.
+
+    `HTTPConnection.connect` sets it; this class replaces that method to bound the handshake, and
+    dropped the option with it. Measured on loopback 2026-10-17: 81 ms per call against 41 ms for a
+    socket the standard library had configured, because a request's headers and body are two writes
+    and the second waited for the acknowledgement of the first. On the 260 ms link to the laboratory
+    backends the same wait is bounded by the round trip, which is why pooling exposed it.
+    """
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    port = listener.getsockname()[1]
+    connection = _BoundedHTTPConnection("127.0.0.1", port, timeout=5.0)
+    try:
+        connection.connect()
+        nodelay = connection.sock.getsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY)
+    finally:
+        connection.close()
+        listener.close()
+
+    assert nodelay == 1
