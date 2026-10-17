@@ -1,0 +1,265 @@
+{
+  "request": {
+    "model": "sam3.1-meta",
+    "dataset": "gwfss",
+    "row": 3,
+    "parameters": {
+      "prompt": "wheat head",
+      "confidence_threshold": 0.22
+    }
+  },
+  "image_url": "https://data.global-wheat.com/gwfss/images/00000003.png",
+  "response": {
+    "model": "sam3.1-meta",
+    "objects": [
+      {
+        "idx": 0,
+        "bbox": [
+          437.2027587890625,
+          -1.0732231140136719,
+          64.8399658203125,
+          38.607173919677734
+        ],
+        "score": 0.25390625,
+        "area": 1453.0,
+        "rle": {
+          "size": [
+            512,
+            512
+          ],
+          "counts": "PPk63m?001O1O2N2N1O1O1O1O002N1O1O2N1O1O00001O00O1000000001O001O2N2N1O1O1O2N1O1O1O1O1O001OO1J6N2001O001O001O1O0000ASALl>3WAKi>5XAJh>6XAJh>5[AHf>7aAB`>=b0O1N8Gmo4"
+        },
+        "category": "wheat head"
+      },
+      {
+        "idx": 1,
+        "bbox": [
+          -0.5749053955078125,
+          82.0864486694336,
+          41.506256103515625,
+          92.5429458618164
+        ],
+        "score": 0.28515625,
+        "area": 2828.0,
+        "rle": {
+          "size": [
+            512,
+            512
+          ],
+          "counts": "h23<P2Q=TNgBR2X=;O2N2O0001O0O01O01N2O1O0O200O10000O2O1N2O0O1O001M3K500O1H9N2N3M6I3G^APOe>n07O2N5L5J<B^lZ7"
+        },
+        "category": "wheat head"
+      },
+      {
+        "idx": 2,
+        "bbox": [
+          428.46240234375,
+          194.0361328125,
+          77.82196044921875,
+          136.31170654296875
+        ],
+        "score": 0.3125,
+        "area": 4294.0,
+        "rle": {
+          "size": [
+            512,
+            512
+          ],
+          "counts": "oVf61l?7H6G8M6K9G3M2O1N3M2N2N3OO01O0O2O010O1O1O2M3N1N101N10000YBSN[=m1dB^NR=b1lBaNS=_1mBcNR=\\1mBfNS=Y1lBiNU=P2101N00100O3M2O1N1O1hN`BO`=ObB02QOT=j0lB5NSO[=b0hBg0X=mNbBK7Y1X=fNgBO2Z1V>1O2O2M2N2O0O10O0ZOmA_OS>a0nA_OQ>a0oA@Q>?PBAP>>PBBQ>=oADQ>;PBEo=:RBGo=7RBIn=4TBMn=H[B8i=[OiAO`0f0d>01O1O001N2O1NXV3"
+        },
+        "category": "wheat head"
+      },
+      {
+        "idx": 3,
+        "bbox": [
+          185.70465087890625,
+          6.7488250732421875,
+          42.3560791015625,
+          58.65489196777344
+        ],
+        "score": 0.2353515625,
+        "area": 1395.0,
+        "rle": {
+          "size": [
+            512,
+            512
+          ],
+          "counts": "hPm25i?4M2M3O0O1O1O1N3N2O2N101N2M4M1N2N2M3M3O1N2O2O0O1O010O01O0010O0aAcN\\>a10FdAPO[>o0eARO\\>j0fAWO[>d0hA]OY>9QBFP>5TBJn=3TBKQ>NSBOQ?NTn]4"
+        },
+        "category": "wheat head"
+      },
+      {
+        "idx": 4,
+        "bbox": [
+          340.4613342285156,
+          435.7460632324219,
+          107.0516357421875,
+          62.9195556640625
+        ],
+        "score": 0.330078125,
+        "area": 3711.0,
+        "rle": {
+          "size": [
+            512,
+            512
+          ],
+          "counts": "SoZ55g?5M2O100O2O0O1N2L4M7K3M2N100O2O0O1O1L4N2O1O2OO01O1N2O10O3M001O1O0001O010O010O100O10O10O01O10000000000O101N1O1O10000O1O1O1O1O10000O01O2O0O1O10O1O0O2O101O1O1O1O00000000000O1O1O100O10000O101M2L5N1N2N201N1O1N3O0O2MURP1"
+        },
+        "category": "wheat head"
+      },
+      {
+        "idx": 5,
+        "bbox": [
+          -0.5167922973632812,
+          420.45782470703125,
+          66.6637191772461,
+          76.7109375
+        ],
+        "score": 0.318359375,
+        "area": 3743.0,
+        "rle": {
+          "size": [
+            512,
+            512
+          ],
+          "counts": "U>X1g>2M3N2N100O1O1O1N2N2N101O00100O000O2O1O100O1O001N3OO010O010O1O010O00100O100O1O10001O000O101O0000000000000000001O1O0O2L5M2M5K4L4K7@dbn6"
+        },
+        "category": "wheat head"
+      },
+      {
+        "idx": 6,
+        "bbox": [
+          88.37362670898438,
+          256.1118469238281,
+          60.201141357421875,
+          61.86932373046875
+        ],
+        "score": 0.302734375,
+        "area": 2710.0,
+        "rle": {
+          "size": [
+            512,
+            512
+          ],
+          "counts": "dX\\19d?6K4L4M3M4M2M4M2M2O1N101N10001N101O1N2O000O101O2M2O1N101O000O10O10O01O100001O01O0000001O01O0100O1O4L1O1\\OfA@[>=gACZ>:iA@^>=dAAd>6_AI\\?O2N_Vf5"
+        },
+        "category": "wheat head"
+      },
+      {
+        "idx": 7,
+        "bbox": [
+          300.8912658691406,
+          142.99237060546875,
+          105.297119140625,
+          201.63079833984375
+        ],
+        "score": 0.283203125,
+        "area": 7064.0,
+        "rle": {
+          "size": [
+            512,
+            512
+          ],
+          "counts": "hdf44j?7_@Ll>7o@Ol>e0M101N4L4M4K<D3N1O2N100O1O1O1O0jBnM]ONn<U2cCnM_ONm<T2dCmMa<T2e01O2N2N1O1O1000O01O1O010O20aMhBT2n0kMoN1U<U2hCiMn0;Z;P2iCdMg0>`;S2^DlMc;S2]DkM^OEQ<a2aDiM\\OIS<^2`DiM]OJT<^2ZDjMBHU<^2VDnMCDW<2iCT2<^NS<b1lC^NU<b1jC^NW<b1hC_NX<`1gCcNX<\\1gCfNY<Y1fCiNZ<V1fCkNZ<U1dCmN]<mNfCl1LZOe<e0\\C[Od<e0[C]Oe<a0\\C^Oe<a0\\C^Of<`0ZC@g<?ZC@h<?WCAP=8PCHU=4kBJX=_OiBKOg0W=[OnBMKh0OlNT=;UC1Hf0NUOQ=1\\C3Eh0LZOi=MZB^1c=bN\\B`1c=_N]Bb1d=\\N\\Bd1e=\\NYBe1h=[NWBe1k=72N2N1O11OSNRBg1T>nNjA9V>ElA;U>CkA=W>AiA?Y>^OgAd0Y>[OgAf0Y>YOfAh0[>VOfAk0Z>SOgAn0Y>POhAQ1c>1O2N100O10000O01O1O2N4K5TOXA6m>EYA4PUf1"
+        },
+        "category": "wheat head"
+      },
+      {
+        "idx": 8,
+        "bbox": [
+          193.27020263671875,
+          407.0503234863281,
+          69.5279541015625,
+          106.32846069335938
+        ],
+        "score": 0.337890625,
+        "area": 5301.0,
+        "rle": {
+          "size": [
+            512,
+            512
+          ],
+          "counts": "XmR33750Jl>c0QAGf>m0L3M2N2jAdNd=`1XBcNf=P2K2N2O0O101lBhM^<X2_CkMa<U2\\CnMc<T2ZCoMe<R2WCPNj<d2O0000001O0O10000O1O1O1000000001O0000O1000000001O00001O00001O1O1O7I2N1O1O2N8H2mMaBb0NOd=YOcBe0L0R>LRB2V>EmA9U>CQB9Q>D[B1m>M1OTPm3"
+        },
+        "category": "wheat head"
+      },
+      {
+        "idx": 9,
+        "bbox": [
+          201.347900390625,
+          2.5923690795898438,
+          80.50665283203125,
+          210.23596954345703
+        ],
+        "score": 0.361328125,
+        "area": 8677.0,
+        "rle": {
+          "size": [
+            512,
+            512
+          ],
+          "counts": "[UV3340`?:M2O1O1O1O1\\OEbA<[>GbA<\\>f0N2M5@^N[Bi1]=]N[BP2Z<kMaDe2Y;^McDj2V;dM[D_2c;eMXD^2l:nLeEQ4Q:mK^E6?m3R:]LkEe3S:^LiEc3W:_LgEa3Z:aLbE_3X:kLfET3Y:QMcEP3]:Z1N2O1N2M3M21O00001O0M30000H8O2J5M400O1000O]O_EiKb:U4aEhK`:W4e0N2C=O100_OTDmLm;S3WDgLk;Y3>000001O0O10001cN^CTOh<k0\\CoNg<P1\\CmNf<R1]CjNd<U1_CiNb<V1dCdN\\<[1jC_NX<_1W1bNgAP1[>mNjAf0MYOk>a0?J7EQ_c3"
+        },
+        "category": "wheat head"
+      },
+      {
+        "idx": 10,
+        "bbox": [
+          345.0641174316406,
+          258.96697998046875,
+          61.0701904296875,
+          86.7142333984375
+        ],
+        "score": 0.25,
+        "area": 2737.0,
+        "rle": {
+          "size": [
+            512,
+            512
+          ],
+          "counts": "[h\\5145_?;L6J2M2N2N2N2O2N4M1N10O1O001O00001O0000YAoNR>0SBQ1JVOl=KYBn0K]Og=D_Be1`=[NYBL3j1d=YNXBN4j1d=[N[Be1f=ZNYBg1h=YNWBg1j=72N1O1010NTNRBg1T>00O2O0kNjA>Y>^OgAd0Y>ZOhAf0Y>YOfAi0Z>VOfAk0Y>TOiAl0X>QOiAP1W>nNjAS1V>gNgA05Z1^>2N100O10O100O1O1N3M4XOWA2o>GVA4n>HlVe1"
+        },
+        "category": "wheat head"
+      },
+      {
+        "idx": 11,
+        "bbox": [
+          292.3427734375,
+          79.9659194946289,
+          43.7020263671875,
+          41.96910095214844
+        ],
+        "score": 0.2255859375,
+        "area": 1223.0,
+        "rle": {
+          "size": [
+            512,
+            512
+          ],
+          "counts": "Xca46i?2M4M2N2M3G9N2O1O1O1O0O2O0N3N1O1OO2M3M2010O2O00001O00000001O2N1O008G101O1N101N2O1M3N3N2G\\@2^\\h2"
+        },
+        "category": "wheat head"
+      },
+      {
+        "idx": 12,
+        "bbox": [
+          300.6141052246094,
+          142.8889617919922,
+          67.86651611328125,
+          107.44955444335938
+        ],
+        "score": 0.2734375,
+        "area": 3926.0,
+        "rle": {
+          "size": [
+            512,
+            512
+          ],
+          "counts": "gdf46i?6^@Ml>6PA0l>c0N2N2O2M5K6`A^N02S>i1N3N1O1O1O100O1O1O001O002N1O1O2N1O1000O10O1O1O010O1;FO1O001O4L2N00O1O0iM_Bo1k=N1N110000000O2TNRBb1X>N100O2N101N102M9@UAXOn>b0YA[Oi>`0>L4M4LRiW2"
+        },
+        "category": "wheat head"
+      }
+    ],
+    "resolution_used": 1008
+  }
+}
