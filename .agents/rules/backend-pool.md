@@ -46,7 +46,7 @@ The machines that serve a model, and the only path that reaches them. Bringing o
 | Machine | Where | Router and LAN | Private address | GPU / VRAM | Fault domain | Status |
 |---|---|---|---|---|---|---|
 | `labpc` (3090) — host `crest-nerv`, tailnet `nerv-linux` | laboratory | `isas-annex103-ap-room` (GL-BE9300), `192.168.250.0/24` | `192.168.250.228` | RTX 3090, 24576 MiB | laboratory | serving; no SSH access (`sshd` refuses 22) |
-| `homepc` (4090) | home | `higashimurayama-203` (GL-MT6000), `192.168.209.0/24` | `192.168.209.228` | RTX 4090, 24564 MiB | home | serving `sam3.1-meta`; not in `models.json`, so the gateway does not route to it |
+| `homepc` (4090) | home | `higashimurayama-203` (GL-MT6000), `192.168.209.0/24` | `192.168.209.228` | RTX 4090, 24564 MiB | home | serving `sam3.1-meta` as `homepc-4090`, in `models.json` since 17 October 2026 — the pool's third backend |
 | lab 5090 (Windows 11) | laboratory | `isas-217-pcinfo-room` (GL-MT6000), `192.168.253.0/24` | `192.168.253.91` | RTX 5090, 32607 MiB | laboratory | serving; the largest card, and the only Windows host |
 | a second 5090 | borrowed from a company | ? | ? | RTX 5090, 32 GB | likely laboratory | not delivered |
 | ~3 more 90-class | laboratory | ? | ? | unknown, ~24 GB | laboratory | not measured |
