@@ -15,6 +15,9 @@
 site_url = "https://docs.global-wheat.com/"
 site_name = "Global Wheat BioHackathon API"
 site_description = "Dataset and model API for the global wheat BioHackathon, Göttingen, 7-11 December 2026."
+# The footer: who wrote this site, and what wrote it with them. Attribution rather than policy — it
+# sits beside the theme's own credit and is the only place the site names its maintainer.
+copyright = "Built in collaboration with DeepSeek V4.1 and OpenCode · Maintained by Haozhou Wang, UTokyo"
 
 # Both relative to this file, which is why the site is never built from a config inside docs/content.
 docs_dir = "docs/content"
