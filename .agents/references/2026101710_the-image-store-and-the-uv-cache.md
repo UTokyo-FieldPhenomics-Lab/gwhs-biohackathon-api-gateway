@@ -73,8 +73,11 @@ predict answering 200 in 1.5 s with the same object as before the rebuild.
   moved to `/home/crest/d`, a different disk, so it recorded nothing. What bounds the peak now is
   structural rather than measured: no cache plus a hardlinked install means the transient is the venv
   being built plus one unpacked wheel.
-- **The 5090's image was not rebuilt.** It still carries the pre-change build and has 920 GB free, so
-  the saving there buys nothing today; a rebuild picks it up whenever one is needed for another reason.
+- **The 5090 was rebuilt too, the same morning**, from the folder's archive, so both machines now run
+  the same Dockerfile: `35.8 → 24.2 GB` there, against `36.2 → 24.6 GB` here — the difference is each
+  daemon's own accounting, not the image. Its container was recreated without `-e SAM31_PORT`, which is
+  the check that the image's baked 12711 is what the change left behind: `/health` 200 from the gateway
+  host, the old `:8000` answering `000`, `backends_up: 2`, and a predict in 1.25 s with the same object.
 - **The stray `serve.py` on `:8125`** (a `test-…` token, several GB of the card) and the **leftover
   container** were both removed in the parallel session, which also released the VRAM the stray held.
 
