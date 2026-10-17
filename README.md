@@ -195,8 +195,8 @@ The curated documentation is live at <https://docs.global-wheat.com>, built by Z
 `docs/content/` and published to GitHub Pages by [`.github/workflows/docs.yml`](.github/workflows/docs.yml)
 on every push to `main`. Four pages, all written for a participant: `index.md` (the calls and the
 dataset list), `datasets/` (what each dataset contains, with images, and how a response maps onto
-them), `post-processing/` (palette masks and RLE geometry, in Python, JavaScript, and Kotlin, with the
-snippets as downloadable files), and `interactive.md` (FastAPI's own Swagger UI, embedded in a frame,
+them), `clients/` (the API as a function in Python, JavaScript, and Java — one downloadable file each,
+with masks decoded for you), and `interactive.md` (FastAPI's own Swagger UI, embedded in a frame,
 with a direct link for a network that cannot reach `api.*`). The internal contract, `data-layout.md`,
 is deliberately not published.
 

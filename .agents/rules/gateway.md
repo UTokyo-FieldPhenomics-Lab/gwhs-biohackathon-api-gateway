@@ -109,8 +109,9 @@ here.
   it carries no data of its own, and it is where a reader's key goes. Its controls are built from the
   model's own declaration in `GET /models` and nothing else — a model the page cannot render is an
   incomplete declaration, not a page that is not clever enough — and it draws with the documentation
-  site's published `post-processing/rle_decode.js`, loaded by URL, since a copy here would be a second
-  decoder to keep true. It previews the image an address resolves to as soon as the address is
+  site's published `clients/global-wheat.js`, loaded by URL, since a copy here would be a second
+  decoder to keep true. That file decodes row-major, so this page copies a pixel rather than mapping
+  an index; a page that transposes a mask again is the bug, not the fix. It previews the image an address resolves to as soon as the address is
   complete, because a row that does not exist should say so before a model is asked to fetch it.
 - **The result is shown whole, and what is drawn on it is text over the raster.** The pane holding
   the photograph has a fixed height and fits the image inside it; nothing inside a picture is ever
