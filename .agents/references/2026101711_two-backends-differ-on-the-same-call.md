@@ -63,8 +63,8 @@ example is the 3090's answer, stored whole so it can be checked rather than trus
 
 The user confirmed the **model did not change** between the two answers, which rules candidate 2 out:
 what differs is the machine and the build, not the weights. Candidate 1 stands, and an answer now
-carries its own evidence — every response has a `computed_by` record of the card, its compute
-capability, and the CUDA and torch versions — so the next time two answers disagree, the difference is
+carries its own evidence — every response has a `computed_by` record of the machine's name, its
+card, the card's capability, and the CUDA and torch versions — so the next time two answers disagree, the difference is
 one field away instead of a comparison exercise.
 
 The documentation page's recorded example is the 3090's answer to `gwfss` row 4 at 0.25: 18 objects,
