@@ -42,13 +42,17 @@ debug rather than a reason to doubt the whole setup.
 === "Python"
 
     ```python
-    answer = client.predict("sam3.1-meta", "gwfss", 4, prompt="wheat head", confidence_threshold=0.25)
+    answer = client.predict(
+        "sam3.1-meta", "gwfss", 4, prompt="wheat head", confidence_threshold=0.25
+    )
     ```
 
 === "JavaScript"
 
     ```js
-    const answer = await client.predict("sam3.1-meta", "gwfss", 4, {prompt: "wheat head", confidence_threshold: 0.25});
+    const answer = await client.predict("sam3.1-meta", "gwfss", 4, {
+      prompt: "wheat head", confidence_threshold: 0.25,
+    });
     ```
 
 === "Java"
