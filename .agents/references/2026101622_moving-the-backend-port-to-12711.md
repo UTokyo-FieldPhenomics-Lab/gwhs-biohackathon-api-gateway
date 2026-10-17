@@ -84,13 +84,13 @@ token check on the new port.
 
 ## What this says about the documentation
 
-The port sweep is done and the pool is consistent, but **the shape is not**: the section written the same
+The port sweep is done and the pool is consistent, but **the shape was not**: the section written the same
 evening — "Controlling a container on a machine you are sitting at" — describes what a backend *should*
-be, and the 3090 is not that. On that machine the whole reboot-survival story in
-[`gpu-backends.md`](../../deploy/gpu-backends.md) ("once, and the policy carries it from then on") does
-not apply at all: there is no container, so there is no policy. Either that machine gets the container
-the design calls for, or the document needs a paragraph saying a machine may serve from a bare process
-and what that costs. **Left open deliberately** — it is a decision about the pool, not a typo.
+be, and the 3090 was not that. On that machine the whole reboot-survival story in
+[`gpu-backends.md`](../../deploy/gpu-backends.md) ("once, and the policy carries it from then on") did
+not apply at all: there was no container, so there was no policy. **Resolved the next morning**: the
+machine now runs the container, and the reason it never had was a missing NVIDIA toolkit —
+[`2026101709`](2026101709_the-3090-becomes-a-container.md).
 
 ## Also done in the same pass
 

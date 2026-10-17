@@ -44,7 +44,7 @@ the person sitting at the machine still has to use their desktop. For scale: the
 
 | Machine | Where | Advertised by | Private address | GPU | VRAM | Fault domain | Last measured |
 |---|---|---|---|---|---|---|---|
-| `labpc` (3090) — host `labpc-host`, tailnet `labpc-tailnet` | laboratory | `room-router-a` (GL-BE9300), `the laboratory LAN` | `lab-3090` | RTX 3090 | 24576 MiB | laboratory | 2026-10-16 — **`sshd` enabled and active** (22 was refused that morning and took a key that afternoon), **Docker 29.7.2 running** on Manjaro, 2233/8771/22000 also open, ICMP 337–350 ms, 0% loss. **The machine the model reference measurement was taken on** |
+| `labpc` (3090) — host `labpc-host`, tailnet `labpc-tailnet` | laboratory | `room-router-a` (GL-BE9300), `the laboratory LAN` | `lab-3090` | RTX 3090 | 24576 MiB | laboratory | 2026-10-16 — **Docker 29.7.2 running** on Manjaro, 2233/8771/22000 also open, ICMP 337–350 ms, 0% loss. **The machine the model reference measurement was taken on.** 2026-10-17 — **serves from the container**: `sam3.1-meta` built on the machine itself, `/health` 200 from the gateway host, `budget ok: needs 5.5 GB, budget 23.0 GB` and reloading in 8.4 s. Two corrections from that work: its **`sshd` refuses port 22** (checked from the gateway host and on its own address), so nothing can be administered there over SSH, and the earlier "GPU inside a container verified" line was wrong — `--gpus all` failed with `no known GPU vendor found` until the container toolkit from the Linux recipe was installed |
 | `homepc` (4090) | home | `home-router` (GL-MT6000), `the home LAN` | `homepc-4090` | RTX 4090 | 24576 MiB | home | 2026-10-16 — TCP 22/22000 open, ICMP 242–250 ms, 0% loss |
 | lab 5090 (Windows 11) | laboratory | `room-router-d` (GL-MT6000), `the 5090's LAN` | `lab-5090` | RTX 5090 | **32607 MiB** | laboratory | 2026-10-16 — SSH, Docker and **GPU inside a container** all verified; driver 610.88; ICMP blocked by Windows. Then **built and serving** the same day: `sam3.1-meta` built on the machine from a 2.1 MB archive, `/health` 200 **from the gateway host**, declared ready with load 10.8 s and warm 1.2 s, and a `predict` through the gateway answered 200 in 0.9 s (`gwhs-temp` row 0: one `wheat head`, score 0.52, 173716 px). It held **~6.5 GB resident** where the label declares 3.7 — see the note below the table |
 | a second 5090 | borrowed from a company | ? | ? | RTX 5090 | 32 GB | likely laboratory | not delivered |
@@ -212,29 +212,70 @@ restarts, which is what keeps this from being a health loop.
 
 Both recipes end in the same three facts: Docker runs, the GPU is visible **inside a container**, and
 the port answers **from the host**. Prove them in that order; a failure in the third is a network
-question and a failure in the second has nothing to do with the network.
+question and a failure in the second has nothing to do with the network — and on Linux the second one
+is a missing toolkit far more often than a missing driver.
 
-### Manjaro (the laboratory 3090 and the home 4090 — one recipe for both)
+### Linux, both families (Manjaro/Arch and Debian/Ubuntu)
+
+Only the package line differs between distributions. Everything else — the toolkit, the runtime it
+registers with Docker, the boot service, the group — is the same, and all of it needs `sudo`.
 
 ```bash
-# 1. driver, then docker, then the toolkit that lets a container see the GPU
-sudo mhwd -a pci nonfree 0300            # Manjaro's own way to install the NVIDIA driver
-sudo pacman -S docker nvidia-container-toolkit
+# Arch family (the laboratory 3090, the home 4090)
+sudo mhwd -a pci nonfree 0300                       # Manjaro's own driver install; plain Arch: nvidia-dkms
+sudo pacman -S --needed docker nvidia-container-toolkit
 sudo nvidia-ctk runtime configure --runtime=docker
-sudo systemctl enable --now docker       # a real boot service: no login required
-sudo usermod -aG docker "$USER"          # then log out and back in once
+sudo systemctl enable --now docker                  # a real boot service: no login required
+sudo usermod -aG docker "$USER"                     # then log out and back in once
 ```
 
 ```bash
-# 2. the GPU must be visible inside a container, not merely on the host
-nvidia-smi
-docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi
+# Debian family — NVIDIA's own archive, because the toolkit is not in the distribution's
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
+  | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+  | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
+  | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
 ```
 
-The package names are the ones to check first if something is missing — `nvidia-container-toolkit` may
-come from the AUR on some Manjaro branches. **Do not copy the Windows machine's driver notes here:**
-on WSL the driver is supplied by Windows, and on Manjaro it must be installed and the toolkit
-configured, or `--gpus all` silently finds nothing.
+**Without the toolkit, `--gpus all` fails rather than falling back to the host's driver**, and the
+message names the cause if you know what to read:
+
+```
+$ docker run --rm --gpus all nvidia/cuda:12.8.1-runtime-ubuntu24.04 nvidia-smi -L
+docker: Error response from daemon: failed to discover GPU vendor from CDI: no known GPU vendor found
+```
+
+That is *not* a driver problem — `nvidia-smi` on the host was fine, and the same container without
+`--gpus all` started normally. It is the toolkit alone that is missing. Measured on the laboratory 3090
+on 2026-10-16, where the pool's second backend therefore ran as a bare process for hours instead of a
+container, with none of the reboot survival this document assumes.
+
+Two things that bite after the install:
+
+- **`nvidia-ctk runtime configure` rewrites `/etc/docker/daemon.json`.** On a machine whose Docker
+  storage is not the default — `{"data-root": "/home/…"}`, which is how a small root partition is
+  survived — check that key is still there afterwards. If the merge drops it, Docker starts using
+  `/var/lib/docker` and every image *looks* as if it vanished, while it sits untouched in the old
+  directory. On the 3090 the merge kept it and added the runtime; that is luck to verify, not trust.
+- **`systemctl restart docker` stops whatever was running.** Every backend here is started with
+  `--restart unless-stopped` and comes back on its own, so the cost is one lost request per machine —
+  but it is a real cost, not a no-op.
+
+Then prove the two facts that matter, on every distribution:
+
+```bash
+nvidia-smi                                                     # the host sees the card
+docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi -L   # a container sees it
+```
+
+`nvidia-container-toolkit` may come from the AUR on some Manjaro branches — if the package line fails,
+that is the first thing to check. **Do not copy the Windows machine's driver notes here:** on WSL the
+driver comes from Windows, and on Linux it must be installed and the toolkit configured, or `--gpus all`
+finds nothing.
 
 ### Windows 11 (the laboratory 5090)
 
