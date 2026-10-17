@@ -1,0 +1,26 @@
+{#-
+  The site's own credit, in place of the theme's single line.
+
+  Two blocks on one row: what this site was written with, and who maintains it. The theme's own
+  "Made with Zensical" is folded into the first block rather than sitting on a second line, so the
+  attribution is unchanged and the footer stays one line wide.
+
+  This is the only partial the site overrides — `custom_dir` in `zensical.toml` looks here before the
+  theme, and every other template still comes from the theme. On a Zensical upgrade, re-read this
+  against `partials/copyright.html` in the installed theme: a new class or a changed wrapper is the
+  only way this file can go wrong, and it fails by looking slightly off rather than by breaking.
+-#}
+<div class="md-copyright">
+  <span class="md-copyright__credit">
+    Made with
+    <a href="https://www.deepseek.com/" target="_blank" rel="noopener">DeepSeek</a>,
+    <a href="https://openchamber.dev/" target="_blank" rel="noopener">OpenChamber</a>
+    (<a href="https://opencode.ai/" target="_blank" rel="noopener">OpenCode</a>), and
+    <a href="https://zensical.org/" target="_blank" rel="noopener">Zensical</a>
+  </span>
+  <span class="md-copyright__credit md-copyright__credit--right">
+    Maintained by
+    <a href="https://github.com/HowcanoeWang" target="_blank" rel="noopener">Haozhou Wang</a>,
+    <a href="https://lab.fieldphenomics.com/" target="_blank" rel="noopener">UTokyo FP lab</a>
+  </span>
+</div>
