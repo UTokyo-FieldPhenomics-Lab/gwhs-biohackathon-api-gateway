@@ -64,6 +64,12 @@ DECLARATION: dict[str, Any] = {
 PREDICTION: dict[str, Any] = {
     "model": MODEL,
     "resolution_used": 1008,
+    "computed_by": {
+        "gpu": "NVIDIA GeForce RTX 3090",
+        "compute_capability": "8.6",
+        "cuda": "12.8",
+        "torch": "2.10.0+cu128",
+    },
     "objects": [
         {
             "idx": 0,
@@ -413,6 +419,34 @@ def test_a_backend_that_answers_outside_the_contract_is_an_upstream_fault(
     )
 
     assert response.status_code == 502
+
+
+def test_an_answer_without_a_record_of_its_machine_still_passes(
+    tmp_path: Path, index_dir: Path, backends: FakeBackends
+) -> None:
+    """A backend that has not been rebuilt answers the old shape, and that is not an error.
+
+    The record is optional for exactly one reason: rolling out a new field must not turn every
+    running backend into a failure case. The answer passes through, and the field is simply absent.
+    """
+    backends.replies = {
+        FIRST: [
+            Reply(
+                status=200,
+                body=json.dumps(
+                    {k: v for k, v in PREDICTION.items() if k != "computed_by"}
+                ).encode(),
+            )
+        ]
+    }
+    client = next(build_client(tmp_path, index_dir, backends))
+
+    response = client.post(
+        f"/models/{MODEL}/predict", headers=KEY, json={"dataset": "gwhd", "row": 0}
+    )
+
+    assert response.status_code == 200
+    assert "computed_by" not in response.json()
 
 
 def test_a_gateway_without_a_backend_token_fails_closed(tmp_path: Path, index_dir: Path) -> None:
