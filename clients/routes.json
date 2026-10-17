@@ -1,0 +1,10 @@
+{
+  "datasets": {"method": "GET", "path": "/datasets"},
+  "describe": {"method": "GET", "path": "/datasets/{dataset}"},
+  "images": {"method": "GET", "path": "/datasets/{dataset}/images"},
+  "image": {"method": "GET", "path": "/datasets/{dataset}/images/{row}"},
+  "models": {"method": "GET", "path": "/models"},
+  "model": {"method": "GET", "path": "/models/{model}"},
+  "predict": {"method": "POST", "path": "/models/{model}/predict"},
+  "predict_file": {"method": "POST", "path": "/models/{model}/predict/upload"}
+}
