@@ -198,7 +198,7 @@ Prompted with `wheat head`, on the published rows, at 1008:
 | `gwhs-temp` rows 2–3 | 0 objects |
 | `gwhd` row 0 — 1024×1024 field quadrat, **144 annotated heads** | **0 objects**, at every threshold from 0.5 down to 0.05 |
 | `gwfss` row 0 | 0 objects — and correct: that row's own palette holds no head pixels |
-| `gwfss` row 3 — 512×512, cut heads lying on straw | **13 objects**, `wheat head` at `confidence_threshold` 0.22, `Σ mask` = `Σ area` = 49,062 px — **the recorded call above** |
+| `gwfss` row 4 — 512×512, cut heads lying on straw | **18 objects**, `wheat head` at `confidence_threshold` 0.25, `Σ mask` = `Σ area` = 109,419 px — **the recorded call above** |
 
 Read together: at 1008 this model segments **a conspicuous head in a close-up** and finds **none of the
 small, dense heads in a field crop**. A head in `gwhd` is about 57 px across in a 1024 px image — near
@@ -206,13 +206,12 @@ small, dense heads in a field crop**. A head in `gwhd` is about 57 px across in 
 not change it. Whether it would is untested.
 
 What it does answer is a frame whose heads are separated and large: one spike filling a portrait frame,
-or cut heads on straw — `gwfss` row 3, thirteen of them. That is the case the recorded call above
-replays. What it does not answer is a field quadrat, whichever threshold you send.
+or cut heads on straw — `gwfss` row 4, eighteen of them. That is the case the recorded call
+above replays. What it does not answer is a field quadrat, whichever threshold you send.
 
-A recorded answer is **one machine's** answer. The forward pass runs in bfloat16, so the same image and
-the same parameters on another card can differ by a few pixels in a mask: this record's pixel count
-(49,062) was one run, and a run of the same call gave 49,085. Counts agreed; a count of pixels is not a
-constant.
+A recorded answer is **one machine's** answer. The forward pass runs in bfloat16, so a mask's
+boundary — and the pixel count that follows from it — is one card's figure rather than a constant; the
+objects found and the boxes around them are what an answer is really about.
 
 ## Next
 
