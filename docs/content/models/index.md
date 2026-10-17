@@ -57,6 +57,12 @@ curl -s -H "X-API-Key: $KEY" -F "file=@photo.jpg" \
   "$API/models/sam3.1-meta/predict/upload?prompt=wheat%20head"
 ```
 
+An upload is limited to **15 MB**, and the model resizes whatever it is given to 1008², so a larger
+file buys no accuracy. A phone photograph is normally a few megabytes; compress a large one, or convert
+a TIFF to JPEG, before sending it. Over the limit the API answers `413` with
+`{"error": {"code": "payload_too_large", "message": "…"}}` — the same error shape as every other
+refusal, so one decoder still covers them all.
+
 Both routes answer the same body. One object of a real answer — a 5184×3456 photograph, run at 1008 —
 with `counts` truncated, because it is one long string:
 

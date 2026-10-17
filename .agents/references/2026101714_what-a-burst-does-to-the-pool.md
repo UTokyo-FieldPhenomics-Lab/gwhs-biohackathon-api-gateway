@@ -105,3 +105,51 @@ token per simulated team.
 - **The response budget is per socket operation, not per request.** A client can be made to wait
   `CONNECT_TIMEOUT_SECONDS + RESPONSE_TIMEOUT_SECONDS` per backend attempt. No observed failure; the
   160-round p95 of 11.77 s was thread-pool queueing, not this.
+
+## A second pass: the edge, the cap, and the hop the gateway pays for
+
+### An upload over 15 MB is refused at the edge
+
+`deploy/Caddyfile` carries `request_body { max_size 15MB }` and a `handle_errors 413` that answers the
+contract's own body, because Caddy's default is an empty `413` a participant cannot tell from a proxy
+failure. Verified against the deployed host with a 17 MB JPEG: `413` and
+`{"error":{"code":"payload_too_large","message":"the image is over the 15 MB limit; compress it or
+convert it to JPEG and send it again"}}`. A 1 MB upload still answers `200`.
+
+15 MB is set by the host, not by taste: it has **1936 MiB** of RAM and holds each upload in memory while
+forwarding it, and the ceiling on concurrent uploads is the 40-thread pool — 40 × 15 MB ≈ 600 MB, which
+is survivable, while 24 MB would not be. Raising it on site is that line plus `systemctl reload caddy`.
+
+### The cap follows the pool instead of being a constant
+
+`ConcurrencyGate` now takes a callable and is handed `ModelRegistry.pool_width()` — the largest
+per-model sum of `max_in_flight` over answering backends, which is the number `GET /models` publishes.
+Three cards give three; a fourth card raises it with no code change. `BIOHACK_MAX_CONCURRENT_PER_TOKEN`
+overrides it and `0` disables it, both read once at startup.
+
+| What was run | What came back |
+|---|---|
+| 6 concurrent, no override | 3 × `200`, 3 × `429`, refusals in 0.07 s, one per card |
+| override `=10`, 12 concurrent | 10 × `200`, 2 × `429` |
+| override `=0`, 24 concurrent | 24 × `200`, 8 / 8 / 8 across the cards, p95 2.33 s |
+
+The override is what a load test uses instead of a second class of credential.
+
+### A kept connection, and the option the override had dropped
+
+`http_transport` now keeps up to four idle connections per backend and retries once on a fresh one when
+the peer has closed a kept connection. Measured on the host, one backend at a time (both laboratory
+cards are ~260 ms away):
+
+| | Per call |
+|---|---|
+| a new connection each time | 0.70 s |
+| one connection reused | 0.44 s |
+
+Warm single calls **through the gateway** went from **0.76 s to 0.44 s** — more than the handshake,
+because pooling exposed a second defect: `_BoundedHTTPConnection.connect` replaced
+`HTTPConnection.connect` and dropped the `TCP_NODELAY` that method sets. On loopback a request then cost
+81 ms against 41 ms for a socket the standard library had configured, the extra being the delayed
+acknowledgement of the write that follows another. On a 260 ms link that wait is bounded by the round
+trip rather than by 40 ms. The option is now set, with a test that asserts it, because the failure mode
+is a constant invisible tax rather than an error.
