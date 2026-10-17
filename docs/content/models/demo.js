@@ -5,7 +5,7 @@
 // prompt, or a threshold in this file would be a second place to keep true, so the panel names none
 // of them and reads all of them from the record.
 //
-// The decoder is the site's own `post-processing/rle_decode.js`, loaded by the page before this
+// The decoder is the site's own `clients/global-wheat.js`, loaded by the page before this
 // script: the same file the Post-processing page tells a participant to download, so the demo and
 // the tutorial cannot drift apart.
 //
@@ -43,17 +43,16 @@
   });
 
   // Put one object's mask into a canvas of its own size; the visible canvas is only ever written to.
-  // `putImageData` ignores scaling, so the mask's own canvas is what carries it. The decoded array is
-  // COCO's order — flat index `row + column * height` — while `ImageData` is row-major, so the index
-  // is mapped rather than copied, or the mask would be drawn transposed.
+  // `putImageData` ignores scaling, so the mask's own canvas is what carries it. The client decodes
+  // to a row-major array, which is `ImageData`'s own order, so the pixels are copied straight across.
   const overlayFor = (object) => {
     const [height, width] = object.rle.size;
-    const mask = rleDecode(object.rle.counts, height, width);
+    const {data} = GlobalWheat.rle_decode(object.rle.counts, height, width);
     const pixels = new ImageData(width, height);
     let painted = 0;
-    for (let index = 0; index < mask.length; index++) {
-      if (!mask[index]) continue;
-      const at = ((index % height) * width + Math.floor(index / height)) * 4;
+    for (let index = 0; index < data.length; index++) {
+      if (!data[index]) continue;
+      const at = index * 4;
       pixels.data[at] = MASK[0];
       pixels.data[at + 1] = MASK[1];
       pixels.data[at + 2] = MASK[2];
@@ -129,7 +128,7 @@
   };
 
   (async () => {
-    if (typeof rleDecode !== "function") {
+    if (typeof GlobalWheat?.rle_decode !== "function") {
       // Said, never left blank: an empty canvas would read as a model that found nothing.
       state.textContent =
         "The RLE decoder did not load, so no mask is drawn here — try reloading the page.";

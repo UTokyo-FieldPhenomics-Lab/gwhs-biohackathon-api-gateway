@@ -54,5 +54,5 @@ against. The full sets are published before the event, and the same calls then r
 
 - [Datasets](datasets/index.md) — what each one holds, and how a response maps onto the image
 - [Models](models/index.md) — the model you can call, what it accepts, and one you can run from this site
-- [Post-processing](post-processing/index.md) — palette masks and RLE geometry, in three languages
+- [Clients](clients/index.md) — one file per language, so a call is a function and a mask is decoded
 - [Interactive API reference](interactive.md) — every route, with a try-it button, without leaving this site

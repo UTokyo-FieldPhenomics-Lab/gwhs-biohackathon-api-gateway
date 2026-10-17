@@ -27,7 +27,8 @@ from PIL import Image, ImageDraw, ImageFont
 REPO = Path(__file__).resolve().parents[2]
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 DATASETS = REPO / "docs/content/datasets"
-POST = REPO / "docs/content/post-processing"
+CLIENTS = REPO / "docs/content/clients"
+CLIENT_PYTHON = REPO / "clients/python"
 PAGES = REPO / "docs/content"
 
 DATA = "https://data.global-wheat.com"
@@ -127,11 +128,11 @@ def boundary(mask: np.ndarray, width: int = 2) -> np.ndarray:
 
 
 def rle_mask(counts: str, height: int, width: int) -> np.ndarray:
-    """Decode one object's geometry, reshaped to the image."""
-    sys.path.insert(0, str(POST))
-    from rle_decode import rle_decode
+    """Decode one object's geometry with the client, which is the only decoder there is."""
+    sys.path.insert(0, str(CLIENT_PYTHON))
+    from global_wheat import rle_decode
 
-    return rle_decode(counts, (height, width)).reshape(height, width, order="F")
+    return rle_decode(counts, (height, width))
 
 
 def download(work: Path) -> dict[str, Image.Image]:
@@ -233,8 +234,8 @@ def draw_gwfss(image: Image.Image, mask: Image.Image) -> None:
                            font=font(20), fill=(190, 197, 206), anchor="mm")
         tiles.paste(cell, (16 + (index % 2) * (tile_side + gap),
                            16 + (index // 2) * (tile_side + strip + gap)))
-    save(tiles, POST / "mask-output.png")
-    save(mask, POST / "mask-input.png")
+    save(tiles, CLIENTS / "mask-output.png")
+    save(mask, CLIENTS / "mask-input.png")
 
 
 def draw_instance(image: Image.Image, objects: list[dict[str, float]],
@@ -305,7 +306,7 @@ def draw_instance(image: Image.Image, objects: list[dict[str, float]],
     save(figure((crop_image, "the object, in the image"),
                 (flat, "the decoded mask"),
                 (overlay, "the mask, on the image")),
-         POST / "rle-input-output.jpg")
+         CLIENTS / "rle-input-output.jpg")
 
 
 if __name__ == "__main__":
