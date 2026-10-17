@@ -183,6 +183,11 @@ class ModelSummary(BaseModel):
         enforced: the concurrency gate is not implemented yet.
     parameters : list of ModelParameter
         What the model accepts. Empty where no backend has declared anything.
+    machines : list of ComputedBy
+        One record per answering backend that declared itself — the machine's name, its card, the
+        capability and the stack. A reader learns which machines would answer **before** calling,
+        which is what makes a difference between two answers explainable rather than surprising. It
+        is not an inventory: an address, a memory figure or a queue depth has no place here.
     checked_seconds_ago : int or None
         How long ago the pool was last asked, to the nearest second. It is part of the count rather
         than decoration: the number is a probe's verdict, and a verdict without its age is a promise
@@ -194,6 +199,7 @@ class ModelSummary(BaseModel):
     backends_up: int = 0
     max_in_flight: int = 0
     parameters: list[ModelParameter] = field(default_factory=list)
+    machines: list[ComputedBy] = field(default_factory=list)
     checked_seconds_ago: int | None = None
 
 
@@ -454,6 +460,8 @@ class Backend:
     resolution: int | None = None
     max_in_flight: int = 1
     parameters: list[ModelParameter] = field(default_factory=list)
+    machine: ComputedBy | None = None
+    """What the backend said it is, where it said anything. An undeclared backend has none."""
     unhealthy_until: float = 0.0
     alive: bool = False
     probed_at: float = 0.0
@@ -596,6 +604,7 @@ class ModelRegistry:
         if isinstance(declaration.get("max_in_flight"), int):
             backend.max_in_flight = declaration["max_in_flight"]
         backend.parameters = _declared_parameters(declaration.get("parameters"))
+        backend.machine = _declared_machine(declaration.get("computed_by"))
         backend.declared = True
 
     def _refresh_undeclared(self, model: str, backends: Sequence[Backend]) -> None:
@@ -699,6 +708,7 @@ class ModelRegistry:
             backends_up=len(live),
             max_in_flight=sum(backend.max_in_flight for backend in live),
             parameters=declared.parameters if declared else [],
+            machines=[backend.machine for backend in live if backend.machine is not None],
             # The age of the newest look, not the oldest: the probe asks a model's backends in one
             # pass, so what a reader needs to know is when that pass happened.
             checked_seconds_ago=None if not checked else max(0, round(now - checked)),
@@ -910,6 +920,29 @@ def _declared_parameters(raw: Any) -> list[ModelParameter]:
         except ValueError:
             logger.warning("ignoring an unreadable parameter declaration: %r", entry)
     return parameters
+
+
+def _declared_machine(raw: Any) -> ComputedBy | None:
+    """Read a backend's self-report, ignoring anything that is not one.
+
+    Parameters
+    ----------
+    raw : Any
+        Whatever the backend put in its declaration's `computed_by` field.
+
+    Returns
+    -------
+    ComputedBy or None
+        The record, or `None` where the backend said nothing or said something unreadable — so a
+        backend that has not been rebuilt contributes nothing rather than failing the whole model.
+    """
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return ComputedBy.model_validate(raw)
+    except ValueError:
+        logger.warning("ignoring an unreadable machine record: %r", raw)
+        return None
 
 
 def _image_url(datasets: Mapping[str, Dataset], dataset: str, row: int, base: str) -> str:

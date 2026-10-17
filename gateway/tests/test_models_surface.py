@@ -49,6 +49,13 @@ DECLARATION: dict[str, Any] = {
     "model": MODEL,
     "resolution": 1008,
     "max_in_flight": 1,
+    "computed_by": {
+        "machine": "lab-3090",
+        "gpu": "NVIDIA GeForce RTX 3090",
+        "compute_capability": "8.6",
+        "cuda": "12.8",
+        "torch": "2.10.0+cu128",
+    },
     "parameters": [
         {"name": "prompt", "default": "wheat head", "description": "What to look for."},
         {
@@ -213,7 +220,7 @@ def client(tmp_path: Path, index_dir: Path, backends: FakeBackends) -> Iterator[
 
 
 def test_the_directory_lists_what_the_model_declares(client: TestClient) -> None:
-    """The directory is one line per model, carrying the parameters it accepts."""
+    """The directory is one line per model, carrying its parameters and the machines behind it."""
     response = client.get("/models", headers=KEY)
 
     assert response.status_code == 200
@@ -230,6 +237,10 @@ def test_the_directory_lists_what_the_model_declares(client: TestClient) -> None
                 "backends_up": 2,
                 "max_in_flight": 2,
                 "parameters": DECLARATION["parameters"],
+                # Two backends, two records — one per machine that answered, not one per model. Two
+                # identical entries mean an operator named two machines the same, which is theirs to
+                # fix and not the gateway's to hide.
+                "machines": [DECLARATION["computed_by"], DECLARATION["computed_by"]],
             }
         ]
     }
