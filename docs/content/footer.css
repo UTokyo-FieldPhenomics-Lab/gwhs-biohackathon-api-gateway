@@ -1,0 +1,21 @@
+/* The footer credit: two blocks on one row, at the two ends of it.
+ *
+ * The theme lays `md-copyright` out as a block and stacks its children, which put the site's credit
+ * and the generator's on two lines. One row is what it should be — what the site was written with on
+ * the left, who maintains it on the right — so the container becomes a wrapping flex row. Below the
+ * layout breakpoint the blocks wrap and both read left-aligned, because right-aligned text on a
+ * phone is a second block pretending to be a column.
+ */
+.md-copyright {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.2rem 1.5rem;
+  width: 100%;
+}
+
+@media screen and (min-width: 45em) {
+  .md-copyright__credit--right {
+    text-align: right;
+  }
+}

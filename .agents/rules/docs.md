@@ -78,4 +78,10 @@ Package: `docs/`. Repo-wide invariants are in [`project.md`](project.md) and are
   is a copy somebody edits by mistake. The cost is a local preview that lacks the downloads — check
   them with `uv run --project docs zensical build --strict && python3
   docs/scripts/sync_clients.py && python3 -m http.server --directory site`.
+- **The footer credit is the one template override.** `docs/overrides/partials/copyright.html` carries
+  the text and its links, `docs/content/footer.css` lays the two blocks out, and `custom_dir` in
+  `zensical.toml` looks there before the theme — every other template is still the theme's. The text
+  lives in the template rather than in `copyright`, because a credit split between a config value and
+  a template is one that goes stale. A Zensical upgrade is when to diff that file against the theme's
+  version of the same partial.
 - **English only**, consistent with the rest of the repository.
