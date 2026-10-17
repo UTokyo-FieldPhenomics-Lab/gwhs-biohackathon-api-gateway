@@ -36,7 +36,7 @@ from biohack_gateway.auth import Authenticator
 from biohack_gateway.dataset_index import DEFAULT_INDEX_DIR, load_datasets
 from biohack_gateway.datasets import DEFAULT_DATA_BASE_URL, create_dataset_router
 from biohack_gateway.frames import frame_reporter
-from biohack_gateway.limits import MAX_CONCURRENT_PER_TOKEN, ConcurrencyGate
+from biohack_gateway.limits import ConcurrencyGate
 from biohack_gateway.models import (
     DEFAULT_MODELS_FILE,
     ModelRegistry,
@@ -71,6 +71,16 @@ API_KEY_SCHEME = "ApiKeyAuth"
 Swagger UI carries a credential into a request only for a scheme the document declares, so without
 this the reference lists every endpoint and can try none of them. The name is arbitrary, the header
 is not, and both are read from here rather than written out again.
+"""
+
+CONCURRENCY_ENV = "BIOHACK_MAX_CONCURRENT_PER_TOKEN"
+"""The environment variable that overrides the per-token concurrency cap.
+
+Unset is the normal state: the cap is then the pool's own width, read from the declarations
+`GET /models` sums. It exists for one purpose — a load test from a single key, which the pool's
+width would refuse after three requests — so raising it is a deliberate act on the host and needs a
+restart to take effect. A value of `0` disables the cap, and a value that is not a number is ignored
+with a log line rather than silently becoming zero.
 """
 
 BACKEND_TOKEN_ENV = "BIOHACK_BACKEND_TOKEN"
@@ -240,6 +250,7 @@ class ErrorCode(StrEnum):
     INVALID_KEY = "invalid_key"
     NOT_FOUND = "not_found"
     QUOTA_EXCEEDED = "quota_exceeded"
+    PAYLOAD_TOO_LARGE = "payload_too_large"
     UPSTREAM_ERROR = "upstream_error"
     UNAVAILABLE = "unavailable"
     UPSTREAM_TIMEOUT = "upstream_timeout"
@@ -250,6 +261,7 @@ _CODES_BY_STATUS: dict[int, ErrorCode] = {
     401: ErrorCode.INVALID_KEY,
     404: ErrorCode.NOT_FOUND,
     405: ErrorCode.INVALID_REQUEST,
+    413: ErrorCode.PAYLOAD_TOO_LARGE,
     429: ErrorCode.QUOTA_EXCEEDED,
     502: ErrorCode.UPSTREAM_ERROR,
     503: ErrorCode.UNAVAILABLE,
@@ -359,6 +371,7 @@ def create_app(
     models_path: Path = DEFAULT_MODELS_FILE,
     backend_token: str = "",
     model_transport: Transport = http_transport,
+    max_concurrent_per_token: int | None = None,
 ) -> FastAPI:
     """Build the application.
 
@@ -386,6 +399,10 @@ def create_app(
     model_transport : Transport, optional
         How the gateway reaches a backend. Injectable so a test can answer for one without starting
         one, which is what lets the surface's tests exercise the real gate and error contract.
+    max_concurrent_per_token : int or None, optional
+        The cap on one token's requests in flight. `None` follows the pool's declared width, `0`
+        disables the cap, and a number fixes it — the last two only for measuring the pool from one
+        key.
 
     Returns
     -------
@@ -393,7 +410,9 @@ def create_app(
         The gateway application, ready for uvicorn.
     """
     registry = ModelRegistry(load_models(models_path), backend_token, model_transport)
-    slots = ConcurrencyGate()
+    slots = ConcurrencyGate(
+        registry.pool_width if max_concurrent_per_token is None else max_concurrent_per_token
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -580,8 +599,7 @@ def create_app(
             return _error(
                 429,
                 ErrorCode.QUOTA_EXCEEDED,
-                f"at most {MAX_CONCURRENT_PER_TOKEN} requests at once per token; "
-                "retry when one finishes",
+                f"at most {slots.ceiling()} requests at once per token; retry when one finishes",
             )
         logger.info("%s %s team=%s", request.method, request.url.path, team_id)
         try:
@@ -656,7 +674,30 @@ def create_app(
     return app
 
 
-app = create_app(backend_token=os.environ.get(BACKEND_TOKEN_ENV, ""))
+def _env_concurrency() -> int | None:
+    """Read the concurrency override, treating anything unusable as "not set".
+
+    Returns
+    -------
+    int or None
+        The override, or `None` when the variable is unset, empty, or not a number — a host with a
+        typo in its environment should serve under the pool's own width rather than refuse every
+        request after the first few.
+    """
+    raw = os.environ.get(CONCURRENCY_ENV, "").strip()
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning("%s=%r is not a number; using the pool's width", CONCURRENCY_ENV, raw)
+        return None
+
+
+app = create_app(
+    backend_token=os.environ.get(BACKEND_TOKEN_ENV, ""),
+    max_concurrent_per_token=_env_concurrency(),
+)
 """The object uvicorn serves: ``uvicorn biohack_gateway.app:app``.
 
 The one setting read from the environment rather than passed in: the backend token is a secret, so

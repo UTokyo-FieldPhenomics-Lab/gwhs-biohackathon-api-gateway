@@ -14,7 +14,8 @@ def test_error_code_set_is_the_frozen_initial_set() -> None:
     Editing this expectation is how a code is added: the set grows additively, so a member that is
     removed or renamed has to break this test, and a new one has to be recorded here on purpose.
     ``internal_error`` is the first of those, added when the gateway began answering unhandled
-    failures with the contract instead of with a traceback.
+    failures with the contract instead of with a traceback; ``payload_too_large`` the second, added
+    when the edge began refusing an upload over 15 MB.
     """
     assert {code.value for code in ErrorCode} == {
         "invalid_request",
@@ -25,6 +26,7 @@ def test_error_code_set_is_the_frozen_initial_set() -> None:
         "unavailable",
         "upstream_timeout",
         "internal_error",
+        "payload_too_large",
     }
 
 
