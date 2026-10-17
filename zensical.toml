@@ -39,7 +39,7 @@ nav = [
   { "Start here" = "index.md" },
   { "Datasets" = "datasets/index.md" },
   { "Models" = "models/index.md" },
-  { "Post-processing" = "post-processing/index.md" },
+  { "Clients" = "clients/index.md" },
   { "Interactive API reference" = "interactive.md" },
 ]
 

@@ -79,7 +79,7 @@ means comes from the dataset's own description — `GET /datasets/gwfss` — and
 | `leaf` | `#d6ff32` | 113,407 px |
 
 Split those pixels per class and each class becomes one boolean array — that is
-[Post-processing](../post-processing/index.md)'s first job. In a list response, `statistics.classes`
+[the client](../clients/index.md)'s `label_masks`. In a list response, `statistics.classes`
 names the classes a row actually contains, so row 0 holds `stem` and `leaf` and the zero beside `head`
 is a fact about the image rather than a gap in the data.
 
@@ -106,7 +106,7 @@ One entry of that response's `objects`:
 Every object carries a box, a **run-length mask**, an area, and its attributes, and the row carries its
 tags. Where `gwhd` returns one box per head, this returns one box *and one mask per spikelet*, which is
 what makes counts and sizes per spikelet possible. Decoding `rle.counts` is
-[Post-processing](../post-processing/index.md)'s second job.
+not something you write: [the client](../clients/index.md) hands you the mask.
 
 ## How a response maps onto what you display
 

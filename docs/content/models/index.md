@@ -84,8 +84,8 @@ with `counts` truncated, because it is one long string:
 - **`bbox` is `[x, y, width, height]`** in the image's own pixels — the same convention the dataset
   surface uses, so one decoder reads both.
 - **`rle` is COCO's compressed mask**, the same format `gwhs` publishes, and decoding it is
-  [Post-processing](../post-processing/index.md)'s job — including the check that the decoded pixel
-  count equals `area`, which is what tells you your decoder is right.
+  [the client](../clients/index.md)'s job, which also keeps the raw `rle` beside the mask so the
+  decoded pixel count can be checked against `area`.
 - **`area` is the decoded mask's pixel count, and `bbox` is the model's own box.** The two are
   separate predictions and do not agree exactly: slack between a mask and the box around it is this
   contract working as declared, not a mistake.
@@ -210,7 +210,7 @@ taken straight to a shell.
   #demo-check[data-equal="no"] { color: var(--md-typeset-del-color); }
 </style>
 
-<script src="../post-processing/rle_decode.js"></script>
+<script src="../clients/global-wheat.js"></script>
 <script src="demo.js"></script>
 
 ## What this model does, measured
@@ -243,5 +243,5 @@ an answer is really about.
 
 ## Next
 
-- [Post-processing](../post-processing/index.md) — turning `rle.counts` into a mask, in three languages
+- [Clients](../clients/index.md) — one file per language: a call is a function and `rle.counts` is already a mask
 - [Interactive API reference](../interactive.md) — every route, with a try-it button
