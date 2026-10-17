@@ -2,260 +2,355 @@
   "request": {
     "model": "sam3.1-meta",
     "dataset": "gwfss",
-    "row": 3,
+    "row": 4,
     "parameters": {
       "prompt": "wheat head",
-      "confidence_threshold": 0.22
+      "confidence_threshold": 0.25
     }
   },
-  "image_url": "https://data.global-wheat.com/gwfss/images/00000003.png",
+  "image_url": "https://data.global-wheat.com/gwfss/images/00000004.png",
   "response": {
     "model": "sam3.1-meta",
     "objects": [
       {
         "idx": 0,
         "bbox": [
-          437.2027587890625,
-          -1.0732231140136719,
-          64.8399658203125,
-          38.607173919677734
+          356.531982421875,
+          174.4415740966797,
+          159.02935791015625,
+          72.46395874023438
         ],
-        "score": 0.25390625,
-        "area": 1453.0,
+        "score": 0.455078125,
+        "area": 7765.0,
         "rle": {
           "size": [
             512,
             512
           ],
-          "counts": "PPk63m?001O1O2N2N1O1O1O1O002N1O1O2N1O1O00001O00O1000000001O001O2N2N1O1O1O2N1O1O1O1O1O001OO1J6N2001O001O001O1O0000ASALl>3WAKi>5XAJh>6XAJh>5[AHf>7aAB`>=b0O1N8Gmo4"
+          "counts": "`fb53k?3N2]@2R?Om@2Q?On@4P?LPA6m>KSA7k>IVA7i>IWA8h>HXA9f>H[A8d>H\\A8c>I]A8b>H^A9a>H^A8b>K[A6c>d000O2L3M3N3N2N1O1O101N100O01000001O1O1O1O001OOJ7O01O100O100O2O001O001O1O1O1O10O010O00O100O10O01O0001O102M2O1O0O1000O01000O2O000O2O00000O1O1O10O10000O100O10O10000O010001N2O1O0O2N100O10O001O10O01000O1000000O010O1O100O3N000O10000O10O10O10O1O0100O100O100O2N1O101N1000O010O10O100O1OaJ"
         },
         "category": "wheat head"
       },
       {
         "idx": 1,
         "bbox": [
-          -0.5749053955078125,
-          82.0864486694336,
-          41.506256103515625,
-          92.5429458618164
+          -1.8565292358398438,
+          140.75820922851562,
+          62.3103141784668,
+          159.99923706054688
         ],
-        "score": 0.28515625,
-        "area": 2828.0,
+        "score": 0.365234375,
+        "area": 7435.0,
         "rle": {
           "size": [
             512,
             512
           ],
-          "counts": "h23<P2Q=TNgBR2X=;O2N2O0001O0O01O01N2O1O0O200O10000O2O1N2O0O1O001M3K500O1H9N2N3M6I3G^APOe>n07O2N5L5J<B^lZ7"
+          "counts": "f568Q3R<QMmCQ3o;QMPDQ3n;RMnCP3R<?N2EUL`Dl3_;WL]Dk3b;90O1O1001O1O1O101N01C=O0100O1OEYD_Le;b3[D`La;c3\\D`Lc;o3O102N5L1N11OO1O010O1O000O1O1000O011N1PLgDY3Y;gLkDU3U;gLREIDR3Z;SMaEk2_:UMbEj2_:UMbEj2^:oLjEP3W:mLlEQ3c;M3SN[CLLWOT=NiB=9EI;m=N\\BEK9n=MYBIN3n=1UBJd>4eiQ7"
         },
         "category": "wheat head"
       },
       {
         "idx": 2,
         "bbox": [
-          428.46240234375,
-          194.0361328125,
-          77.82196044921875,
-          136.31170654296875
+          360.4720458984375,
+          456.3881530761719,
+          154.533203125,
+          55.30633544921875
         ],
-        "score": 0.3125,
-        "area": 4294.0,
+        "score": 0.42578125,
+        "area": 6732.0,
         "rle": {
           "size": [
             512,
             512
           ],
-          "counts": "oVf61l?7H6G8M6K9G3M2O1N3M2N2N3OO01O0O2O010O1O1O2M3N1N101N10000YBSN[=m1dB^NR=b1lBaNS=_1mBcNR=\\1mBfNS=Y1lBiNU=P2101N00100O3M2O1N1O1hN`BO`=ObB02QOT=j0lB5NSO[=b0hBg0X=mNbBK7Y1X=fNgBO2Z1V>1O2O2M2N2O0O10O0ZOmA_OS>a0nA_OQ>a0oA@Q>?PBAP>>PBBQ>=oADQ>;PBEo=:RBGo=7RBIn=4TBMn=H[B8i=[OiAO`0f0d>01O1O001N2O1NXV3"
+          "counts": "cod55h?4K4N3M2O1O2N2N2M3M2N3N1N2O2N10000000000O100000000000000000O01O2N1O10000O100N2O1O11O1O2N1O1O000000O10000O10000001O0000000000O1000O1O100O1N2O10O3M3N1O1O000001O00001O000000000000O1O1O1N2O1000000000000001O00O100O1000000O100O10O100000000000001O00001O100O0000O1000000O100000000O100O100001N10001O0O2O0O3L3O`A"
         },
         "category": "wheat head"
       },
       {
         "idx": 3,
         "bbox": [
-          185.70465087890625,
-          6.7488250732421875,
-          42.3560791015625,
-          58.65489196777344
+          386.99755859375,
+          275.71221923828125,
+          73.17572021484375,
+          189.5965576171875
         ],
-        "score": 0.2353515625,
-        "area": 1395.0,
+        "score": 0.470703125,
+        "area": 7533.0,
         "rle": {
           "size": [
             512,
             512
           ],
-          "counts": "hPm25i?4M2M3O0O1O1O1N3N2O2N101N2M4M1N2N2M3M3O1N2O2O0O1O010O01O0010O0aAcN\\>a10FdAPO[>o0eARO\\>j0fAWO[>d0hA]OY>9QBFP>5TBJn=3TBKQ>NSBOQ?NTn]4"
+          "counts": "XZR66X?OTA4h>0TA4i>NTA4j>c0N1O2[AlN[>_1M2lAcNb=`1ZBcN3LS=R2iB[Nl<`2E<I7G6M2O1O3RDVLa;[4I3N100000cKgDS40hK^;`4M2M010O4M1N10000O203L12M0O01O010O01O00001O001ZKlD^4U;`KoD<O]3\\;XLcD13f3c;YL^Df3c;XL^D=Mf2Q<XMQDg2P<WMSDg2o;VMUDh2m;TMVD?Db1m<\\NUCc1l<SNPCN6m1k<QNSCO5o1c=N3M3M3]NjAW1b>M3N2lN]Af0Q?N2N3M1N4L5KRbi0"
         },
         "category": "wheat head"
       },
       {
         "idx": 4,
         "bbox": [
-          340.4613342285156,
-          435.7460632324219,
-          107.0516357421875,
-          62.9195556640625
+          110.64420318603516,
+          320.24554443359375,
+          169.18852996826172,
+          180.84210205078125
         ],
-        "score": 0.330078125,
-        "area": 3711.0,
+        "score": 0.478515625,
+        "area": 10739.0,
         "rle": {
           "size": [
             512,
             512
           ],
-          "counts": "SoZ55g?5M2O100O2O0O1N2L4M7K3M2N100O2O0O1O1L4N2O1O2OO01O1N2O10O3M001O1O0001O010O010O100O10O10O01O10000000000O101N1O1O10000O1O1O1O1O10000O01O2O0O1O10O1O0O2O101O1O1O1O00000000000O1O1O100O10000O101M2L5N1N2N201N1O1N3O0O2MURP1"
+          "counts": "ing13k?2O1N3F9N3l@E`><\\AHc>j0O2IiNcAX1]>6N10000O1L`NiAa1W>301O010O103L4L3M3M2N2N1000O001O1O0010O2K4O1N11N1M3M4I6010O001N0HRN_Bg1k=4201N21N10000O100O0100O0O1O2OFXN\\Bi1e=XNYBh1g=90000O10001O000O2N000O00O1010O2O0N201O1O000010OO2O0M3O10O2O0O110O01N2O0O100O1000O002N1O101N101N10001N110O1O1O1O1N2O1N1000O2O001000O100O1O10O02M2H8N2O2O000000001O0O1O1O1N3N1O1O1000O10O1O1O1O2N100O3M2\\OXAMj>1d0N5Ghec3"
         },
         "category": "wheat head"
       },
       {
         "idx": 5,
         "bbox": [
-          -0.5167922973632812,
-          420.45782470703125,
-          66.6637191772461,
-          76.7109375
+          112.86087799072266,
+          -0.9128265380859375,
+          96.42589569091797,
+          143.4060516357422
         ],
         "score": 0.318359375,
-        "area": 3743.0,
+        "area": 7671.0,
         "rle": {
           "size": [
             512,
             512
           ],
-          "counts": "U>X1g>2M3N2N100O1O1O1N2N2N101O00100O000O2O1O100O1O001N3OO010O010O1O010O00100O100O1O10001O000O101O0000000000000000001O1O0O2L5M2M5K4L4K7@dbn6"
+          "counts": "R`i11X13Y=2YBOZO87Fa=7`BIIf03^Ob=7[Bg01TOc=`1ZBdNd=n1N2N001O001aBiMS=X2kBjMT=c2N1O2N1O1O1O2N1O1O2^ClLT<b3N001O001O1O001O001O1O1O000WDSL_;Y4N001O001O0000jKeDg3];TLhDj3j;WLnC^3\\<O3jL_Ce2b<XMaCg2`<WMaCi2k<0001O0\\MoBY2R=cMRC\\2Y=00O2O002N5J3N0O2O1O2M10000O1O101N1O1N2O2N1O1O1O1N3N1N3K5L3N3O1O001N100O1N3M3^Of@N40hlg4"
         },
         "category": "wheat head"
       },
       {
         "idx": 6,
         "bbox": [
-          88.37362670898438,
-          256.1118469238281,
-          60.201141357421875,
-          61.86932373046875
+          -1.1264104843139648,
+          428.3697814941406,
+          14.101375579833984,
+          57.8658447265625
         ],
-        "score": 0.302734375,
-        "area": 2710.0,
+        "score": 0.37890625,
+        "area": 507.0,
         "rle": {
           "size": [
             512,
             512
           ],
-          "counts": "dX\\19d?6K4L4M3M4M2M4M2M2O1N101N10001N101O1N2O000O101O2M2O1N101O000O10O10O01O100001O01O0000001O01O0100O1O4L1O1\\OfA@[>=gACZ>:iA@^>=dAAd>6_AI\\?O2N_Vf5"
+          "counts": "\\=j1g0WNf<i1i0O2N1O2M3F;K6K9I9F2N3N3Kiah7"
         },
         "category": "wheat head"
       },
       {
         "idx": 7,
         "bbox": [
-          300.8912658691406,
-          142.99237060546875,
-          105.297119140625,
-          201.63079833984375
+          -0.8320846557617188,
+          38.077266693115234,
+          153.5748519897461,
+          125.59047317504883
         ],
-        "score": 0.283203125,
-        "area": 7064.0,
+        "score": 0.310546875,
+        "area": 8484.0,
         "rle": {
           "size": [
             512,
             512
           ],
-          "counts": "hdf44j?7_@Ll>7o@Ol>e0M101N4L4M4K<D3N1O2N100O1O1O1O0jBnM]ONn<U2cCnM_ONm<T2dCmMa<T2e01O2N2N1O1O1000O01O1O010O20aMhBT2n0kMoN1U<U2hCiMn0;Z;P2iCdMg0>`;S2^DlMc;S2]DkM^OEQ<a2aDiM\\OIS<^2`DiM]OJT<^2ZDjMBHU<^2VDnMCDW<2iCT2<^NS<b1lC^NU<b1jC^NW<b1hC_NX<`1gCcNX<\\1gCfNY<Y1fCiNZ<V1fCkNZ<U1dCmN]<mNfCl1LZOe<e0\\C[Od<e0[C]Oe<a0\\C^Oe<a0\\C^Of<`0ZC@g<?ZC@h<?WCAP=8PCHU=4kBJX=_OiBKOg0W=[OnBMKh0OlNT=;UC1Hf0NUOQ=1\\C3Eh0LZOi=MZB^1c=bN\\B`1c=_N]Bb1d=\\N\\Bd1e=\\NYBe1h=[NWBe1k=72N2N1O11OSNRBg1T>nNjA9V>ElA;U>CkA=W>AiA?Y>^OgAd0Y>[OgAf0Y>YOfAh0[>VOfAk0Z>SOgAn0Y>POhAQ1c>1O2N100O10000O01O1O2N4K5TOXA6m>EYA4PUf1"
+          "counts": "j1`0W?Cm@`0P?900O10000O2O0O3M2N3N1N2N2O1N2O1O1O001O2N100O10O0010O0001O0010O01O01O1O001O01O0010O01O001O10O01O1O00001O00100O1O1O00kBfNe;Z1YDiNe;Y1WDjNi;X1SDiNm;X1QDjNn;W1PDkNP<T1oCnNQ<R1nCoNR<P1mCQOT<o0jCROW<m0iCTOV<l0hCVOY<i0gCWOZ<h0eCZOZ<f0eC\\OZ<d0fC]OZ<b0eC@Y<b0fC^OZ<c0eC]O[<d0cC]O]<d0bC\\O^<e0aC[O_<f0`CZO`<g0_CYOb<f0]C[Oc<f0\\CZOe<e0ZC\\Og<c0XC^Oi<`0XC_Ok<?UCAm<=SCCn<<QCEo<;PCFQ=9nBHS=7kBJV=8fBJZ=]110N2N1O2O0101N102N1N3N2N00010N100O2N100O10O01O2O1N2N3N4L1O2M2O1N2O2M2O1N2O2N1O2N2jN_Ah0n>O1O001N101N1O2N1O2N2N3N0O1MU\\d5"
         },
         "category": "wheat head"
       },
       {
         "idx": 8,
         "bbox": [
-          193.27020263671875,
-          407.0503234863281,
-          69.5279541015625,
-          106.32846069335938
+          177.07852172851562,
+          157.39183044433594,
+          62.810882568359375,
+          42.604949951171875
         ],
-        "score": 0.337890625,
-        "area": 5301.0,
+        "score": 0.439453125,
+        "area": 1613.0,
         "rle": {
           "size": [
             512,
             512
           ],
-          "counts": "XmR33750Jl>c0QAGf>m0L3M2N2jAdNd=`1XBcNf=P2K2N2O0O101lBhM^<X2_CkMa<U2\\CnMc<T2ZCoMe<R2WCPNj<d2O0000001O0O10000O1O1O1000000001O0000O1000000001O00001O00001O1O1O7I2N1O1O2N8H2mMaBb0NOd=YOcBe0L0R>LRB2V>EmA9U>CQB9Q>D[B1m>M1OTPm3"
+          "counts": "fUh22m?2O0O2I6O1FGm@:Q?Hn@8Q?Jm@7R?Ll@5R?=0001O00010O1O00100O10O0101N100O1O01O001O1O0O2O00GROaAm0_>SOaAm0_>TOaAk0_>VO`Aj0`>VOaAi0_>XO`Ah0`>YO`Af0`>ZOaAe0_>[OaAd0_>^OaAa0_>_ObA`0^>@bA`0^>@bA?`>A`A=a>C_A=b>B_A<b>E]A:d>F\\A8g>HXA7i>IXA6i>IWA7i>JVA6k>IVA6k>JTA6m>ITA5o>IRAOH2X?NVA0j>0WAOj>1c0OeZW4"
         },
         "category": "wheat head"
       },
       {
         "idx": 9,
         "bbox": [
-          201.347900390625,
-          2.5923690795898438,
-          80.50665283203125,
-          210.23596954345703
+          -1.599273681640625,
+          292.85247802734375,
+          144.1005401611328,
+          62.850341796875
         ],
-        "score": 0.361328125,
-        "area": 8677.0,
+        "score": 0.435546875,
+        "area": 6329.0,
         "rle": {
           "size": [
             512,
             512
           ],
-          "counts": "[UV3340`?:M2O1O1O1O1\\OEbA<[>GbA<\\>f0N2M5@^N[Bi1]=]N[BP2Z<kMaDe2Y;^McDj2V;dM[D_2c;eMXD^2l:nLeEQ4Q:mK^E6?m3R:]LkEe3S:^LiEc3W:_LgEa3Z:aLbE_3X:kLfET3Y:QMcEP3]:Z1N2O1N2M3M21O00001O0M30000H8O2J5M400O1000O]O_EiKb:U4aEhK`:W4e0N2C=O100_OTDmLm;S3WDgLk;Y3>000001O0O10001cN^CTOh<k0\\CoNg<P1\\CmNf<R1]CjNd<U1_CiNb<V1dCdN\\<[1jC_NX<_1W1bNgAP1[>mNjAf0MYOk>a0?J7EQ_c3"
+          "counts": "a9a1_>00O01000000001O2N1O0001N10001N10000O010O1O100O010O01N200000000001O0O2O001N10000000000O01O1O1O1O1O010001N10000O1001O0O101N10000O100000001O0000000O10O01O00100000O1000000000000O101O0000000002N1O1N10000000000O101O000000O10O1O1O01000000000O010000O01000001O2M2O001N1O2N2N2O1N2N6De@H\\?78N1O1O2M3NXfg5"
         },
         "category": "wheat head"
       },
       {
         "idx": 10,
         "bbox": [
-          345.0641174316406,
-          258.96697998046875,
-          61.0701904296875,
-          86.7142333984375
+          1.2845897674560547,
+          140.957275390625,
+          59.5779972076416,
+          158.49081420898438
         ],
-        "score": 0.25,
-        "area": 2737.0,
+        "score": 0.32421875,
+        "area": 7393.0,
         "rle": {
           "size": [
             512,
             512
           ],
-          "counts": "[h\\5145_?;L6J2M2N2N2N2O2N4M1N10O1O001O00001O0000YAoNR>0SBQ1JVOl=KYBn0K]Og=D_Be1`=[NYBL3j1d=YNXBN4j1d=[N[Be1f=ZNYBg1h=YNWBg1j=72N1O1010NTNRBg1T>00O2O0kNjA>Y>^OgAd0Y>ZOhAf0Y>YOfAi0Z>VOfAk0Y>TOiAl0X>QOiAP1W>nNjAS1V>gNgA05Z1^>2N100O10O100O1O1N3M4XOWA2o>GVA4n>HlVe1"
+          "counts": "f56:l0KGM[O1?a<CeCl0Mf0Y<`NiCk0Nh0U<_NkCk00g0R<`NkCo0O[O4<o;j2CXL^Dj3a;XL]Dh3c;ZLZDf3g;mMYD?h;l10001ObMZDd0e;]O]Da0c;@\\D33ZN_;e3dDYL[;g3>10O1ESDcLl;Z3?OO2oCdL\\;_3`DdL];b3]DaLb;P4N102N5K100O1J]KlDe4R;6O10O01O000000O2O0O2O1O0PLlDT3T;kLRECGR3X;XM`Ef2a:WMbEh2^:XMcEg2^:UMfEi2\\:SMhEl2[:mLjEP3e;RN[CMLXOm<IQC5N<;DH<n=M\\BEJ;m=MZBGN5n=OVBJc>5h0KoXQ7"
         },
         "category": "wheat head"
       },
       {
         "idx": 11,
         "bbox": [
-          292.3427734375,
-          79.9659194946289,
-          43.7020263671875,
-          41.96910095214844
+          -0.1496429443359375,
+          -1.265472412109375,
+          211.08241271972656,
+          164.92945861816406
         ],
-        "score": 0.2255859375,
-        "area": 1223.0,
+        "score": 0.357421875,
+        "area": 16178.0,
         "rle": {
           "size": [
             512,
             512
           ],
-          "counts": "Xca46i?2M4M2N2M3G9N2O1O1O1O0O2O0N3N1O1OO2M3M2010O2O00001O00000001O2N1O008G101O1N101N2O1M3N3N2G\\@2^\\h2"
+          "counts": "h1c0V?7O1O1O100O2O0O102L3N3M2N2N2O0O3N1O1N1O2O2N100000O2N1O10O01O001O010O01O001O0010O001O010O001O1O010O1O001O00001O1O1O100O00iBiNe;Y1WDjNi;X1TDiNk;Y1RDiNn;V1PDmNo;T1PDnNo;Q1PDPOQ<P1nCPOS<o0lCROU<n0iCTOW<k0hCVOX<j0gCWOZ<h0eCZOZ<f0eC\\O[<c0eC^OZ<b0eC@Z<`0fC@Z<a0eC_OZ<d0dC\\O\\<e0cC[O]<f0bCZO^<g0`CZO`<g0_CYOb<f0]C[Oc<f0[C[Of<c0[C]Of<b0YC_Oh<`0XC_Oj<`0VC@m<=RCDo<;QCEP=:oBGQ=9nBHS=8jBIW=`10O10N2N101O0100O2O1O1N3N2N00001O000O2N100OcMkMaEO^O7c0o1\\:oM_E0\\O79C0W2m:TNoDg0OTO3P2P;WNkDg00UO4l1Q;3mDLT;6lDGU;:jDFV;;jDDV;<jDCW;>gDCY;b20O100O100O100000000O1000000O100O2N002N1O100O10O101O1O001O0001O1hKeDi3k;YLoC[3]<O1nL_Ca2d<ZM_Ce2d<UM_Ck2l<O00010[MnBY2T=cMPC\\2Z=0001O001N2O6J1O1N102N1O0O100O1O1O2N1O1N2O2N1O1O1O1N3N1N3K5L3O2N101O0O10O01N1O2Cm@FZ?88O1N2O1O1O2N2N_]c4"
         },
         "category": "wheat head"
       },
       {
         "idx": 12,
         "bbox": [
-          300.6141052246094,
-          142.8889617919922,
-          67.86651611328125,
-          107.44955444335938
+          320.7770690917969,
+          338.47552490234375,
+          64.14532470703125,
+          173.14984130859375
         ],
-        "score": 0.2734375,
-        "area": 3926.0,
+        "score": 0.4609375,
+        "area": 6760.0,
         "rle": {
           "size": [
             512,
             512
           ],
-          "counts": "gdf46i?6^@Ml>6PA0l>c0N2N2O2M5K6`A^N02S>i1N3N1O1O1O100O1O1O001O002N1O1O2N1O1000O10O1O1O010O1;FO1O001O4L2N00O1O0iM_Bo1k=N1N110000000O2TNRBb1X>N100O2N101N102M9@UAXOn>b0YA[Oi>`0>L4M4LRiW2"
+          "counts": "kmP54^?b0h@A9Li=Z1oAhNk=_1SBcNj=`1TB`N[=\\2M3N2E\\MUCg2h<;B=01O2O0O2H8N1O2M2O1M3K5I<H3O1O000001O0000L3L5N2O01H8N3N1O1N1N2O2N2O001O001fNfDmM\\;d1UEWNo:T1hEQNeNM3<h;Q1VDlNk1JU:Y1SDiNQ>V1=B_A\\Ob>b0aA\\Oa>b0aA[Od>`0`0M2M3O1O1N2HVeo1"
+        },
+        "category": "wheat head"
+      },
+      {
+        "idx": 13,
+        "bbox": [
+          138.23873901367188,
+          228.07110595703125,
+          151.59991455078125,
+          94.42449951171875
+        ],
+        "score": 0.462890625,
+        "area": 6846.0,
+        "rle": {
+          "size": [
+            512,
+            512
+          ],
+          "counts": "fWU27h?4M2M3N5J4F:K8I4L6J2N2N110O01O010O100O001O1O01O0O2O1O0O3O0O11O1N2N100O1hNhAf0Y>YOhAf0Z>WOgAj0Z>SOfAn0\\>oNeAQ1\\>lNfAU1a>100O2O000O2O1N101N100O10006J0100O01O0O101O001O0001O1O002N1O1O0000000001O10O100O10O0100O2N010OO1O2N1O1O1O10O101O1N10001N3N1O1N2O010O0000001O0000100O001O001O001O001O00001O00001O1N2O1N2N3M2N2N3M3N1O010O01O000001O001N2N3LdV_3"
+        },
+        "category": "wheat head"
+      },
+      {
+        "idx": 14,
+        "bbox": [
+          1.1889076232910156,
+          -0.30194091796875,
+          65.00614547729492,
+          41.523231506347656
+        ],
+        "score": 0.375,
+        "area": 1708.0,
+        "rle": {
+          "size": [
+            512,
+            512
+          ],
+          "counts": "f`03:0T?4i@NR?7k@LS?6k@KU?`000O100O100O010O001O0J700000O100001O000O10O1O1M3N2O10O100000O100001O00O1000000000000O1O100O1O1O10000O100O100O100O100O2Oo_o6"
+        },
+        "category": "wheat head"
+      },
+      {
+        "idx": 15,
+        "bbox": [
+          194.33511352539062,
+          486.6771240234375,
+          103.21392822265625,
+          25.646240234375
+        ],
+        "score": 0.396484375,
+        "area": 1135.0,
+        "rle": {
+          "size": [
+            512,
+            512
+          ],
+          "counts": "noQ32l?2O1O100000000000000O100O1O100O100O1O100O100O100001O0000O1O1O100O100O11O1O2N0000000000O11O4L1O00O100O100O100O1O10000O1O100O1O1O1N200O1O100OJi@EZ?7h@HY?6h@JX?5i@KW?4j@LV?3j@NV?1k@OU?Om@1a?0O1000000000000000000001O00000O100O10O11N1O10V`[3"
+        },
+        "category": "wheat head"
+      },
+      {
+        "idx": 16,
+        "bbox": [
+          299.6183166503906,
+          1.5959663391113281,
+          44.78192138671875,
+          48.790504455566406
+        ],
+        "score": 0.435546875,
+        "area": 1165.0,
+        "rle": {
+          "size": [
+            512,
+            512
+          ],
+          "counts": "Uae43k?4L3C=M3N2N2N2O0O2O001O0O10O2O0O3N1ODUOeAi0Y>ZOhAd0W>^OiAb0V>]OlAb0S>_OoA?Q>AQB<P>DcAI8a0V>FaAK:=U>HaAM9:U>JbAM98U>KbAM:7T>LbAO94U>NaAO:2U>O`A2=HW>4^A5S?Km@6R?Jn@7R?Hn@9Q?Go@9R?Fn@:R?Fo@9R?Gm@8U?Kh@4X?Jk@4X?Il@2nnd2"
+        },
+        "category": "wheat head"
+      },
+      {
+        "idx": 17,
+        "bbox": [
+          65.39140319824219,
+          463.205810546875,
+          122.81999206542969,
+          48.78033447265625
+        ],
+        "score": 0.4375,
+        "area": 3426.0,
+        "rle": {
+          "size": [
+            512,
+            512
+          ],
+          "counts": "PoP1e0W?7K3N3M3L4L3N1O1000000001O001O0000O100O1O100O100000000001O1O1O00001O0000001O1O1O3mNXAh0P?0001OO1001@QAMo>1SAOm>LWA5Z?000O1O1O10000O100O1000000000000001O1O2N2N001O00O100O1N2O10000000000O0O2N3M2O1O1N2O100O10000O10000000000O1000000001O1O2N2N6J0000001O001O1O1O2M3N1O2N1NW`P5"
         },
         "category": "wheat head"
       }
