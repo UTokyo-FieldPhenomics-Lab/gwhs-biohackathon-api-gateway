@@ -479,6 +479,23 @@ def test_the_model_page_says_how_new_the_count_is(client: TestClient) -> None:
     assert "running || !entry.backends_up" in page
 
 
+def test_the_model_page_shows_the_photograph_the_reader_chose(client: TestClient) -> None:
+    """An upload is a picture like any other: choosing one draws it, none clears the box.
+
+    The page previewed only published rows, so switching to "your own photograph" left the last
+    row on screen — under a caption naming that row — until Run replaced it. A file is local, so
+    it can be previewed the way a row is, and a source naming no picture yet shows no picture.
+    """
+    page = client.get(PLAY_PATH).text
+
+    assert '$("file").addEventListener("change", preview)' in page
+    assert "your photograph" in page
+    assert "if (upload && !file)" in page
+    assert "clearViewer()" in page
+    # A replaced file is released rather than kept for the life of the page.
+    assert "URL.revokeObjectURL" in page
+
+
 def test_the_model_page_puts_the_image_before_the_model(client: TestClient) -> None:
     """The image is upstream of the model: a published row is a static object and needs no model.
 

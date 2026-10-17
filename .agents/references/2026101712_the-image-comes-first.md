@@ -49,3 +49,24 @@ the old order now pins the causal one: `source < model < parameters < run`.
 Two sessions argued about this row order from *reading* order — what a form should present first. The
 answer was in the *data* order: which call can be made without the other. When a form's order is
 disputed, the contract usually decides it.
+
+## The bug that came back from the field
+
+Reported after the deploy: choosing "your own photograph" and picking a file left the last published row
+on screen, under a caption naming that row, until Run replaced it. The cause was one line — `preview()`
+returned early unless the source was a row, so nothing in upload mode ever touched the viewer, and the
+picture no longer matched the controls that describe it. A file is local, so it is now previewed the way
+a row is (`URL.createObjectURL`, painted with no masks, the caption's size taken from the image itself),
+and a source that names no picture clears the viewer instead of leaving the previous one. The object URL
+is released when another picture replaces it.
+
+The first version of that fix **killed the whole page**, and the tests did not notice. `addEventListener`
+takes the handler by value, so `$("file").addEventListener("change", preview)` evaluates `preview` at
+registration — and it sat above `const preview = …`, which is a temporal-dead-zone `ReferenceError`. The
+script stopped there: no connect, no key, an empty page. A test that greps for `preview` in the served
+text cannot see this; driving the page for ten seconds does. The listener now lives beside the other
+preview triggers, below the declaration, with a comment saying why the position matters.
+
+Two things worth carrying: a page's behaviour is not testable by string, so every change to one gets a
+browser pass before it is believed; and a *listener registration* is an eager reference, unlike the
+closure inside it.
