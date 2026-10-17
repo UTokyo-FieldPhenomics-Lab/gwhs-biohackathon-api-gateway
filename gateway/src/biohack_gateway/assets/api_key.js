@@ -11,7 +11,9 @@
 // third-party storage is blocked or partitioned away from the rest of the site, a quota error — all of
 // them leave the key held for the lifetime of the page instead, which is what the page did before
 // there was a store at all.
-apiKeyStore = (() => {
+// A module is strict, and a strict module cannot assign to an undeclared name: the store is published
+// through `globalThis` so the sibling scripts (modules of their own) can read it as `apiKeyStore`.
+globalThis.apiKeyStore = (() => {
   "use strict";
   const KEY = "biohack-gateway/api-key";
   const LEGACY = "authorized"; // Swagger UI's own entry, from when it persisted the key for us.
