@@ -1152,6 +1152,64 @@ async def watch_pool(registry: ModelRegistry, interval: float | None = None) -> 
         await asyncio.to_thread(registry.probe)
 
 
+MAX_PROMPT_LENGTH = 200
+"""Characters one prompt may carry. The model reads a short phrase, and a query string is not a
+place to put a megabyte of text: every prompt is forwarded verbatim into the backend's query string,
+so an unbounded one is a cheap way to make the pool carry it."""
+
+_IMAGE_MAGIC: tuple[tuple[bytes, str], ...] = (
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+    (b"II*\x00", "image/tiff"),
+    (b"MM\x00*", "image/tiff"),
+)
+"""What an accepted upload starts with, and the type it is therefore forwarded as.
+
+A magic-byte table rather than the multipart `Content-Type`, because that header is the client's
+claim and this is the one decision it must not make. It is also not a validator: the backend decodes
+the bytes with Pillow and is the authority on whether they are a usable image. What this stops is
+the case that has no possible answer — a script, an archive, or a text file reaching a lane to be
+refused there — and it makes the `Content-Type` the backend receives true.
+
+HEIC and camera RAW are deliberately absent: Pillow cannot decode them, so accepting them would only
+move the refusal later with a worse message. The refusal says so.
+"""
+
+
+def _image_media_type(payload: bytes) -> str:
+    """Name the image format these bytes are, or refuse them.
+
+    Parameters
+    ----------
+    payload : bytes
+        The uploaded body, which the caller has already read.
+
+    Returns
+    -------
+    str
+        The media type of the payload's own header, which is what a backend is told it received.
+
+    Raises
+    ------
+    HTTPException
+        ``400`` when the bytes start with nothing in :data:`_IMAGE_MAGIC`.
+    """
+    for magic, media_type in _IMAGE_MAGIC:
+        if payload.startswith(magic):
+            return media_type
+    if payload[:4] == b"RIFF" and payload[8:12] == b"WEBP":
+        return "image/webp"
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            "the upload is not an image this API accepts; send JPEG, PNG, WebP, TIFF or GIF "
+            "(a phone's HEIC or a camera RAW file needs converting to JPEG first)"
+        ),
+    )
+
+
 def create_model_router(
     registry: ModelRegistry,
     datasets: Mapping[str, Dataset],
@@ -1240,7 +1298,11 @@ def create_model_router(
         model: str,
         request: Request,
         body: PredictInput,
-        prompt: str | None = Query(None, description="The text the model is asked to find."),
+        prompt: str | None = Query(
+            None,
+            max_length=MAX_PROMPT_LENGTH,
+            description="The text the model is asked to find.",
+        ),
         confidence_threshold: float | None = Query(
             None,
             ge=0.0,
@@ -1303,7 +1365,11 @@ def create_model_router(
         model: str,
         request: Request,
         file: UploadFile,
-        prompt: str | None = Query(None, description="The text the model is asked to find."),
+        prompt: str | None = Query(
+            None,
+            max_length=MAX_PROMPT_LENGTH,
+            description="The text the model is asked to find.",
+        ),
         confidence_threshold: float | None = Query(
             None,
             ge=0.0,
@@ -1350,12 +1416,13 @@ def create_model_router(
         payload = file.file.read()
         if not payload:
             raise HTTPException(status_code=400, detail="the upload is empty")
+        media_type = _image_media_type(payload)
         reply = registry.forward(
             model,
             path="predict/upload",
             query=request.url.query,
             body=payload,
-            content_type=file.content_type or "application/octet-stream",
+            content_type=media_type,
         )
         return _prediction(reply, model)
 
