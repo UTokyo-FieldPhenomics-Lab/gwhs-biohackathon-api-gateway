@@ -35,7 +35,7 @@ Acceptance:
 | Response shape | `{model, objects: [{idx, category, bbox, score, area, rle}], resolution_used}` |
 | Authentication | Participant `X-API-Key`; gateway→backend `X-Backend-Token`; **a participant's key never reaches a backend** |
 | Error mapping | `4xx` is the request's fault and is not retried; `5xx` or a timeout is the backend's fault — mark it unhealthy for 30 s and try the next |
-| One round trip | No streaming and no multi-step handshake; `/health` is read once at startup and is not polled |
+| One round trip | No streaming and no multi-step handshake. `/health` is read once at startup for what a model serves and probed every 15 s for whether it is there (2026-10-17); a prediction is still one round trip |
 | Normalisation in the container | The gateway has **no ML dependency** and never touches geometry |
 
 ## Geography, corrected
