@@ -93,3 +93,32 @@ and `rules/backend-pool.md` stopped saying the gateway does not route to the hom
 predictions in the notebook came back from `lab-5090`, which is why its `area` (173,716) is the
 `gwhs-temp` row-0 figure from that card rather than the 3090's 173,777 quoted on the model page: one
 answer is one machine's answer, and `computed_by` is where that is written down.
+
+## 18 October: the panel that never loaded
+
+The recorded-answer canvas had drawn nothing since it was written. `clients/js/global-wheat.js` ends
+with `export`, so the classic `<script src="…">` that both the demo page and `/play` used failed with
+`SyntaxError: export declarations may only appear at top level of a module`, and every later reference
+died with `GlobalWheat is not defined`. The empty bordered box that made it look like a slow load was
+CSS: Material styles `figure` with `display: flow-root`, which beats `[hidden]`'s `display: none`, so
+the "hidden" panel still occupied a frame.
+
+Nothing caught it. The gateway test asserted the `src` string and not the tag, the docs build never
+executes JavaScript, and the page's own decoder guard sits inside the script that never ran.
+
+- **Replaced, not repaired.** The panel was the site's only JavaScript, and what it demonstrated — a
+  decoded mask, no key needed — a generated figure shows as well. `known-good.jpg` is drawn by
+  `make_figures.py` from the same record the three client suites decode, so the picture, the scores on
+  it, and the numbers in the caption share one source. `example-prediction.json` moved to
+  `clients/fixtures/`: only tests read it now, so it is no longer published.
+- **A call we know works** took its place: `gwfss` row 4, `prompt="wheat head"`,
+  `confidence_threshold=0.25` → 18 objects, `Σ mask = Σ area = 109,419 px`, answered by `lab-3090`.
+  That is a test case a participant can run against their own setup.
+- **Fixed where it mattered.** `/play` loads the client as `type="module"` (three tags, in document
+  order, so the decoder has run before the page draws); `api_key.js` publishes its store through
+  `globalThis` because a module is strict and cannot assign to an undeclared name; and `test_app.py`
+  now asserts `type="module"`, because the tag is what failed.
+- **The deployment was two bugs deep.** The live `/play` was older code that still pointed at
+  `post-processing/rle_decode.js`, deleted the previous week — a page that loads a file from another
+  repository can be broken by that repository's changes. Redeploying to the commit that used
+  `clients/global-wheat.js` is what exposed the module bug underneath.

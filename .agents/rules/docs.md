@@ -61,9 +61,12 @@ Package: `docs/`. Repo-wide invariants are in [`project.md`](project.md) and are
   Every published sentence has to be one a participant needs.
 - **One decoder, and it is the client's.** RLE and palette decoding live in `clients/` — one
   implementation per language, checked there — and the Clients page hands them to a participant as
-  files to download. The live demo page and the API's run-a-model page load
-  `clients/global-wheat.js` from this site rather than carrying a copy, so a demo and a tutorial
-  cannot disagree about what a correct decode is. Anything on a page that can fail to load — a
+  files to download. The API's run-a-model page loads `clients/global-wheat.js` from this site rather
+  than carrying a copy, so the playground and the tutorial cannot disagree about what a correct decode
+  is; it loads it as a **module**, because the file has a top-level `export` and a classic `<script>`
+  fails to parse it — the docs site's own recorded-answer panel did exactly that for a week, and a
+  generated figure replaced it. A figure is drawn by `make_figures.py` from the same record the client
+  suites decode, so the picture cannot drift either. Anything on a page that can fail to load — a
   decoder, a recorded example — says so in words where the reader is looking, because a blank canvas
   reads as a result.
 - **The client files are copies in the build output, never in the source tree.** They are the
