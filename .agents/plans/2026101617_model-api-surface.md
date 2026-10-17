@@ -83,6 +83,9 @@ otherwise).
 
 ```json
 { "models": [ { "id": "sam3.1-meta", "resolution": 1008, "backends_up": 1, "max_in_flight": 1,
+                "checked_seconds_ago": 3,
+                "machines": [ { "machine": "lab-3090", "gpu": "NVIDIA GeForce RTX 3090",
+                                "compute_capability": "8.6", "cuda": "12.8", "torch": "…" } ],
                 "parameters": [ { "name": "prompt", "default": "wheat head", ... },
                                 { "name": "confidence_threshold", "default": 0.5,
                                   "minimum": 0.0, "maximum": 1.0, ... } ] } ] }

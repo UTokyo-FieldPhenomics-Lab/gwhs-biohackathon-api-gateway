@@ -23,6 +23,10 @@ The machines that serve a model, and the only path that reaches them. Bringing o
   a hop of its own — so an allowlist would hold on one machine and silently not on the next, and it
   would bind a backend to a gateway address this design wants disposable. The measurements are in
   [`references/2026101621_deploying-sam31-on-the-5090.md`](../references/2026101621_deploying-sam31-on-the-5090.md).
+- **Every container names the machine it runs on.** `SAM31_MACHINE` is set on the run line, because
+  every answer carries that name in `computed_by` and a container's own host name is a random id. The
+  name is what makes two answers that differ traceable to two cards; without it a record names a card
+  and no host.
 - **A machine is a backend only when it appears here and in the gateway's `models.json`.** The table
   is what may serve; the list is what does serve, in order.
 - **This table is current state, and the measurements behind it are references.** Fill a row in when

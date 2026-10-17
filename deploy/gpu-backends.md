@@ -269,14 +269,22 @@ not in the image**, which is why `docker run` is written out in full:
 | `--restart unless-stopped` | `HostConfig.RestartPolicy` | `docker inspect --format '{{.HostConfig.RestartPolicy.Name}}' <model>` |
 | `-p 12711:12711` | `HostConfig.PortBindings` | `docker port <model>` |
 | `-e BACKEND_TOKEN=…` | `Config.Env` | `docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' <model>` |
+| `-e SAM31_MACHINE=…` | `Config.Env` | the same `docker inspect` |
 
     docker run -d --gpus all --restart unless-stopped -p 12711:12711 \
-      -e BACKEND_TOKEN=<the value in the gateway host's env> --name <model> <image>
+      -e BACKEND_TOKEN=<the value in the gateway host's env> \
+      -e SAM31_MACHINE=<this machine's name> --name <model> <image>
 
 - `-e BACKEND_TOKEN=…` is **mandatory** — the entrypoint refuses to start without it — and it must
   equal the gateway host's `BIOHACK_BACKEND_TOKEN`. A different value is not a stale backend, it is a
   dead model: it answers `401` and the gateway abandons the whole model rather than trying the next
   machine (§4).
+- `-e SAM31_MACHINE=…` is **what every answer calls this machine.** It is copied into `computed_by` in
+  `/health` and in every prediction, so a participant comparing two answers can see they came from
+  different cards — and an operator reading one can tell which host said it. Left unset, a container
+  reports its own host name, which in Docker is a random id. A name is not an address and not a
+  capacity: the record holds the name, the card, its compute capability, and the CUDA and torch
+  versions, and nothing else.
 - `--gpus all` is what puts the card inside the container; without it the entrypoint's admission
   check refuses to start, which is it doing its job.
 - `--restart unless-stopped` is what brings the backend back after a reboot. Never `always`: the
@@ -301,6 +309,14 @@ access or the name cannot, and each needs `docker rm -f` and the run line again.
 `/health` answers `503` while the checkpoint loads and one throwaway prompt runs; `docker logs` prints
 `budget ok: needs … GB` and then `ready: load … s`, and only then does it serve. The gateway treats a
 `503` as "still loading" and asks again, so a restart costs the pool seconds.
+
+`/health` also answers the machine's `computed_by` — the name above, the card, its compute capability,
+and the CUDA and torch versions. It is the same record every prediction carries, so a backend that
+answers differently from its neighbour is comparable in one field instead of by inference. Two of these
+machines do answer one call differently: `gwfss` row 4 at `confidence_threshold` 0.25 returns 18 objects
+on the 3090 (`8.6`, Ampere) and 17 on the 5090 (`12.0`, Blackwell), with the same image, prompt, CUDA and
+torch on both — see
+[`../.agents/references/2026101711_two-backends-differ-on-the-same-call.md`](../.agents/references/2026101711_two-backends-differ-on-the-same-call.md).
 
 **Prove it from the gateway host, not from the machine.**
 `curl http://<private address>:12711/health` is the path a participant's request takes; from the
