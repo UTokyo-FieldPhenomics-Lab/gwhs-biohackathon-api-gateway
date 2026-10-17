@@ -339,18 +339,18 @@ def test_the_model_page_is_not_in_the_contract(client: TestClient) -> None:
     assert PLAY_PATH not in client.get("/openapi.json").json()["paths"]
 
 
-def test_the_model_page_loads_the_site_own_decoder(client: TestClient) -> None:
+def test_the_model_page_loads_the_site_own_client(client: TestClient) -> None:
     """One decoder, and it is the published one.
 
-    The page draws a mask with the documentation site's `rle_decode.js` — the file the
-    tutorial hands a participant to download — loaded by URL. A copy beside this module would
-    be a second decoder to keep in step with the one the site promises is correct.
+    The page draws a mask with the documentation site's `clients/global-wheat.js` — the same file
+    the Clients page hands a participant to download — loaded by URL. A copy beside this module
+    would be a second decoder to keep in step with the one the site promises is correct.
     """
     page = client.get(PLAY_PATH).text
 
-    assert f'src="{DOCS_PARENT_ORIGIN}/post-processing/rle_decode.js"' in page
-    assert "rleDecode" in page
-    assert "function rleDecode" not in page  # the decoder is loaded, never copied
+    assert f'src="{DOCS_PARENT_ORIGIN}/clients/global-wheat.js"' in page
+    assert "GlobalWheat.rle_decode" in page
+    assert "function rle_decode" not in page  # the decoder is loaded, never copied
 
 
 def test_the_model_page_names_no_model_and_no_parameter(client: TestClient) -> None:
@@ -404,21 +404,21 @@ def test_the_model_page_reports_its_height_to_the_same_site(tmp_path: Path) -> N
 
     assert page.headers["content-security-policy"] == f"frame-ancestors {parent}"
     assert f'"{parent}"' in page.text
-    assert 'src="' + parent + '/post-processing/rle_decode.js"' in page.text
+    assert 'src="' + parent + '/clients/global-wheat.js"' in page.text
     assert 'SITE_ORIGIN = "' + parent + '"' in page.text
 
 
-def test_the_model_page_maps_the_mask_into_canvas_order(client: TestClient) -> None:
-    """A decoded mask is COCO's order; the canvas is row-major, and the two differ by a transpose.
+def test_the_model_page_copies_the_mask_into_canvas_order(client: TestClient) -> None:
+    """The client decodes row-major, which is `ImageData`'s own order, so nothing is mapped here.
 
-    The decoder hands back an array that indexes as `row + column * height`, while `ImageData` is
-    row-major — so copying the index straight across draws every mask lying down the image instead
-    of across it. That looked plausible enough in a screenshot; it was caught by counting the drawn
-    pixels and finding them outside the object's own box, which is why the mapping is pinned here.
+    COCO flattens column-major and the canvas is row-major; the transpose belongs to the decoder
+    rather than to every page that draws a mask — which is why it is the client's, and why a page
+    that maps an index again is now the bug rather than the fix.
     """
     page = client.get(PLAY_PATH).text
 
-    assert "((index % height) * width + Math.floor(index / height)) * 4" in page
+    assert "const at = index * 4;" in page
+    assert "index % height" not in page
     # And the box is placed in the image's own fractions, so it stays on its object at any size the
     # pane gives the image. Nothing maps a scroll any more: the pane shows the whole photograph.
     assert "(x / image.naturalWidth) * 100" in page

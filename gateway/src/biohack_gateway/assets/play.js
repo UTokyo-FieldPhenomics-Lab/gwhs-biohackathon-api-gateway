@@ -339,17 +339,16 @@
   // one at the display size. `putImageData` ignores scaling, so the offscreen canvas is what
   // carries the mask, and the visible canvas is only ever written to.
   //
-  // The decoded array is COCO's order — flat index `row + column * height`, quoted as "column-major"
-  // — while `ImageData` is row-major. The index is therefore mapped rather than copied, or every mask
-  // would be drawn transposed: a mask lying down the image instead of across it.
+  // The client decodes to a row-major array, which is `ImageData`'s own order, so a mask drawn
+  // transposed is not a thing this page can do: the pixels are copied straight across.
   const overlayFor = (object) => {
     const [height, width] = object.rle.size;
-    const mask = rleDecode(object.rle.counts, height, width);
+    const {data} = GlobalWheat.rle_decode(object.rle.counts, height, width);
     const pixels = new ImageData(width, height);
     let painted = 0;
-    for (let index = 0; index < mask.length; index++) {
-      if (!mask[index]) continue;
-      const at = ((index % height) * width + Math.floor(index / height)) * 4;
+    for (let index = 0; index < data.length; index++) {
+      if (!data[index]) continue;
+      const at = index * 4;
       pixels.data[at] = MASK[0];
       pixels.data[at + 1] = MASK[1];
       pixels.data[at + 2] = MASK[2];
@@ -412,7 +411,7 @@
     const context = canvas.getContext("2d");
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
 
-    const decoder = typeof rleDecode === "function";
+    const decoder = typeof GlobalWheat?.rle_decode === "function";
     let decoded = 0, declared = 0, checked = 0;
     for (const object of objects) {
       if (!object.rle || !decoder) continue;

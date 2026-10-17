@@ -17,9 +17,9 @@ Two facts from the browser shape the drawing code, and both are in the script wh
 ``data.global-wheat.com`` sends no ``access-control-allow-origin`` header, so the image is loaded
 without ``crossorigin``, the canvas is tainted, and **no pixel may be read back** — the mask is
 therefore composited from an offscreen canvas rather than read off the visible one, and the
-``Σ mask = area`` check counts the decoded array instead of the canvas. And the decoder is the
-documentation site's own published file, loaded from there rather than copied, so the demo and the
-tutorial cannot drift apart.
+``Σ mask = area`` check counts the decoded array instead of the canvas. And the decoder is inside a
+client the documentation site publishes, loaded from there rather than copied, so the demo, the
+tutorial, and a participant's notebook cannot drift apart.
 """
 
 from __future__ import annotations
@@ -74,9 +74,9 @@ def play_page(parent_origin: str) -> HTMLResponse:
         page is where a reader types their key, and a field for a secret in a page that
         anything may embed is a field that anything may overlay.
     """
-    page = PLAY_PAGE.replace(
-        "__DECODER__", f"{parent_origin}/post-processing/rle_decode.js"
-    ).replace("__REPORTER__", frame_reporter(parent_origin, "#play"))
+    page = PLAY_PAGE.replace("__DECODER__", f"{parent_origin}/clients/global-wheat.js").replace(
+        "__REPORTER__", frame_reporter(parent_origin, "#play")
+    )
     return HTMLResponse(
         page, headers={"Content-Security-Policy": f"frame-ancestors {parent_origin}"}
     )
