@@ -1,0 +1,9 @@
+{
+  "name": "global-wheat-client-checks",
+  "private": true,
+  "type": "module",
+  "description": "Not published: it only makes this directory an ES module so `node --test` reads the client the way a browser does.",
+  "scripts": {
+    "test": "node --test tests/"
+  }
+}

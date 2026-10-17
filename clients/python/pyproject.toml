@@ -1,0 +1,48 @@
+# The environment the client's own checks run in, not a package anything installs.
+#
+# `package = false` below is the point: the client is a file a participant downloads and imports,
+# so this project exists to give pytest, ruff, and mypy a lock file and nothing else. Building a
+# wheel from it would create a second thing to keep in step with the file that is published.
+
+[project]
+name = "global-wheat-clients"
+version = "0.0.0"
+description = "Checks for the Global Wheat API client files. Not distributed."
+requires-python = ">=3.12"
+dependencies = [
+    # The Python client's own dependencies, named here so the checks import what a participant gets.
+    "numpy>=2.0",
+    "requests>=2.32",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.11",
+    "pytest>=8",
+    "ruff>=0.6",
+    "types-requests>=2.32",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "D"]
+ignore = ["D203", "D213"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["global_wheat.py"]
