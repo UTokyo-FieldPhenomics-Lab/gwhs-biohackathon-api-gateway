@@ -188,10 +188,15 @@ content-type branch so each handler has one job, and the upload is the only one 
   | `4xx` | the request's fault — no retry, answered through the gateway's own error contract |
   | `5xx`, timeout, connection failure | the backend's fault — mark unhealthy for 30 s, try the next |
 
-- **The timeout replaces a health loop.** `gateway.md` forbids polling, so a request is how the
-  gateway learns a backend is gone; the timeout is the only knob that decides what that costs. Its
-  value is deliberately left open below.
-- **A backend's `/health` is for a human and the deploy script, never the gateway.**
+- **A request pays the timeout; the probe decides what the count says.** A backend that fails a
+  request is marked unhealthy for 30 s and the next is tried, so the timeout is still the knob that
+  decides what one failure costs — and `models.py` asserts its window is at least that budget. What
+  changed on 2026-10-17 is that *availability* is no longer inferred from requests at all: every
+  backend is probed on `PROBE_INTERVAL_SECONDS` and the verdict is published with its age.
+- **A backend's `/health` is what the gateway reads, for two things and nothing else.** Once at
+  startup for the declaration — what the model serves — and on an interval for whether it is there.
+  A human and the deploy script read the same route, and its body stays about the model rather than
+  the machine: no VRAM, no device, no counters.
 - **Normalisation happens in the container**, so the gateway adds nothing to the geometry and keeps
   zero ML dependencies.
 - **One round trip per inference.** No streaming and no multi-step handshake: the on-prem backends

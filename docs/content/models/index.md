@@ -22,6 +22,7 @@ curl -s -H "X-API-Key: $KEY" "$API/models"
 ```json
 { "models": [
   { "id": "sam3.1-meta", "resolution": 1008, "backends_up": 1, "max_in_flight": 1,
+    "checked_seconds_ago": 3,
     "parameters": [
       { "name": "prompt", "default": "wheat head",
         "description": "The text this model is asked to find in the image." },
@@ -30,9 +31,11 @@ curl -s -H "X-API-Key: $KEY" "$API/models"
 ```
 
 This page has no key and is built from markdown, so the map above is written by hand from what the
-host answered on 16 October 2026 — the `curl` is what makes it live. `backends_up` is how many machines
-are answering for that id right now; `0` means no machine is, and a call would be refused rather than
-made to wait.
+host answered on 16 October 2026 — the `curl` is what makes it live. `backends_up` is how many
+machines answered the gateway's last probe for that id, and `checked_seconds_ago` is how long ago
+that was: the gateway asks its backends every fifteen seconds, so this is a verdict with an age
+rather than a promise, and the page that runs a model shows both. `0` means a call is refused rather
+than queued — safe to retry, not worth waiting on.
 
 ## Call it
 
@@ -137,9 +140,11 @@ never sees it. The reference and this page remember **one** key between them, in
 API's origin: set it on either and the other uses it, and Forget on either clears it for both. Paste
 your token, pick a row or a photograph, and press Run; the image is drawn as soon as the address is
 complete — whole, at whatever size the page can show it in — with each box labelled by the score that
-model gave it, and the mask decoded in your browser by the same decoder this site hands you. The page
-also prints the call it would make as a `curl` command, with your key left as `$KEY`, so anything you
-set up here can be taken straight to a shell.
+model gave it, and the mask decoded in your browser by the same decoder this site hands you. The model
+line says how many machines are answering and how long ago the gateway last asked them, and it keeps
+that age climbing rather than letting a stale count pass for a live one. The page also prints the call
+it would make as a `curl` command, with your key left as `$KEY`, so anything you set up here can be
+taken straight to a shell.
 
 ## A recorded call, decoded here
 
