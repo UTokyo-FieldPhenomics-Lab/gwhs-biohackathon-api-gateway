@@ -63,6 +63,11 @@ a TIFF to JPEG, before sending it. Over the limit the API answers `413` with
 `{"error": {"code": "payload_too_large", "message": "…"}}` — the same error shape as every other
 refusal, so one decoder still covers them all.
 
+The file must be an image the API can read: **JPEG, PNG, WebP, TIFF or GIF**, decided by the file's own
+bytes rather than by the type the client declares, and no more than **50 megapixels**. A phone's HEIC or
+a camera's RAW file is not accepted — convert it to JPEG first; it is refused with `400` and a message
+saying so, before any backend is asked.
+
 Both routes answer the same body. One object of a real answer — a 5184×3456 photograph, run at 1008 —
 with `counts` truncated, because it is one long string:
 

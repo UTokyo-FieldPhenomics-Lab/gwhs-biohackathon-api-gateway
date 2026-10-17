@@ -1258,3 +1258,55 @@ def test_the_transport_disables_nagle_like_the_standard_library_does() -> None:
         listener.close()
 
     assert nodelay == 1
+
+
+def test_an_upload_that_is_not_an_image_never_reaches_a_backend(
+    client: TestClient, backends: FakeBackends
+) -> None:
+    """Type is decided by the bytes, not by the `Content-Type` the client declares.
+
+    An executable is inert here — the gateway never writes it to a path a shell could reach, and a
+    backend only turns bytes into pixels — but a request that can never be an image should be
+    refused where it arrives rather than after it has taken a backend's lane.
+    """
+    payload = b"#!/bin/sh\nrm -rf / # not an image, whatever the header says\n"
+    response = client.post(
+        f"/models/{MODEL}/predict/upload",
+        headers=KEY,
+        files={"file": ("photo.jpg", payload, "image/jpeg")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "invalid_request"
+    assert "JPEG" in response.json()["error"]["message"], "the refusal says what is accepted"
+    assert backends.predict_calls() == [], "a non-image took a backend slot"
+
+
+def test_an_upload_is_forwarded_with_the_type_its_bytes_are(
+    client: TestClient, backends: FakeBackends
+) -> None:
+    """A backend is told what arrived, not what the client claimed it was."""
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\rIHDR" + b"\x00" * 40
+    response = client.post(
+        f"/models/{MODEL}/predict/upload",
+        headers=KEY,
+        files={"file": ("photo.jpg", png, "image/jpeg")},
+    )
+
+    assert response.status_code == 200
+    _, _, headers, body = backends.predict_calls()[0]
+    assert headers["Content-Type"] == "image/png"
+    assert body == png
+
+
+def test_a_prompt_longer_than_the_limit_is_refused(client: TestClient) -> None:
+    """A query string is not a place to put megabytes, and the field is one word of text."""
+    response = client.post(
+        f"/models/{MODEL}/predict",
+        headers=KEY,
+        json={"dataset": "gwhd", "row": 0},
+        params={"prompt": "w" * 5000},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "invalid_request"
