@@ -214,10 +214,32 @@ html[data-scheme="dark"] #play {
   white-space: nowrap;
 }
 #play #pane {
+  position: relative;
   height: 32rem;
   display: grid;
   place-items: center;
   background: var(--band);
+}
+/* What computed the answer, on the picture it computed it for: a translucent chip in the viewer's
+   corner, so a reader comparing two runs can see which machine made which. It sits on the pane rather
+   than on the image because a portrait row is a narrow strip and a label on it would either be
+   unreadable or hang outside the picture. Text, never a control: it takes no click, and it is the
+   machine's own words — name, card, CUDA build, torch — not a summary of them. */
+#play #watermark {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  max-width: calc(100% - 1rem);
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  background: rgba(12, 16, 22, 0.55);
+  color: #fff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  text-align: right;
+  pointer-events: none;
+  backdrop-filter: blur(2px);
 }
 /* The stage is the image's own box, and the script sizes it to what fits: the marks below are placed
    in the image's fractions, and a percentage of the pane would be a percentage of the empty band

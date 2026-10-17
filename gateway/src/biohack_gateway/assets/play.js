@@ -449,6 +449,7 @@
   const draw = async (url, answer) => {
     const objects = answer.objects || [];
     const painted = await paint(url, objects);
+    showMachine(answer);
     $("response-body").textContent = JSON.stringify(answer, null, 2);
     $("response").hidden = false;
 
@@ -481,6 +482,30 @@
     fitted = null;
     $("check").textContent = "";
     $("check").className = "";
+    showMachine(null);
+  };
+
+  // What computed the answer, in the machine's own words: the name it answers under, its card, the
+  // CUDA build, the torch that ran the pass. A mask's boundary depends on the kernels that ran, so two
+  // machines can disagree on one call — this is the fact that turns that into something a reader can
+  // check. Every field is optional, because a container that has not been rebuilt still answers: the
+  // line carries what arrived, and a record with nothing in it shows no chip at all rather than an
+  // empty one.
+  const describeMachine = (computed) => {
+    if (!computed) return "";
+    const parts = [];
+    if (computed.machine) parts.push(computed.machine);
+    if (computed.gpu) parts.push(computed.gpu);
+    if (computed.cuda) parts.push("CUDA " + computed.cuda);
+    if (computed.torch) parts.push("torch " + computed.torch);
+    return parts.join(" · ");
+  };
+
+  const showMachine = (answer) => {
+    const text = describeMachine(answer && answer.computed_by);
+    const chip = $("watermark");
+    chip.textContent = text;
+    chip.hidden = !text;
   };
 
   // The image the reader has chosen, drawn as soon as the choice is a picture — an address is two
@@ -528,6 +553,8 @@
       const painted = await paint(url, []);
       if (token !== previewToken) return;
       $("response").hidden = true;
+      // A preview is a picture, not a result: there is no machine to name until something runs.
+      showMachine(null);
       // The size comes from the image itself in both cases, so the caption describes what is drawn
       // rather than what an index or a file system claimed.
       say($("check"),
