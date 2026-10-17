@@ -222,6 +222,9 @@ class ComputedBy(BaseModel):
 
     Attributes
     ----------
+    machine : str or None
+        The name the machine answers under — the operator's label where one is set, the host name
+        otherwise. It is what still identifies a host when every hardware field is null.
     gpu : str or None
         The card's name, where the backend has one.
     compute_capability : str or None
@@ -232,6 +235,7 @@ class ComputedBy(BaseModel):
         The torch version that ran the forward pass.
     """
 
+    machine: str | None = None
     gpu: str | None = None
     compute_capability: str | None = None
     cuda: str | None = None

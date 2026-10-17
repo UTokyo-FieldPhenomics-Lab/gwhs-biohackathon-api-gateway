@@ -65,6 +65,7 @@ PREDICTION: dict[str, Any] = {
     "model": MODEL,
     "resolution_used": 1008,
     "computed_by": {
+        "machine": "lab-3090",
         "gpu": "NVIDIA GeForce RTX 3090",
         "compute_capability": "8.6",
         "cuda": "12.8",
