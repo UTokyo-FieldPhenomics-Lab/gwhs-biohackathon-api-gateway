@@ -153,3 +153,34 @@ because pooling exposed a second defect: `_BoundedHTTPConnection.connect` replac
 acknowledgement of the write that follows another. On a 260 ms link that wait is bounded by the round
 trip rather than by 40 ms. The option is now set, with a test that asserts it, because the failure mode
 is a constant invisible tax rather than an error.
+
+## The container keeps its fetch connection too
+
+`serve.py` fetched with `urllib.request.urlopen`, which opens a connection per call, so every
+inference paid a DNS lookup and a TLS handshake before the model saw a pixel. `fetch_bytes` now keeps
+up to four idle connections per store host, hands each to one request (the fetch runs outside the
+inference lock, so a single connection is not shareable), and retries once on a fresh one when the
+store has closed a kept connection. `sam31_official/tests/fetch.py` proves all three without weights
+or a GPU.
+
+Rebuilt on all three machines from `37bd910` and recreated with the same run line. Warm medians,
+measured from the gateway host over one reused connection each, against a 512² tile:
+
+| Machine | First call | Warm median |
+|---|---|---|
+| `lab-5090` | 0.774 s | 0.408 s |
+| `lab-3090` | 0.749 s | 0.458 s |
+| `homepc-4090` | 0.641 s | 0.363 s |
+
+**A prediction this corrected.** The gap between one call at a time (0.65–0.96 s) and the marginal
+cost under concurrency (0.13–0.21 s) had been read as the container's handshake, so pooling was
+expected to save ~0.5 s per call. It saves about **30–50 ms**: warm single calls through the gateway
+were 0.44 s before this change and 0.41 s after. Most of that gap was the gateway's own handshake to
+the backend plus thread-pool queueing, already removed by the gateway-side pool, and the rest was
+measurement noise between differently loaded runs. The rebuild was still worth doing — but it is the
+smallest of the three changes, not the largest.
+
+Two operational notes: the 5090's rebuild re-downloaded the 3.5 GB checkpoint because its layer cache
+did not survive an interrupted build (the other two rebuilt in seconds from cache), and the Windows
+machine needs `Start-Process` to run a build detached over SSH — `start /b` refuses a non-interactive
+shell's stdin.
