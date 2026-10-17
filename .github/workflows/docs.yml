@@ -39,6 +39,11 @@ jobs:
       - run: uv sync --locked --project docs
       # --strict: a warning fails the build, which is what catches a link to a page that does not exist.
       - run: uv run --project docs zensical build --strict
+      # The three client files are downloaded from the site, so they are put into the build output
+      # beside the page that links to them — after the build, because a build overwrites `site/`, and
+      # never into `docs/content/`, because a copy of a source file in the source tree is a copy
+      # somebody edits by mistake. There is one source: `clients/`.
+      - run: python3 docs/scripts/sync_clients.py
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
