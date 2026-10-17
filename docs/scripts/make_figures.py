@@ -27,6 +27,8 @@ from PIL import Image, ImageDraw, ImageFont
 REPO = Path(__file__).resolve().parents[2]
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 DATASETS = REPO / "docs/content/datasets"
+EXAMPLES = REPO / "docs/content/examples"
+RECORD = REPO / "clients/fixtures/example-prediction.json"
 CLIENT_PYTHON = REPO / "clients/python"
 PAGES = REPO / "docs/content"
 
@@ -161,6 +163,7 @@ def main() -> None:
         draw_bbox_diagram()
         draw_gwfss(images["gwfss"], images["gwfss_mask"])
         draw_instance(images["instance"], objects, rles)
+    draw_known_good()
 
 
 def draw_gwhd(source: Image.Image, boxes: list[list[float]]) -> None:
@@ -306,6 +309,45 @@ def draw_instance(image: Image.Image, objects: list[dict[str, float]],
                 (flat, "the decoded mask"),
                 (overlay, "the mask, on the image")),
          DATASETS / "rle-input-output.jpg")
+
+
+def draw_known_good() -> None:
+    """The recorded call a participant can reproduce, drawn from the record rather than described.
+
+    The image and every mask come from `clients/fixtures/example-prediction.json` — the same file the
+    three client suites decode — so the picture, the scores drawn on it, and the numbers beside it on
+    the page cannot disagree. It is generated once and committed: the page tells a participant "this
+    configuration works, check yours against it", and a figure that needed a live call to draw would be
+    a second thing to keep true.
+    """
+    record = json.loads(RECORD.read_text())
+    answer = record["response"]
+    height, width = (int(side) for side in answer["objects"][0]["rle"]["size"])
+    with tempfile.TemporaryDirectory() as work:
+        path = Path(work) / "recorded.png"
+        urlretrieve(record["image_url"], path)                            # noqa: S310 (a fixed URL)
+        image = Image.open(path).convert("RGB")
+
+    grey = np.asarray(image.convert("L").convert("RGB")).astype(np.float32)
+    tinted = grey.copy()
+    for order, obj in enumerate(answer["objects"]):
+        mask = rle_mask(str(obj["rle"]["counts"]), height, width)
+        colour = np.array(STROKES[order % len(STROKES)], dtype=np.float32)
+        tinted[mask] = 0.40 * colour + 0.60 * tinted[mask]
+        tinted[boundary(mask, 1)] = 0.15 * grey[boundary(mask, 1)] + 0.85 * colour
+
+    side = 760
+    scale = side / width
+    shown = Image.fromarray(tinted.astype(np.uint8)).resize(
+        (side, round(side * height / width)), Image.LANCZOS)
+    draw = ImageDraw.Draw(shown)
+    for obj in answer["objects"]:
+        x, y, w, h = (value * scale for value in obj["bbox"])
+        draw.rectangle([x, y, x + w, y + h], outline=BOX, width=2)
+        label(draw, (int(x) + 3, int(y) + 2), f"{obj['score']:.2f}", 15, BOX, bold=True)
+
+    save(figure((shown, f'{len(answer["objects"])} heads on gwfss row {record["request"]["row"]}')),
+         EXAMPLES / "known-good.jpg", quality=88)
 
 
 if __name__ == "__main__":

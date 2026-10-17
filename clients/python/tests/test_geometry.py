@@ -11,7 +11,7 @@ from rle_fixture import encode
 
 from global_wheat import label_masks, rle_decode
 
-EXAMPLE = Path(__file__).resolve().parents[3] / "docs/content/examples/example-prediction.json"
+EXAMPLE = Path(__file__).resolve().parents[3] / "clients/fixtures/example-prediction.json"
 """A recorded call: eighteen objects of a 512x512 prediction, each with its area and its RLE."""
 
 CLASSES = [

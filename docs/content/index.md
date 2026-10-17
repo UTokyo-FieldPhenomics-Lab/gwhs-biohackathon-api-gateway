@@ -45,4 +45,4 @@ answer today; the full sets are published before the event.
 - [Clients](api/clients.md) — the same API as a function, in Python, JavaScript, or Java
 - [Datasets](datasets/index.md) — what a row holds; one page per dataset
 - [Models](models/index.md) — what the model does, on what hardware, and when to use your own
-- [Live demo](examples/demo.md) · [Notebook](examples/notebook.md) — see it run, or run it yourself
+- [Live demo](examples/demo.md) · [Jupyter quickstart](examples/quickstart.md) — see it run, or run it yourself

@@ -126,13 +126,13 @@ public final class Checks {
         java.nio.file.Path at = java.nio.file.Path.of("").toAbsolutePath();
         while (at != null) {
             java.nio.file.Path candidate =
-                    at.resolve("docs/content/examples/example-prediction.json");
+                    at.resolve("clients/fixtures/example-prediction.json");
             if (java.nio.file.Files.isRegularFile(candidate)) {
                 return candidate;
             }
             at = at.getParent();
         }
-        throw new IllegalStateException("cannot find docs/content/examples/example-prediction.json");
+        throw new IllegalStateException("cannot find clients/fixtures/example-prediction.json");
     }
 
     private static boolean palette() {

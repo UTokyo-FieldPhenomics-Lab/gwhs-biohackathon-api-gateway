@@ -76,4 +76,4 @@ cut heads on straw. What it does not answer is a field quadrat, whichever thresh
 ## Try it
 
 [The live demo](../examples/demo.md) runs this model from this site with your key, and replays one
-recorded answer beside it. [The notebook](../examples/notebook.md) calls it from Python in three lines.
+recorded answer beside it. [The Jupyter quickstart](../examples/quickstart.md) calls it from Python in three lines.

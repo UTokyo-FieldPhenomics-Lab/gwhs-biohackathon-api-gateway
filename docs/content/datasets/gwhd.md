@@ -57,4 +57,4 @@ convention, on every dataset and in every model answer, so one drawing routine c
     ```
 
 `image` is the same name in all three; what differs is only the container. Drawing the boxes onto the
-image is [the notebook's](../examples/notebook.md) job.
+image is [the quickstart notebook's](../examples/quickstart.md) job.

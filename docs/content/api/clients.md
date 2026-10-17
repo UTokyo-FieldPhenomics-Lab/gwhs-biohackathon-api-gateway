@@ -34,15 +34,17 @@ you the plumbing.
 === "JavaScript"
 
     ```html
-    <script src="https://docs.global-wheat.com/clients/global-wheat.js"></script>
+    <script type="module" src="https://docs.global-wheat.com/clients/global-wheat.js"></script>
     ```
 
     ```js
     import {Client} from "https://docs.global-wheat.com/clients/global-wheat.js";
     ```
 
-    Either form: a plain `<script>` leaves `Client`, `ApiError`, `rle_decode`, and `label_masks` on
-    `globalThis`, and a module import gives you the same four names.
+    Both forms are modules, because the file is one. The `<script>` form also leaves the four names
+    (`Client`, `ApiError`, `rle_decode`, `label_masks`) on `globalThis.GlobalWheat`, for a page that
+    has other scripts of its own. A plain `<script>` will not do: a browser refuses `export` outside
+    a module, and the file would fail to parse.
 
     **Where it runs matters.** In Node it is the whole surface — every call below works. In a
     browser, `api.global-wheat.com` sends no `access-control-allow-origin`, deliberately: a page on
@@ -110,5 +112,5 @@ means; nothing is retried for you.
 
 ## Next
 
-- [Notebook](../examples/notebook.md) — every method once, in order, in a notebook you can run
+- [Jupyter quickstart](../examples/quickstart.md) — every method once, in order, in a notebook you can run
 - [Base API reference](reference.md) — what each method wraps
