@@ -75,11 +75,15 @@ __PLAY_CSS__
     <pre id="response-body"></pre>
   </details>
 </main>
-<script src="__DECODER__"></script>
-<script>
+<!-- Three modules, in this order: a module is deferred and runs after the document is parsed, so the
+     decoder has run by the time the page asks it to draw. They have to be modules: the client is an
+     ES module and a classic <script> cannot parse its `export`, which is how this page once loaded a
+     decoder that never ran. -->
+<script type="module" src="__DECODER__"></script>
+<script type="module">
 __API_KEY_JS__
 </script>
-<script>
+<script type="module">
 __PLAY_JS__
 </script>
 __REPORTER__

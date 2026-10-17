@@ -345,10 +345,13 @@ def test_the_model_page_loads_the_site_own_client(client: TestClient) -> None:
     The page draws a mask with the documentation site's `clients/global-wheat.js` — the same file
     the Clients page hands a participant to download — loaded by URL. A copy beside this module
     would be a second decoder to keep in step with the one the site promises is correct.
+
+    It is loaded as a **module**: the file is an ES module, and a classic `<script>` cannot parse its
+    `export` — the tag is what failed, silently, before this test named it.
     """
     page = client.get(PLAY_PATH).text
 
-    assert f'src="{DOCS_PARENT_ORIGIN}/clients/global-wheat.js"' in page
+    assert f'type="module" src="{DOCS_PARENT_ORIGIN}/clients/global-wheat.js"' in page
     assert "GlobalWheat.rle_decode" in page
     assert "function rle_decode" not in page  # the decoder is loaded, never copied
 
@@ -404,7 +407,7 @@ def test_the_model_page_reports_its_height_to_the_same_site(tmp_path: Path) -> N
 
     assert page.headers["content-security-policy"] == f"frame-ancestors {parent}"
     assert f'"{parent}"' in page.text
-    assert 'src="' + parent + '/clients/global-wheat.js"' in page.text
+    assert 'type="module" src="' + parent + '/clients/global-wheat.js"' in page.text
     assert 'SITE_ORIGIN = "' + parent + '"' in page.text
 
 
