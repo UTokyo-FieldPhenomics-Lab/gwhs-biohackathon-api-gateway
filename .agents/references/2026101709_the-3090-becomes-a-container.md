@@ -55,16 +55,18 @@ the difference:
 
 The `uv sync` layer carries the venv *and* uv's own wheel cache, because nothing removes it in that step
 (`UV_LINK_MODE=copy` and `UV_COMPILE_BYTECODE=1` add to it as well); the legacy builder keeps every
-intermediate layer, and `docker images` counts them uncompressed. **Not fixed here** — it would mean
-another rebuild — but the same one-line trick already used after `gdown` (`&& rm -rf /root/.cache/uv`)
-would take several gigabytes off every image on both machines. Worth doing when the next model's
-Dockerfile is written, or when a rebuild is needed anyway.
+intermediate layer, and `docker images` counts them uncompressed. **Fixed later the same day**, and the
+measurement that came with it — 36.2 → 24.6 GB, the cache gone entirely and the copy mode removed — is
+in [`2026101710`](2026101710_the-image-store-and-the-uv-cache.md).
 
-## Space, which turned out not to be the question
+## Space, which turned out not to be the question — and then was
 
-Docker's storage is `/home/crest/docker`, on a 393 GB partition with **121 GB free**; the root partition's
-35 GB never mattered. So freeing the venv was never necessary, and the request was answered by measuring
-rather than by deleting:
+**This section was wrong, and worth keeping as the mistake it was.** It said Docker's storage was
+`/home/crest/docker` on the 393 GB partition with 121 GB free, and that the root partition's 35 GB
+"never mattered". Both halves were wrong: `data-root` does not move image layers when Docker is using
+the containerd image store, so the layers were in `/var/lib/containerd` on the root partition, and that
+partition was **100 % full** within a day — it was the reason a build failed with `No space left on
+device`. What the numbers did support was the deletions below, and those stand:
 
 - **`weights/sam3.1_multiplex.pt`, 3.5 GB — removed**, as asked, once the image was up and serving. The
   container carries its own copy fetched during the build, and the host file was only ever the smoke
@@ -75,12 +77,16 @@ rather than by deleting:
 - Both repositories stayed clean through the deletion: the weights are ignored *by directory*, which is
   what that rule was written for.
 
-## Outstanding
+The store was subsequently moved onto a 1.4 TB disk, the old one deleted, and the image slimmed; that
+account, and the reason `Docker Root Dir` misled, is [`2026101710`](2026101710_the-image-store-and-the-uv-cache.md).
 
-- **A stray `serve.py` on `:8125`**, six hours old, holding several gigabytes of the card, started with a
-  `test-…` token that no list points at. Still not mine to kill.
-- **5.7 GB of reclaimable images** on this machine (`dockur/windows`, the WinBoat VM, exited four months
-  ago). `docker system prune -a` takes it; also someone's call.
+## Outstanding, then and now
+
+- **A stray `serve.py` on `:8125`** (a `test-…` token that no list pointed at) and **the reclaimable
+  images** were both left for a human, and both were dealt with the next day: the process is gone, and
+  the "5.7 GB reclaimable" turned out to be the CUDA base *before* it became a shared parent of the
+  model image — the WinBoat image was never in that set, because its container references it.
+  [`2026101710`](2026101710_the-image-store-and-the-uv-cache.md) has the accounting.
 - **The inventory row was corrected**, not just extended: it claimed `sshd` was "enabled and active" and
   that "GPU inside a container" had been verified on 2026-10-16. Port 22 **refuses** connections (from the
   gateway host and on the machine's own address), and the container claim was the failure described above.
