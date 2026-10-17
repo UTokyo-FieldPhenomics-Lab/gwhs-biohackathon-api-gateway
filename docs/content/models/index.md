@@ -55,8 +55,8 @@ with `counts` truncated, because it is one long string:
 
 ```json
 { "model": "sam3.1-meta", "resolution_used": 1008,
-  "computed_by": { "gpu": "NVIDIA GeForce RTX 3090", "compute_capability": "8.6",
-                   "cuda": "12.8", "torch": "2.10.0+cu128" },
+  "computed_by": { "machine": "lab-3090", "gpu": "NVIDIA GeForce RTX 3090",
+                   "compute_capability": "8.6", "cuda": "12.8", "torch": "2.10.0+cu128" },
   "objects": [
     { "idx": 0, "category": "wheat head", "score": 0.582, "area": 259818.0,
       "bbox": [2321.0, 1876.7, 766.1, 766.7],
@@ -71,11 +71,12 @@ with `counts` truncated, because it is one long string:
 - **`area` is the decoded mask's pixel count, and `bbox` is the model's own box.** The two are
   separate predictions and do not agree exactly: slack between a mask and the box around it is this
   contract working as declared, not a mistake.
-- **`computed_by` names the machine that produced the answer** — the card, its compute capability, the
-  CUDA and torch versions. A mask's boundary is the output of kernels the runtime chooses, so two
-  machines can disagree by a pixel, by a percent of a mask's area, or by one object at the margin; when
-  they do, this is the field to read rather than a mystery. It is a reproducibility record, not an
-  inventory: no address, no memory figure, no hostname.
+- **`computed_by` names the machine that produced the answer** — its name (the label the operator gave
+  it), the card, its compute capability, the CUDA and torch versions. A mask's boundary is the output
+  of kernels the runtime chooses, so two machines can disagree by a pixel, by a percent of a mask's
+  area, or by one object at the margin; when they do, this is the field to read rather than a mystery.
+  The name is what still says *which* host answered when every hardware field is null. It is a
+  reproducibility record, not an inventory: no address, no memory figure, no path.
 - **`resolution_used` is the side the model actually ran at.** The image is resized to a square
   *without preserving aspect ratio* beforehand, so a mask computed at 1008 and mapped back onto a
   2509-pixel-tall photograph is upscaled about 2.5×, and its boundary is visibly coarse at full size.
