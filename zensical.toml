@@ -35,9 +35,10 @@ extra_javascript = ["api/frame.js"]
 nav = [
   { "Start here" = "index.md" },
   { "Calling the API" = [
+      { "Calling the API" = "api/index.md" },
       { "Raw HTTP" = "api/http.md" },
-      { "Clients" = "api/clients.md" },
       { "Base API reference" = "api/reference.md" },
+      { "Clients" = "api/clients.md" },
   ] },
   { "Datasets" = [
       { "Datasets" = "datasets/index.md" },
@@ -51,7 +52,7 @@ nav = [
   ] },
   { "Examples" = [
       { "Live demo" = "examples/demo.md" },
-      { "Notebook" = "examples/notebook.md" },
+      { "Jupyter quickstart" = "examples/quickstart.md" },
   ] },
 ]
 

@@ -27,52 +27,43 @@ anything you set up here can be taken straight to a shell.
   ></iframe>
 </div>
 
-## A recorded call, decoded here
+## A call we know works
 
-No key, no request: the panel below is one real answer, made earlier on `gwfss` row 4 with
-`confidence_threshold` 0.25, and the call is replayed in your browser. The masks are decoded by the
-same file you would download, and the caption is the check that makes it worth trusting — the decoded
-pixel count against the `area` the API reported for each object.
+Before the event we ran one call against the pool and kept its answer. Use it as your test case: if
+your key and your client reproduce these numbers, both are working, and a difference is the thing to
+debug rather than a reason to doubt the whole setup.
 
-<p id="demo-state" role="status">Loading the recorded call…</p>
+| | |
+|---|---|
+| address | `gwfss`, row `4` — 512×512, cut heads lying on straw |
+| model | `sam3.1-meta`, `prompt="wheat head"`, `confidence_threshold=0.25` |
+| came back | **18 objects** at `resolution_used` 1008; `Σ mask` = `Σ area` = **109,419 px** |
 
-<figure id="demo-figure" hidden>
-  <figcaption id="demo-check"></figcaption>
-  <canvas id="demo-canvas"></canvas>
-</figure>
+=== "Python"
 
-<style>
-  /* Scoped to this page's panel. The image is shown at the column's width, in a box of its own: a
-      large row would otherwise be several screenfuls of page with the object somewhere in the middle
-      of it. The script scrolls the box to the object once it has drawn one. */
-  #demo-figure {
-    max-height: 28rem;
-    overflow-y: auto;
-    margin: 1rem 0;
-    border: 1px solid var(--md-default-fg-color--lightest);
-    border-radius: 0.2rem;
-  }
-  #demo-canvas {
-    display: block;
-    width: 100%;
-    height: auto;
-  }
-  #demo-figure figcaption {
-    position: sticky;
-    top: 0;
-    padding: 0.4rem 0.6rem;
-    background: var(--md-default-bg-color);
-    border-bottom: 1px solid var(--md-default-fg-color--lightest);
-    color: var(--md-default-fg-color--light);
-    font-size: 0.8rem;
-  }
-  #demo-state { color: var(--md-default-fg-color--light); font-size: 0.8rem; }
-  #demo-check[data-equal="no"] { color: var(--md-typeset-del-color); }
-</style>
+    ```python
+    answer = client.predict("sam3.1-meta", "gwfss", 4, prompt="wheat head", confidence_threshold=0.25)
+    ```
 
-<script src="../clients/global-wheat.js"></script>
-<script src="demo.js"></script>
+=== "JavaScript"
 
-A recorded answer is **one machine's** answer, and `computed_by` is where the record says so: the same
-call on another card can differ by a pixel, by a percent of a mask's area, or by one object at the
-margin. [The model's page](../models/sam3.1-meta.md) is where the numbers behind that table live.
+    ```js
+    const answer = await client.predict("sam3.1-meta", "gwfss", 4, {prompt: "wheat head", confidence_threshold: 0.25});
+    ```
+
+=== "Java"
+
+    ```java
+    Map<String, Object> answer = client.predict("sam3.1-meta", "gwfss", 4,
+            Map.of("prompt", "wheat head", "confidence_threshold", 0.25));
+    ```
+
+![The recorded answer: eighteen heads, each mask a colour, each box and score the model's own](known-good.jpg)
+
+Every mask's pixel count equals the `area` the answer reports, so the decode is checkable without
+looking at the picture: sum the masks and compare with the `area` fields.
+
+The object count and the boxes are what an answer is really about. The pixel counts are **one machine's**
+— `computed_by` in this answer names `lab-3090` — and the same call on another card can differ by a
+pixel, by a percent of a mask's area, or by one object at the margin.
+[The model's page](../models/sam3.1-meta.md) is where the numbers behind that live.

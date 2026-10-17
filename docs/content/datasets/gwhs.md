@@ -81,4 +81,4 @@ COCO flattens masks column-major; every one of them is transposed once, by the d
     ```
 
 Compositing the masks over the image, and running a model on the same row, is
-[the notebook's](../examples/notebook.md) job.
+[the quickstart notebook's](../examples/quickstart.md) job.

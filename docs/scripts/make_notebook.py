@@ -1,7 +1,7 @@
 """Turn the notebook page into an `.ipynb`, so one markdown page is the notebook's source.
 
 The page a reader scrolls and the notebook they download have to be the same document written once:
-two hand-kept copies drift, and the one nobody builds is the one that rots. So `examples/notebook.md`
+two hand-kept copies drift, and the one nobody builds is the one that rots. So `examples/quickstart.md`
 is the source and `examples/quickstart.ipynb` beside it is generated from it — before the build, so
 the build publishes the fresh one, and committed, because Colab can only open a notebook that sits at
 a GitHub path. `git diff --exit-code` in the workflow is what notices a `.ipynb` that was not
@@ -32,7 +32,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 """The repository root, two directories above `docs/scripts/`."""
 
-SOURCE = REPO / "docs/content/examples/notebook.md"
+SOURCE = REPO / "docs/content/examples/quickstart.md"
 """The page that is also the notebook, and the only place its content is written."""
 
 TARGET = REPO / "docs/content/examples/quickstart.ipynb"
@@ -106,7 +106,7 @@ def to_code(language: str, body: list[str], where: int) -> list[str]:
     for line in body:
         if line.startswith("export "):
             raise Unconvertible(
-                f"notebook.md:{where}: `export` in a shell cell would reach no later cell — "
+                f"quickstart.md:{where}: `export` in a shell cell would reach no later cell — "
                 "write it as `os.environ[...]` in a python fence"
             )
     return [line if line.startswith(("!", "#")) or not line.strip() else f"!{line}" for line in body]
@@ -183,12 +183,12 @@ def cells(markdown: str) -> list[dict[str, object]]:
         line = lines[at]
         if line.startswith('=== "') or line.startswith("=== '"):
             raise Unconvertible(
-                f"notebook.md:{at + 1}: a language tab has no notebook equivalent — "
+                f"quickstart.md:{at + 1}: a language tab has no notebook equivalent — "
                 "this page is one language"
             )
         if line.startswith("!!! "):
             raise Unconvertible(
-                f"notebook.md:{at + 1}: an admonition renders as literal text in Jupyter — "
+                f"quickstart.md:{at + 1}: an admonition renders as literal text in Jupyter — "
                 "use a bold lead-in"
             )
         fence = FENCE.match(line)
@@ -199,13 +199,13 @@ def cells(markdown: str) -> list[dict[str, object]]:
         language = fence["lang"]
         if language not in {"python", "bash"}:
             raise Unconvertible(
-                f"notebook.md:{at + 1}: fence language {language or '(none)'!r} is not python or bash"
+                f"quickstart.md:{at + 1}: fence language {language or '(none)'!r} is not python or bash"
             )
         close = at + 1
         while close < len(lines) and lines[close].strip() != "```":
             close += 1
         if close == len(lines):
-            raise Unconvertible(f"notebook.md:{at + 1}: this fence is never closed")
+            raise Unconvertible(f"quickstart.md:{at + 1}: this fence is never closed")
         flush()
         body = to_code(language, lines[at + 1 : close], at + 1)
         made.append(

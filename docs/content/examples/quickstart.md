@@ -1,4 +1,4 @@
-# Quickstart notebook
+# Jupyter quickstart
 
 <!-- notebook: skip -->
 <div style="display:flex;justify-content:flex-end;gap:.5rem;flex-wrap:wrap" markdown>

@@ -45,7 +45,7 @@ Splitting the mask image by colour turns each class into its own boolean mask:
 `label_masks` does it with the palette from `describe`, never with a colour copied from a figure. A
 colour the dataset never declared is refused rather than labelled silently. The pixels have to be
 readable, which is why this is a Python-and-Java job on a downloaded file and not a browser page: see
-[the notebook](../examples/notebook.md) for the split and the counts it prints.
+[the quickstart notebook](../examples/quickstart.md) for the split and the counts it prints.
 
 ## Get one row
 
