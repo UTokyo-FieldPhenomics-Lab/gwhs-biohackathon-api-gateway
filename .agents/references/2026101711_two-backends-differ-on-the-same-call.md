@@ -58,3 +58,14 @@ published `area` exactly, and the sums agree with each other. Only the two machi
 Until one of them is excluded, the documentation page carries the weaker, still-true statement — a
 mask's boundary, and the pixel count that follows from it, is one card's figure — and the recorded
 example is the 3090's answer, stored whole so it can be checked rather than trusted.
+
+## Update, 2026-10-17
+
+The user confirmed the **model did not change** between the two answers, which rules candidate 2 out:
+what differs is the machine and the build, not the weights. Candidate 1 stands, and an answer now
+carries its own evidence — every response has a `computed_by` record of the card, its compute
+capability, and the CUDA and torch versions — so the next time two answers disagree, the difference is
+one field away instead of a comparison exercise.
+
+The documentation page's recorded example is the 3090's answer to `gwfss` row 4 at 0.25: 18 objects,
+109,419 px, with that record in it.
