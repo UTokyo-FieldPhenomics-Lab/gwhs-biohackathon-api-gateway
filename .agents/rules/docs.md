@@ -48,10 +48,20 @@ Package: `docs/`. Repo-wide invariants are in [`project.md`](project.md) and are
   that sizes every frame marked `data-api-frame` and passes the reader's palette into it. A frame is
   matched by that attribute rather than by the id of the box it happens to sit in, so one file sizes
   every frame the site shows and a new one needs no change here.
-- **One decoder file, and it is the site's own.** `post-processing/rle_decode.js` is what the
-  Post-processing page tells a participant to download and what the Models page's demo loads by URL;
-  the API's own run-a-model page loads that same file from this site rather than carrying a copy, so a
-  demo and a tutorial cannot disagree about what a correct decode is. Anything on a page that can fail
-  to load — a decoder, a recorded example — says so in words where the reader is looking, because a
-  blank canvas reads as a result.
+- **One decoder, and it is the client's.** RLE and palette decoding live in `clients/` — one
+  implementation per language, checked there — and the Clients page hands them to a participant as
+  files to download. The Models page's demo and the API's run-a-model page load
+  `clients/global-wheat.js` from this site rather than carrying a copy, so a demo and a tutorial
+  cannot disagree about what a correct decode is. Anything on a page that can fail to load — a
+  decoder, a recorded example — says so in words where the reader is looking, because a blank canvas
+  reads as a result.
+- **The client files are copies in the build output, never in the source tree.** They are the
+  documented download URLs, so they have to be served from this origin — a raw GitHub URL is
+  `text/plain` and a browser refuses it as a module — but their one source is `clients/`.
+  `docs/scripts/sync_clients.py` copies them into `site/clients/` **after** the build and before the
+  upload, and it refuses to run before one, because a build overwrites `site/`. Nothing appears under
+  `docs/content/clients/` except the page and its figures: a copy of a source file in the source tree
+  is a copy somebody edits by mistake. The cost is a local preview that lacks the downloads — check
+  them with `uv run --project docs zensical build --strict && python3
+  docs/scripts/sync_clients.py && python3 -m http.server --directory site`.
 - **English only**, consistent with the rest of the repository.

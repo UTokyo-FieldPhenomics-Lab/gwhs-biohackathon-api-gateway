@@ -51,10 +51,14 @@ of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-layout.md
 ├── zensical.toml          docs site config: docs/content → site/, published to GitHub Pages
 ├── docs/                  documentation subproject (Zensical)
 │   ├── data-layout.md     internal contract: object layout, addressing, index fields — unpublished
-│   ├── scripts/           make_figures.py: every figure the pages show, built from published rows
+│   ├── scripts/           make_figures.py (every figure, built from published rows) + sync_clients.py
 │   └── content/           the site's pages and assets: the only thing Zensical builds
 │       ├── api/           the frame's two files: hides the page's heading, sizes and themes the frame
-│       └── post-processing/  palette masks and RLE geometry, in three languages
+│       └── clients/       the Clients page, its figures, and the three client files (generated)
+├── clients/               the API as a function, one directory per language; routes.json is shared
+│   ├── python/            global_wheat.py + its pyproject, lock, and the pytest checks
+│   ├── js/                global-wheat.js + package.json and node --test checks
+│   └── java/              GlobalWheat.java + tests/Checks.java (a local HTTP server, no dependency)
 ├── gateway/               FastAPI gateway: the request gate and the dataset surface
 │   └── src/biohack_gateway/  installed app package (app, auth, tokens, dataset surface, CLI)
 ├── datasets/              upstream parquet cache + publisher CLI: parquet → image objects in S3 + metadata index
@@ -72,6 +76,8 @@ of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-layout.md
 - **Datasets**: pyarrow + Pillow + boto3, exposed as the `biohack-datasets` CLI.
 - **Docs**: Zensical (pinned) + markdown-exec, built from `docs/content/` and published to
   <https://docs.global-wheat.com> by `.github/workflows/docs.yml`.
+- **Clients**: one dependency-light file per language — Python (`numpy` + `requests`),
+  JavaScript (none), Java (the JDK) — downloaded from the site, never published to an index.
 - **Quality gates**: `pytest` for tests, `mypy` (strict) for types, `ruff` for lint and
   format. Run each with `uv run` inside the subproject directory.
 
@@ -111,7 +117,8 @@ of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-layout.md
 ## Where to Look
 
 - Binding constraints for this repo: [`.agents/rules/project.md`](.agents/rules/project.md)
-- Per-package constraints: [`.agents/rules/`](.agents/rules)
+- Per-package constraints: [`.agents/rules/`](.agents/rules) — `clients.md` is what the three client
+  files must and must not be (no response models, identical names, decoders only here)
 - The containers behind the GPU backends, and the link to their private repository:
   [`.agents/rules/models.md`](.agents/rules/models.md) — what `models/` is for, and the constraints
   that keep it inert for this repository's own build and tests.
