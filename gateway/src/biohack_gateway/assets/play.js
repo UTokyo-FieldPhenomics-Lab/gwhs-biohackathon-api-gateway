@@ -94,12 +94,11 @@
 
   const showParameters = (declaration) => {
     parameters.replaceChildren();
-    const legend = document.createElement("span");
-    legend.className = "legend";
-    legend.textContent = "Parameters";
-    parameters.append(legend);
+    const declared = declaration.parameters || [];
+    // A model that declares nothing has no controls to label, and the row is then only the button.
+    $("parameters-legend").hidden = !declared.length;
     fields = [];
-    for (const parameter of declaration.parameters || []) {
+    for (const parameter of declared) {
       const label = document.createElement("label");
       const name = document.createElement("span");
       name.textContent = parameter.name;
@@ -236,22 +235,24 @@
       // One call each, and nothing polls: the lists are read when a key arrives, and a model's
       // declaration again when the reader picks another model. A key that is refused says so here,
       // before the reader has filled anything else in.
-      const directory = await call("/models");
-      // The options are ids and nothing else: what a model runs at and how many machines answer for
-      // it are facts about the chosen model, and they are said once, beside it.
-      fill(model, directory.models, (entry) => entry.id);
-      model.disabled = !directory.models.length;
+      //
+      // The image comes first, in the fetching as on the page: it is read from the dataset surface,
+      // needs no model, and is what everything after it is about — so it is listed and previewed
+      // before a declaration is asked for, and a reader with no model answering still sees their image.
       const datasets = await call("/datasets");
       fill(dataset, datasets.datasets, (entry) =>
         entry.id + " (" + entry.rows + (entry.rows === 1 ? " row)" : " rows)"));
       syncSource();
+      preview();
+      const directory = await call("/models");
+      fill(model, directory.models, (entry) => entry.id);
+      model.disabled = !directory.models.length;
       if (directory.models.length) await loadModel(directory.models[0].id);
       else {
         clearFacts();
         say($("model-state"), "this gateway has no models configured", false);
       }
       say($("connect-state"), "connected", true);
-      preview();
     } catch (error) {
       say($("connect-state"), error.message, false);
     }

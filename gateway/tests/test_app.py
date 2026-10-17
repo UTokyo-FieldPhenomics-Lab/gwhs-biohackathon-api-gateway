@@ -479,16 +479,21 @@ def test_the_model_page_says_how_new_the_count_is(client: TestClient) -> None:
     assert "running || !entry.backends_up" in page
 
 
-def test_the_model_page_orders_the_model_before_the_image_it_runs_on(client: TestClient) -> None:
-    """A model, then the knobs it declares, then the image, and Run at the end of that last row.
+def test_the_model_page_puts_the_image_before_the_model(client: TestClient) -> None:
+    """The image is upstream of the model: a published row is a static object and needs no model.
 
-    The parameters used to sit below the button that runs the model, on the far side of the image
-    row, which read as a form with a stray line in it. Run belongs at the end of the last row — the
-    reader sets everything to the left of it and presses it once.
+    So the image row comes first — the page can fetch and preview that row before it knows which
+    model will look at it — then the model and the knobs it declares, and Run closes that last row.
+    The order is the causal one, which is also the order a reader works in.
     """
     page = client.get(PLAY_PATH).text
 
-    assert page.index('id="model"') < page.index('id="parameters"') < page.index('id="run"')
+    assert (
+        page.index('id="source"')
+        < page.index('id="model"')
+        < page.index('id="parameters"')
+        < page.index('id="run"')
+    )
     assert ">Parameters<" in page
 
 

@@ -5,9 +5,10 @@ the API, so **no CORS is involved anywhere**, and the key it uses is one the ref
 this page share — one entry on the API's origin, set or cleared from either. The documentation
 site frames this page and does nothing else: the site never sees the key.
 
-The page is four rows and nothing more: a key field and a model selector filled from ``GET
-/models``; the image, either a published row or an upload; the model's own parameters; and the
-result on a canvas, with Run at the end of the row that chooses the image. **The controls are
+The page is four rows and nothing more: the image, either a published row or an upload — it comes
+from the dataset surface and needs no model, so it is asked for and previewed first — then a model
+selector filled from ``GET /models``, the model's own parameters, and the result on a canvas, with
+Run at the end of that last row. **The controls are
 built from the model's declaration**, never hard-coded, which is the point of the whole design:
 a model this page has never heard of works without a change to it, so a model it cannot render
 is an incomplete declaration rather than a page that is not clever enough.

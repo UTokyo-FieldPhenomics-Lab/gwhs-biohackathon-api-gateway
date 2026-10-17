@@ -24,16 +24,6 @@ __PLAY_CSS__
   </form>
 
   <div class="row">
-    <label for="model">Model</label>
-    <select id="model" disabled></select>
-    <span id="model-state" class="state" role="status"></span>
-  </div>
-
-  <div class="row" id="parameters">
-    <span class="legend">Parameters</span>
-  </div>
-
-  <div class="row">
     <label for="source">Image</label>
     <select id="source">
       <option value="row">a published row</option>
@@ -44,6 +34,17 @@ __PLAY_CSS__
       <input id="row" type="number" min="0" step="1" value="0" disabled aria-label="row number">
     </span>
     <input id="file" type="file" accept="image/*" hidden aria-label="your photograph">
+  </div>
+
+  <div class="row">
+    <label for="model">Model</label>
+    <select id="model" disabled></select>
+    <span id="model-state" class="state" role="status"></span>
+  </div>
+
+  <div class="row" id="parameters-row">
+    <span class="legend" id="parameters-legend" hidden>Parameters</span>
+    <span id="parameters"></span>
     <button id="run" type="button" class="primary" disabled>Run</button>
     <span id="run-state" class="state" role="status"></span>
   </div>
