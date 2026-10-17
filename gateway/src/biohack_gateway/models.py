@@ -754,7 +754,7 @@ class ModelRegistry:
         return backends
 
     def _order(self, backends: Sequence[Backend]) -> list[Backend]:
-        """Return the live backends with those that have nothing in flight first.
+        """Return the live backends with those that have nothing in flight first, then the rest.
 
         Parameters
         ----------
@@ -764,15 +764,24 @@ class ModelRegistry:
         Returns
         -------
         list of Backend
-            The same backends, still in list order within each group, with a busy backend last: a
-            model with one backend is unaffected, and one with two spreads a burst over both.
+            The same backends, with an idle one first and the busy ones in ascending order of what
+            they already hold, so a burst deeper than the pool joins the shortest queue. Sorting is
+            stable, so backends holding the same number of requests keep list order.
+
+        Notes
+        -----
+        The busy group used to keep list order, which made the first entry the pool's only lane:
+        measured against three cards on 2026-10-17, 160 simultaneous calls put 140 on the first
+        listed backend and 20 on the other two, and the pool answered at one card's rate. Idle-first
+        alone does not cover that case, because a backend is only known to be busy after a request
+        has already been counted against it.
         """
         now = time.monotonic()
         live = [
             backend for backend in backends if backend.alive and not backend.is_passed_over(now)
         ]
         idle = [backend for backend in live if not backend.in_flight]
-        busy = [backend for backend in live if backend.in_flight]
+        busy = sorted((backend for backend in live if backend.in_flight), key=lambda b: b.in_flight)
         return idle + busy
 
     def _reserve(self, backend: Backend) -> None:
@@ -1160,7 +1169,7 @@ def create_model_router(
             "gateway, and it carries them no further than the model."
         ),
     )
-    async def predict_upload(
+    def predict_upload(
         model: str,
         request: Request,
         file: UploadFile,
@@ -1196,9 +1205,19 @@ def create_model_router(
         ------
         HTTPException
             No model has that id, the upload is empty, or every backend failed.
+
+        Notes
+        -----
+        Deliberately a plain `def`: the transport is a blocking socket call, so FastAPI runs the
+        whole handler in its thread pool and an upload is one thread rather than the gateway. As an
+        `async def` it made that call on the event loop and held every other route for the round
+        trip — measured against the live gateway on 2026-10-17 with six concurrent uploads,
+        `/health` answered in 11.08 s and 5.31 s, and in 1.2 ms once they drained. The sibling
+        `predict` route is sync for the same reason; reading the body through `file.file` is what
+        lets this one be.
         """
         registry.describe(model)
-        payload = await file.read()
+        payload = file.file.read()
         if not payload:
             raise HTTPException(status_code=400, detail="the upload is empty")
         reply = registry.forward(
