@@ -267,10 +267,11 @@
     parameters.replaceChildren();
     fields = [];
     $("run").disabled = true;
-    figure.hidden = true;
-    marks.replaceChildren();
-    $("full").hidden = true;
-    fitted = null;
+    clearViewer();
+    if (held) {
+      URL.revokeObjectURL(held);
+      held = "";
+    }
     clearFacts();
     $("response").hidden = true;
     previewToken += 1;
@@ -311,7 +312,7 @@
 
   $("source").addEventListener("change", () => {
     syncSource();
-    if ($("source").value === "row") preview();
+    preview();
   });
   syncSource();
 
@@ -434,7 +435,15 @@
     const full = $("full");
     full.href = url;
     full.hidden = false;
-    return {decoder: decoder, decoded: decoded, declared: declared, checked: checked};
+    return {
+      decoder: decoder,
+      decoded: decoded,
+      declared: declared,
+      checked: checked,
+      // The image's own size, so a caption describes what was drawn rather than what an index said.
+      width: image.naturalWidth,
+      height: image.naturalHeight,
+    };
   };
 
   const draw = async (url, answer) => {
@@ -464,26 +473,65 @@
     }
   };
 
-  // The image the reader has chosen, drawn as soon as the choice is complete — an address is two
-  // values and nothing else, so there is no reason to make them press a button to find out whether
-  // they got it right, and a row that does not exist says so before a model is asked to fetch it.
+  /** Empty the viewer: nothing on screen is the picture the controls no longer name. */
+  const clearViewer = () => {
+    figure.hidden = true;
+    marks.replaceChildren();
+    $("full").hidden = true;
+    fitted = null;
+    $("check").textContent = "";
+    $("check").className = "";
+  };
+
+  // The image the reader has chosen, drawn as soon as the choice is a picture — an address is two
+  // values and nothing else, and a file is local, so neither needs a button to find out whether it
+  // was got right. A row that does not exist says so before a model is asked to fetch it, and a
+  // source that names no picture yet clears the viewer rather than leaving the last row on screen.
   //
   // The token is what keeps a preview from overwriting a result: a preview in flight while Run is
-  // pressed belongs to a choice the reader has moved on from.
+  // pressed belongs to a choice the reader has moved on from. `held` is the object URL of the file
+  // being shown, released when another picture replaces it — without that, every photograph a reader
+  // tried stays in memory for as long as the page is open.
   let previewToken = 0;
+  let held = "";
+
   const preview = async () => {
-    if (!key || !dataset.options.length || $("source").value !== "row") return;
+    if (!key) return;
+    const upload = $("source").value === "upload";
+    const file = $("file").files[0];
+    if (upload && !file) {
+      previewToken += 1;
+      clearViewer();
+      $("response").hidden = true;
+      return;
+    }
+    if (!upload && !dataset.options.length) return;
     const token = ++previewToken;
-    const index = Number($("row").value);
     try {
-      const row = await call(
-        "/datasets/" + encodeURIComponent(dataset.value) + "/images/" + index);
-      if (token !== previewToken) return;
-      await paint(row.image_url, []);
+      let url, caption;
+      if (upload) {
+        if (held) URL.revokeObjectURL(held);
+        held = URL.createObjectURL(file);
+        url = held;
+        caption = "your photograph";
+      } else {
+        if (held) {
+          URL.revokeObjectURL(held);
+          held = "";
+        }
+        const row = await call(
+          "/datasets/" + encodeURIComponent(dataset.value) + "/images/" + Number($("row").value));
+        if (token !== previewToken) return;
+        url = row.image_url;
+        caption = row.dataset + " row " + row.row;
+      }
+      const painted = await paint(url, []);
       if (token !== previewToken) return;
       $("response").hidden = true;
+      // The size comes from the image itself in both cases, so the caption describes what is drawn
+      // rather than what an index or a file system claimed.
       say($("check"),
-        row.dataset + " row " + row.row + " — " + row.width + "×" + row.height +
+        caption + " — " + painted.width + "×" + painted.height +
         " px, press Run to segment it", null);
     } catch (error) {
       if (token !== previewToken) return;
@@ -514,7 +562,11 @@
         // field this contract declares; the gateway decodes that once and forwards the bytes.
         const form = new FormData();
         form.append("file", file);
-        imageUrl = URL.createObjectURL(file);
+        // The run shows the same file the preview did, so the preview's object URL is released and
+        // this one takes its place as the picture on screen.
+        if (held) URL.revokeObjectURL(held);
+        held = URL.createObjectURL(file);
+        imageUrl = held;
         answer = await call("/models/" + chosen + "/predict/upload?" + search,
           {method: "POST", body: form});
       } else {
@@ -582,6 +634,11 @@
   });
   $("row").addEventListener("change", preview);
   dataset.addEventListener("change", preview);
+  // A chosen file is a picture like any other, so it is drawn as soon as it is chosen — and choosing
+  // none clears the viewer instead of keeping the row the dropdown no longer names. Registered here,
+  // beside the other triggers, because the handler is passed by value: naming `preview` above its own
+  // declaration is a ReferenceError, and it kills the whole script rather than one listener.
+  $("file").addEventListener("change", preview);
 
   // The command follows the controls, so a reader can set the call up on the page and then take it
   // away to a shell. Every control that decides what is sent refreshes it — and the parameters row is
