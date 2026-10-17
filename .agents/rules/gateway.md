@@ -17,13 +17,23 @@ here.
   are **not implemented**; [`project.md`](project.md) holds that decision and its trigger.
 - **Images reach clients through the public `data.*` plane**, so nothing has to be anonymous.
 - **Routing is a sequential retry over interchangeable backends.** Try backends in order, **idle ones
-  first** — a backend is only known to be unhealthy *after* an attempt fails, so without that a burst
-  arriving during the failure queues behind it — mark a failed one unhealthy, and move on. The window a
-  failed backend is passed over for must be **at least the response budget the failed attempt had**,
-  and `models.py` asserts the invariant, because a window shorter than the failure it remembers charges
-  the same wait again for every window. A backend is any Docker-capable GPU resource behind one uniform
-  protocol; the gateway never special-cases a provider. No circuit-breaker and no weighted routing: the
-  answers are interchangeable and a queue is not this layer's job.
+  first and then the shortest queue** — a backend is only known to be unhealthy *after* an attempt
+  fails, so without the first a burst arriving during the failure queues behind it, and without the
+  second a burst deeper than the pool is answered by whichever backend the host listed first: three
+  cards and 160 simultaneous calls put 140 on one of them, so the pool ran at one card's rate
+  ([measurements](../references/2026101714_what-a-burst-does-to-the-pool.md)). Mark a failed one
+  unhealthy, and move on. The window a failed backend is passed over for must be **at least the
+  response budget the failed attempt had**, and `models.py` asserts the invariant, because a window
+  shorter than the failure it remembers charges the same wait again for every window. A backend is
+  any Docker-capable GPU resource behind one uniform protocol; the gateway never special-cases a
+  provider. No circuit-breaker and no weighted routing: the answers are interchangeable and a queue
+  is not this layer's job.
+- **A handler that reaches a backend is a plain `def`, never `async def`.** The transport is a
+  blocking socket call, so an async handler runs it on the event loop and holds every other route
+  for the round trip — an upload did exactly that, and `/health` answered in 11 s under six of them
+  ([the same measurements](../references/2026101714_what-a-burst-does-to-the-pool.md)). FastAPI runs
+  a `def` handler in its thread pool, which is the concurrency this surface wants; `predict_upload`
+  reads its body through `file.file` for that reason.
 - **The pool is probed on a clock of its own, and the count carries that clock.** One task asks every
   backend's `/health` every `PROBE_INTERVAL_SECONDS`, off the request path, and `backends_up` counts
   what that probe last saw — not "has not failed yet". Without it the count lies twice: a machine that
