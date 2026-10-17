@@ -209,6 +209,35 @@ class ModelDirectory(BaseModel):
     models: list[ModelSummary]
 
 
+class ComputedBy(BaseModel):
+    """The machine that produced an answer, as that machine reported itself.
+
+    A mask's boundary is the output of kernels chosen at run time, so two machines can disagree by a
+    pixel, by a percent of a mask's area, or by one object at the margin. Publishing this turns such
+    a difference from a mystery into a fact a caller can read. It is a reproducibility record rather
+    than an inventory: no address, no memory figure, no hostname.
+
+    Every field is optional, which is what lets a backend that has not been rebuilt still answer: a
+    missing record is unhelpful, never wrong.
+
+    Attributes
+    ----------
+    gpu : str or None
+        The card's name, where the backend has one.
+    compute_capability : str or None
+        The card's capability as `major.minor` — the kernel family that ran.
+    cuda : str or None
+        The CUDA version the build was made against.
+    torch : str or None
+        The torch version that ran the forward pass.
+    """
+
+    gpu: str | None = None
+    compute_capability: str | None = None
+    cuda: str | None = None
+    torch: str | None = None
+
+
 class ModelPrediction(BaseModel):
     """The answer to a predict request, whatever the model was.
 
@@ -220,11 +249,14 @@ class ModelPrediction(BaseModel):
         The same object shape the dataset surface returns, so one decoder reads both.
     resolution_used : int or None
         The side the model actually ran at, where it reports one.
+    computed_by : ComputedBy or None
+        The machine that produced the answer, where the backend reports one.
     """
 
     model: str
     objects: list[ObjectOut]
     resolution_used: int | None = None
+    computed_by: ComputedBy | None = None
 
 
 @dataclass(frozen=True)
