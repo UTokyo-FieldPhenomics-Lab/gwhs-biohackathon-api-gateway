@@ -37,8 +37,15 @@ jobs:
           enable-cache: true
       # --locked: the site is built from docs/uv.lock, so no page can change because a dependency moved.
       - run: uv sync --locked --project docs
+      # The notebook is generated from `examples/notebook.md` before the build, so the build publishes
+      # it at the URL its page links to. It is committed as well as generated: Colab can only open a
+      # notebook that sits at a GitHub path.
+      - run: python3 docs/scripts/make_notebook.py
       # --strict: a warning fails the build, which is what catches a link to a page that does not exist.
       - run: uv run --project docs zensical build --strict
+      # The build just regenerated the notebook. If that changed it, the committed copy is stale and
+      # Colab is serving a version the page no longer describes: fail, and let the author commit it.
+      - run: git diff --exit-code -- docs/content/examples/quickstart.ipynb
       # The three client files are downloaded from the site, so they are put into the build output
       # beside the page that links to them — after the build, because a build overwrites `site/`, and
       # never into `docs/content/`, because a copy of a source file in the source tree is a copy

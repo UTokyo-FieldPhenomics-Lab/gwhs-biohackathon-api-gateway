@@ -193,12 +193,12 @@ content — `~/.config/biohack-gateway/index/<dataset>.db`, override with `--ind
 
 The curated documentation is live at <https://docs.global-wheat.com>, built by Zensical from
 `docs/content/` and published to GitHub Pages by [`.github/workflows/docs.yml`](.github/workflows/docs.yml)
-on every push to `main`. Four pages, all written for a participant: `index.md` (the calls and the
-dataset list), `datasets/` (what each dataset contains, with images, and how a response maps onto
-them), `clients/` (the API as a function in Python, JavaScript, and Java — one downloadable file each,
-with masks decoded for you), and `interactive.md` (FastAPI's own Swagger UI, embedded in a frame,
-with a direct link for a network that cannot reach `api.*`). The internal contract, `data-layout.md`,
-is deliberately not published.
+on every push to `main`. Six chapters, all written for a participant: `index.md` (three addresses and
+one call), `api/` (the contract, the clients as downloadable files in Python, JavaScript and Java, and
+FastAPI's own Swagger UI embedded in a frame), `datasets/` (what a row is, then one page per dataset),
+`models/` (the GPUs behind the API, then one page per model), and `examples/` (a live demo, and a
+notebook generated from its own page — that page is the only source). The internal contract,
+`data-layout.md`, is deliberately not published.
 
 ```bash
 uv sync --locked --project docs                    # from the repository root

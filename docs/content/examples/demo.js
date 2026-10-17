@@ -1,13 +1,13 @@
-// Replay one recorded model call on the Models page.
+// Replay one recorded model call on the live demo page.
 //
 // The record is a committed file beside this script: the call that was made, the image it was made
 // on, and the response exactly as the API answered. Nothing here invents anything — a model id, a
 // prompt, or a threshold in this file would be a second place to keep true, so the panel names none
 // of them and reads all of them from the record.
 //
-// The decoder is the site's own `clients/global-wheat.js`, loaded by the page before this
-// script: the same file the Post-processing page tells a participant to download, so the demo and
-// the tutorial cannot drift apart.
+// The decoder is the site's own `clients/global-wheat.js`, loaded by the page before this script:
+// the same file the Clients page tells a participant to download, so the demo and the tutorial
+// cannot drift apart.
 //
 // Two facts shape the drawing. `data.global-wheat.com` sends no `access-control-allow-origin`
 // header, so the image is loaded without `crossorigin` and the canvas is tainted: **no pixel may be
@@ -17,7 +17,7 @@
 // allows.
 (() => {
   "use strict";
-  const RECORD = "example-prediction.json";
+  const RECORD = "../example-prediction.json";
   // Close to the image's own size, so a mask's edge is the mask's edge rather than a resampling
   // artifact; the cap is for very large images, where the canvas would otherwise be enormous.
   const MAX_SIDE = 2600;

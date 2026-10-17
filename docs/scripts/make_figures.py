@@ -27,7 +27,6 @@ from PIL import Image, ImageDraw, ImageFont
 REPO = Path(__file__).resolve().parents[2]
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 DATASETS = REPO / "docs/content/datasets"
-CLIENTS = REPO / "docs/content/clients"
 CLIENT_PYTHON = REPO / "clients/python"
 PAGES = REPO / "docs/content"
 
@@ -234,8 +233,8 @@ def draw_gwfss(image: Image.Image, mask: Image.Image) -> None:
                            font=font(20), fill=(190, 197, 206), anchor="mm")
         tiles.paste(cell, (16 + (index % 2) * (tile_side + gap),
                            16 + (index // 2) * (tile_side + strip + gap)))
-    save(tiles, CLIENTS / "mask-output.png")
-    save(mask, CLIENTS / "mask-input.png")
+    save(tiles, DATASETS / "mask-output.png")
+    save(mask, DATASETS / "mask-input.png")
 
 
 def draw_instance(image: Image.Image, objects: list[dict[str, float]],
@@ -306,7 +305,7 @@ def draw_instance(image: Image.Image, objects: list[dict[str, float]],
     save(figure((crop_image, "the object, in the image"),
                 (flat, "the decoded mask"),
                 (overlay, "the mask, on the image")),
-         CLIENTS / "rle-input-output.jpg")
+         DATASETS / "rle-input-output.jpg")
 
 
 if __name__ == "__main__":

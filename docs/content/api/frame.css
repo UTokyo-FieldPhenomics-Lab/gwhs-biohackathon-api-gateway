@@ -1,6 +1,0 @@
-/* The interactive reference is a frame and nothing else: the page carries no heading of its own, so
-   the reader arrives straight at the Swagger UI without a title repeating what the nav already says.
-   Scoped with :has() so no other page loses its heading. */
-.md-content__inner:has(#reference-frame) > h1 {
-  display: none;
-}

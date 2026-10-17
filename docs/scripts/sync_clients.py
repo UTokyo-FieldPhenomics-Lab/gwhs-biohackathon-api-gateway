@@ -26,8 +26,11 @@ REPO = Path(__file__).resolve().parents[2]
 SITE = REPO / "site"
 """The build output Zensical writes, which is what gets published."""
 
-PAGE = SITE / "clients/index.html"
+PAGE = SITE / "api/clients/index.html"
 """The Clients page in that output, and the proof that a build has happened."""
+
+FILES = SITE / "clients"
+"""Where the URLs the page shows resolve: `/clients/global_wheat.py` and its neighbours."""
 
 SOURCES = (
     REPO / "clients/python/global_wheat.py",
@@ -61,9 +64,10 @@ def sync() -> list[str]:
             raise FileNotFoundError(
                 f"the site links to {source.name}, which clients/ does not hold"
             )
-        target = PAGE.parent / source.name
+        target = FILES / source.name
         if target.is_file() and target.read_bytes() == source.read_bytes():
             continue
+        FILES.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, target)
         written.append(source.name)
     return written
