@@ -65,16 +65,21 @@ Rules state what must hold and why — never history, measurements, or anecdotes
 - **GPU backends are never publicly reachable.** The gateway reaches them over an authenticated,
   non-public link and each requires its own token; CloudFront never forwards to them. The transport —
   a VPN, a private network, or a provider tunnel — is an implementation detail, not a fixed route.
-- **Keys are revocable, and each one is capped at the pool's width.** A token may have **three**
-  requests in flight, never four: `ConcurrencyGate` counts per team in the request middleware and
-  refuses the fourth with `429 quota_exceeded` immediately rather than queueing it. Three is the pool's
-  declared `max_in_flight`, so a cap that disagreed with `GET /models` would be a second source of
-  truth about capacity. Revocation removes the team from the token pool, and attribution comes from the
+- **Keys are revocable, and each one is capped at the pool's width.** A token may have as many
+  requests in flight as the pool is wide — three against three cards, never four: `ConcurrencyGate`
+  counts per team in the request middleware and refuses the next one with `429 quota_exceeded`
+  immediately rather than queueing it. The ceiling is the pool's declared `max_in_flight` summed, the
+  same number `GET /models` publishes, so a cap that disagreed with the published capacity would be a
+  second source of truth about it; a fourth card raises it without a code change. Revocation removes
+  the team from the token pool, and attribution comes from the
   team id in the request log. A per-key *request rate* is still absent, and so is a per-key *count*
   quota: a count needs persistence, a lifetime, and a top-up path, and its only effect is a human
   round-trip at the moment a team is blocked. The trigger for a count: a backend billed per request,
   or a fairness complaint between teams. The trigger for a rate: observed bursts that a cap of three
-  in flight does not contain.
+  in flight does not contain. What is deliberately absent *before* a measurement — a global admission
+  gate, a per-model cap, a per-card memory ledger — is planned in
+  [`../plans/202610171908_fifty-teams-and-more-models.md`](../plans/202610171908_fifty-teams-and-more-models.md),
+  together with the trigger that starts it.
 
 ## Scope discipline
 
