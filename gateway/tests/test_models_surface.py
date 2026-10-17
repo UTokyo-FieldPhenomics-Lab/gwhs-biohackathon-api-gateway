@@ -18,7 +18,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
+import uvicorn
 from fastapi.testclient import TestClient
 
 from biohack_gateway.app import create_app
@@ -840,3 +842,132 @@ def test_a_burst_of_requests_is_spread_over_both_backends(tmp_path: Path, index_
     assert sum(1 for url in met if url.startswith(FIRST)) == 1, (
         "the burst queued behind the failure"
     )
+
+
+def test_the_least_busy_backend_is_chosen_when_every_one_is_busy() -> None:
+    """A burst deeper than the pool goes to the shortest queue, not to the head of the list.
+
+    Emptying the idle group leaves the busy group in the order the host listed it, and a request
+    arriving then took `busy[0]` whatever that backend already held. Measured against the live
+    gateway on 2026-10-17 with three cards and 160 simultaneous calls: 140 went to the first entry
+    and the other two cards saw 20 between them, so the pool answered at one card's rate.
+    """
+    registry = ModelRegistry({MODEL: [FIRST, SECOND]}, BACKEND_TOKEN, FakeBackends())
+    registry._begin(MODEL)  # noqa: SLF001 — FIRST now holds one request
+    registry._begin(MODEL)  # noqa: SLF001 — SECOND now holds one
+    registry._reserve(registry._backends[MODEL][0])  # noqa: SLF001 — FIRST holds two, SECOND one
+
+    chosen = registry._begin(MODEL)[0].url  # noqa: SLF001
+
+    assert chosen == SECOND, "the request joined the longer queue"
+
+
+def _served_by_uvicorn(app: Any) -> Iterator[int]:
+    """Run the application on a real listening socket, the way the host does.
+
+    Concurrency is the property under test, and `TestClient` answers one request per call inside a
+    portal of its own, which cannot show an event loop held by a handler. A real server can.
+
+    Parameters
+    ----------
+    app : Any
+        The application to serve.
+
+    Yields
+    ------
+    int
+        The port it listens on.
+    """
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    server = uvicorn.Server(
+        uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", lifespan="off")
+    )
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    for _ in range(500):
+        if server.started:
+            break
+        time.sleep(0.01)
+    yield port
+    server.should_exit = True
+    thread.join(5)
+
+
+def test_an_upload_does_not_hold_the_loop_while_a_backend_works(
+    tmp_path: Path, index_dir: Path
+) -> None:
+    """An upload is one thread, not the whole gateway: other routes keep answering meanwhile.
+
+    The route read its body with `await` and then called the blocking transport inside the event
+    loop, so every other request waited for the backend round trip. Measured against the live
+    gateway on 2026-10-17 with six concurrent uploads: `/health` answered in 11.08 s and 5.31 s,
+    and in 1.2 ms the moment the uploads drained.
+    """
+    delay = 0.3
+
+    def transport(
+        method: str, url: str, headers: Mapping[str, str], body: bytes | None, timeout: float
+    ) -> Reply:
+        if "/health" in url:
+            return Reply(status=200, body=json.dumps(DECLARATION).encode())
+        time.sleep(delay)
+        return Reply(status=200, body=json.dumps(PREDICTION).encode())
+
+    app = create_app(
+        tokens_path=_pool_path(tmp_path),
+        index_dir=index_dir,
+        data_base_url=BASE,
+        models_path=_models_path(tmp_path),
+        backend_token=BACKEND_TOKEN,
+        model_transport=transport,
+    )
+    served = _served_by_uvicorn(app)
+    port = next(served)
+    base = f"http://127.0.0.1:{port}"
+    try:
+        assert httpx.get(f"{base}/models", headers=KEY, timeout=10).status_code == 200
+        gate = threading.Barrier(5)
+        started = time.monotonic()
+
+        def upload() -> None:
+            gate.wait()
+            httpx.post(
+                f"{base}/models/{MODEL}/predict/upload",
+                headers=KEY,
+                files={"file": ("own.jpg", b"\xff\xd8 not really a jpeg", "image/jpeg")},
+                timeout=30,
+            )
+
+        senders = [threading.Thread(target=upload) for _ in range(4)]
+        for sender in senders:
+            sender.start()
+        gate.wait()
+        time.sleep(0.05)
+        asked = time.monotonic()
+        health = httpx.get(f"{base}/health", timeout=30)
+        held = time.monotonic() - asked
+        for sender in senders:
+            sender.join(30)
+        whole = time.monotonic() - started
+
+        assert health.status_code == 200
+        assert held < delay / 2, f"/health waited {held:.2f} s behind the uploads"
+        assert whole < 4 * delay * 0.75, f"four uploads took {whole:.2f} s, one after another"
+    finally:
+        next(served, None)
+
+
+def _pool_path(tmp_path: Path) -> Path:
+    """Write the single-team token pool the served app authenticates against."""
+    pool = tmp_path / "tokens.json"
+    TokenPool({TEAM: TOKEN}).save(pool)
+    return pool
+
+
+def _models_path(tmp_path: Path) -> Path:
+    """Write a model list naming the fixture's two backends."""
+    path = tmp_path / "models.json"
+    path.write_text(json.dumps({MODEL: [FIRST, SECOND]}), encoding="utf-8")
+    return path
