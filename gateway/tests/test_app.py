@@ -479,6 +479,23 @@ def test_the_model_page_says_how_new_the_count_is(client: TestClient) -> None:
     assert "running || !entry.backends_up" in page
 
 
+def test_the_model_page_watermarks_what_computed_the_answer(client: TestClient) -> None:
+    """Which machine ran the pass is part of the result, so it is written on the picture.
+
+    A mask's boundary depends on the kernels that ran, so two machines can disagree on one call; the
+    name, the card, the CUDA build and the torch version make that difference readable instead of
+    mysterious. The chip carries whatever the backend reported — every field is optional, because a
+    container that has not been rebuilt still answers — and it goes away when nothing was reported.
+    """
+    page = client.get(PLAY_PATH).text
+
+    assert "computed_by" in page
+    assert 'id="watermark"' in page
+    assert '"CUDA " + computed.cuda' in page and '"torch " + computed.torch' in page
+    assert "showMachine(answer)" in page  # a run names its machine
+    assert "showMachine(null)" in page  # a preview and a cleared viewer name none
+
+
 def test_the_model_page_shows_the_photograph_the_reader_chose(client: TestClient) -> None:
     """An upload is a picture like any other: choosing one draws it, none clears the box.
 
