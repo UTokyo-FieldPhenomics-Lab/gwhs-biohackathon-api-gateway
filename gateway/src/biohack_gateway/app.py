@@ -14,8 +14,11 @@ remembering to.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
 from enum import StrEnum
 from importlib.metadata import version as installed_version
 from pathlib import Path
@@ -40,6 +43,7 @@ from biohack_gateway.models import (
     create_model_router,
     http_transport,
     load_models,
+    watch_pool,
 )
 from biohack_gateway.play import PLAY_PATH, play_page
 from biohack_gateway.tokens import DEFAULT_TOKENS_FILE, TokenPoolError
@@ -387,6 +391,25 @@ def create_app(
     FastAPI
         The gateway application, ready for uvicorn.
     """
+    registry = ModelRegistry(load_models(models_path), backend_token, model_transport)
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        """Keep the published pool count true for as long as the process serves.
+
+        A task of its own rather than work inside a request: a request that arrives while a machine
+        is off must not be the thing that discovers it, and a page that keeps asking must not make
+        the gateway keep asking. It is cancelled on shutdown, so a reload never leaves two tasks
+        asking the same machines.
+        """
+        watching = asyncio.create_task(watch_pool(registry))
+        try:
+            yield
+        finally:
+            watching.cancel()
+            with suppress(asyncio.CancelledError):
+                await watching
+
     app = FastAPI(
         title="Global Wheat API",
         version=APP_VERSION,
@@ -395,6 +418,7 @@ def create_app(
             "Guides and examples: https://docs.global-wheat.com"
         ),
         docs_url=None,  # registered below instead, so the page can carry the frame reporter
+        lifespan=lifespan,
     )
 
     # Declared before the dataset surface on purpose. The reference groups its calls in the order
@@ -424,7 +448,7 @@ def create_app(
     app.include_router(create_dataset_router(datasets, data_base_url))
     app.include_router(
         create_model_router(
-            ModelRegistry(load_models(models_path), backend_token, model_transport),
+            registry,
             datasets,
             data_base_url,
         )

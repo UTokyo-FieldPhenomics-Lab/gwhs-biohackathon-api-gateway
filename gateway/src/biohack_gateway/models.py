@@ -26,6 +26,7 @@ index.
 
 from __future__ import annotations
 
+import asyncio
 import http.client
 import json
 import logging
@@ -122,6 +123,21 @@ would show an empty directory for half a minute after the container was up, whic
 window somebody checks it in.
 """
 
+PROBE_INTERVAL_SECONDS = 15.0
+"""How often every backend is asked whether it is still answering.
+
+The published count is a probe's verdict rather than a record of the last failure, so it needs a
+clock of its own. Without one, two lies are possible and both were observed: a machine that dies
+quietly stays published as up until somebody calls it, and a machine that was off when the process
+started is published as up because nothing has failed against it yet.
+
+Fifteen seconds because it is short enough that a reader who starts a container and presses Run
+sees it, and long enough that the pool costs one request per machine per quarter minute. What it
+must not become is a probe per request, or a probe that re-reads a declaration: those are the two
+things `gateway.md` rules out, and the difference between this and monitoring is that nothing here
+is measured into a time series — it is one verdict, replaced by the next one.
+"""
+
 
 class ModelParameter(BaseModel):
     """One control parameter a model accepts, as the model declares it.
@@ -159,13 +175,18 @@ class ModelSummary(BaseModel):
     resolution : int or None
         The square side the model runs at, as it declared. `None` where nothing answered.
     backends_up : int
-        How many of its backends are not currently passed over. Zero means a call will be refused
-        rather than queued.
+        How many of its backends answered the last probe and are not passed over. Zero means a call
+        will be refused rather than queued — the published count and the routing decision are taken
+        from the same set.
     max_in_flight : int
-        Requests the live backends declare they can hold at once, summed. Published rather than
+        Requests the answering backends declare they can hold at once, summed. Published rather than
         enforced: the concurrency gate is not implemented yet.
     parameters : list of ModelParameter
         What the model accepts. Empty where no backend has declared anything.
+    checked_seconds_ago : int or None
+        How long ago the pool was last asked, to the nearest second. It is part of the count rather
+        than decoration: the number is a probe's verdict, and a verdict without its age is a promise
+        about the past. `None` where this model has no backends to ask.
     """
 
     id: str
@@ -173,6 +194,7 @@ class ModelSummary(BaseModel):
     backends_up: int = 0
     max_in_flight: int = 0
     parameters: list[ModelParameter] = field(default_factory=list)
+    checked_seconds_ago: int | None = None
 
 
 class ModelDirectory(BaseModel):
@@ -380,6 +402,12 @@ class Backend:
         What it declared it accepts.
     unhealthy_until : float
         A monotonic deadline: while now is below it, this backend is passed over.
+    alive : bool
+        Whether the last probe said it is answering. This, and not "has not failed yet", is what
+        ``backends_up`` counts.
+    probed_at : float
+        When it was last asked, as a monotonic stamp, so the published count can carry its age. Zero
+        means it has never been asked.
     in_flight : int
         Attempts this gateway currently has running against this backend. Read when choosing which
         backend to try, so that a request arriving while another is in flight to one that is in fact
@@ -391,6 +419,8 @@ class Backend:
     max_in_flight: int = 1
     parameters: list[ModelParameter] = field(default_factory=list)
     unhealthy_until: float = 0.0
+    alive: bool = False
+    probed_at: float = 0.0
     in_flight: int = 0
     declared: bool = False
     """Whether this backend has answered what it serves, ever. Once true it is never asked again."""
@@ -416,12 +446,17 @@ class Backend:
 
 
 class ModelRegistry:
-    """The configured models, what their backends declared, and which ones are passed over.
+    """The configured models, what their backends declared, and which ones are answering.
 
-    The registry is built once, at startup, and lives for the process. Declarations are read at that
-    moment and never polled, so a backend that was switched off when the gateway started appears
-    with nothing declared until the gateway is restarted — the same bargain the dataset index
-    strikes, and the reason neither needs a health loop.
+    The registry is built once, at startup, and lives for the process. **A declaration is read once
+    and never re-read**: what a model serves is a specification, and a specification that changes
+    under a running process is a deployment that has not been restarted. **Availability is the other
+    thing**, and it is probed — :func:`watch_pool`, every :data:`PROBE_INTERVAL_SECONDS` — because a
+    count that only moves when a request fails is a count that lies about a machine which died
+    quietly, and about one that was off before the process started.
+
+    The dataset index still strikes the older bargain, reading its files once, because a published
+    dataset does not go away while the gateway serves; only the pool has a clock.
     """
 
     def __init__(
@@ -455,6 +490,32 @@ class ModelRegistry:
             for backend in backends:
                 self._declare(model, backend)
 
+    def _ask(self, backend: Backend) -> Reply:
+        """Ask one backend what it is now, and record that it was asked.
+
+        Parameters
+        ----------
+        backend : Backend
+            The backend to ask. `alive`, `answered` and `probed_at` are updated from the answer.
+
+        Returns
+        -------
+        Reply
+            The answer, for a caller that also wants the declaration out of it.
+
+        Notes
+        -----
+        A `200` is the only answer that counts as alive: a container still loading its weights
+        answers `503`, and publishing it as up would promise a call it would refuse.
+        """
+        reply = self._transport(
+            "GET", f"{backend.url}/health", {}, None, DECLARATION_TIMEOUT_SECONDS
+        )
+        backend.alive = reply.status == 200
+        backend.answered = reply.status != 0
+        backend.probed_at = time.monotonic()
+        return reply
+
     def _declare(self, model: str, backend: Backend) -> None:
         """Ask one backend what it serves, and record the answer.
 
@@ -473,10 +534,7 @@ class ModelRegistry:
         loading its weights when the gateway started describes itself once it is up.
         """
         backend.tried_at = time.monotonic()
-        reply = self._transport(
-            "GET", f"{backend.url}/health", {}, None, DECLARATION_TIMEOUT_SECONDS
-        )
-        backend.answered = reply.status != 0
+        reply = self._ask(backend)
         if reply.status != 200:
             logger.warning("backend %s did not declare itself (%s)", backend.url, reply.status)
             return
@@ -534,6 +592,32 @@ class ModelRegistry:
                 continue
             self._declare(model, backend)
 
+    def probe(self) -> None:
+        """Ask every backend whether it is still answering, and say so when that changes.
+
+        Notes
+        -----
+        Nothing is re-read: a declaration is what a model serves, and this asks only whether the
+        machine is there, so a spec cannot change underneath a page that is being used. A backend
+        that answers is logged when it starts answering and when it stops — never on each pass,
+        because a machine that is off for an afternoon would otherwise write a line every
+        :data:`PROBE_INTERVAL_SECONDS`.
+        """
+        for backends in self._backends.values():
+            for backend in backends:
+                self._probe(backend)
+
+    def _probe(self, backend: Backend) -> None:
+        """Ask one backend, and log the answer only where it differs from the last one."""
+        before = backend.alive
+        self._ask(backend)
+        if backend.alive == before:
+            return
+        if backend.alive:
+            logger.info("backend %s is answering", backend.url)
+        else:
+            logger.warning("backend %s stopped answering", backend.url)
+
     def directory(self) -> list[ModelSummary]:
         """Describe every configured model.
 
@@ -568,14 +652,20 @@ class ModelRegistry:
             raise HTTPException(status_code=404, detail="no such model")
         self._refresh_undeclared(model, backends)
         now = time.monotonic()
-        live = [backend for backend in backends if not backend.is_passed_over(now)]
+        live = [
+            backend for backend in backends if backend.alive and not backend.is_passed_over(now)
+        ]
         declared = next((backend for backend in backends if backend.declared), None)
+        checked = max((backend.probed_at for backend in backends), default=0.0)
         return ModelSummary(
             id=model,
             resolution=declared.resolution if declared else None,
             backends_up=len(live),
             max_in_flight=sum(backend.max_in_flight for backend in live),
             parameters=declared.parameters if declared else [],
+            # The age of the newest look, not the oldest: the probe asks a model's backends in one
+            # pass, so what a reader needs to know is when that pass happened.
+            checked_seconds_ago=None if not checked else max(0, round(now - checked)),
         )
 
     def _begin(self, model: str) -> list[Backend]:
@@ -589,9 +679,11 @@ class ModelRegistry:
         Returns
         -------
         list of Backend
-            The backends not currently passed over, with those that have nothing in flight first,
-            and the first of them already counted as in flight. Empty means the caller should be
-            told the model is unavailable rather than made to wait for a machine that has failed.
+            The backends that are answering and not currently passed over, with those that have
+            nothing in flight first, and the first of them already counted as in flight. Empty
+            means the caller should be told the model is unavailable rather than made to wait for
+            a machine that is off — and it is the same set the published count is taken from, so
+            `0` means the same thing in both places.
 
         Raises
         ------
@@ -630,7 +722,9 @@ class ModelRegistry:
             model with one backend is unaffected, and one with two spreads a burst over both.
         """
         now = time.monotonic()
-        live = [backend for backend in backends if not backend.is_passed_over(now)]
+        live = [
+            backend for backend in backends if backend.alive and not backend.is_passed_over(now)
+        ]
         idle = [backend for backend in live if not backend.in_flight]
         busy = [backend for backend in live if backend.in_flight]
         return idle + busy
@@ -828,6 +922,30 @@ class PredictInput(BaseModel):
 
     dataset: str
     row: int
+
+
+async def watch_pool(registry: ModelRegistry, interval: float | None = None) -> None:
+    """Ask every backend what it is, every :data:`PROBE_INTERVAL_SECONDS`, until cancelled.
+
+    Parameters
+    ----------
+    registry : ModelRegistry
+        The pool to ask.
+    interval : float, optional
+        Overrides the interval, for a test that cannot wait fifteen seconds. `None` reads
+        :data:`PROBE_INTERVAL_SECONDS` when the loop starts, so patching it is enough to change the
+        behaviour.
+
+    Notes
+    -----
+    The probe runs in a worker thread, because the transport blocks: a three-second wait on a
+    machine that is off must not hold the event loop that is answering everyone else. The first pass
+    is one interval away rather than immediate, since the startup declaration has just been read.
+    """
+    pause = PROBE_INTERVAL_SECONDS if interval is None else interval
+    while True:
+        await asyncio.sleep(pause)
+        await asyncio.to_thread(registry.probe)
 
 
 def create_model_router(

@@ -459,6 +459,26 @@ def test_the_model_page_shows_the_same_call_as_a_command(client: TestClient) -> 
     assert 'parameters.addEventListener("input", refreshRequest)' in page
 
 
+def test_the_model_page_says_how_new_the_count_is(client: TestClient) -> None:
+    """A count is a probe's verdict, and the page shows its age rather than implying it is live.
+
+    The gateway asks its backends on an interval, so the page must not present a verdict as if it
+    were now: it prints how long ago the directory was read, grows that number by the second, asks
+    again while it is on screen — and asks the *directory* only, because re-reading a declaration
+    would rebuild the parameter controls under the reader's hands.
+    """
+    page = client.get(PLAY_PATH).text
+
+    assert "checked_seconds_ago" in page
+    assert '" · checked "' in page
+    assert "setInterval(renderFacts, 1000)" in page
+    assert "setInterval(poll, POLL_SECONDS * 1000)" in page
+    assert 'call("/models")' in page
+    assert "directory.models.find(" in page
+    # One reading decides both the line and the button, so they cannot disagree.
+    assert "running || !entry.backends_up" in page
+
+
 def test_the_model_page_orders_the_model_before_the_image_it_runs_on(client: TestClient) -> None:
     """A model, then the knobs it declares, then the image, and Run at the end of that last row.
 

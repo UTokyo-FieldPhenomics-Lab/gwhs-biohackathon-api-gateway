@@ -22,8 +22,17 @@ here.
   failed backend is passed over for must be **at least the response budget the failed attempt had**,
   and `models.py` asserts the invariant, because a window shorter than the failure it remembers charges
   the same wait again for every window. A backend is any Docker-capable GPU resource behind one uniform
-  protocol; the gateway never special-cases a provider. No circuit-breaker, weighted routing, or
-  background health loop until there are more than three backends.
+  protocol; the gateway never special-cases a provider. No circuit-breaker and no weighted routing: the
+  answers are interchangeable and a queue is not this layer's job.
+- **The pool is probed on a clock of its own, and the count carries that clock.** One task asks every
+  backend's `/health` every `PROBE_INTERVAL_SECONDS`, off the request path, and `backends_up` counts
+  what that probe last saw — not "has not failed yet". Without it the count lies twice: a machine that
+  dies quietly stays up until somebody calls it, and a machine that was off when the process started is
+  published as up because nothing has failed against it. The age is published with the count
+  (`checked_seconds_ago`), because a verdict without its age is a promise about the past, and both
+  pages show it; the task is cancelled with the process, so a reload never leaves two tasks asking the
+  same machines. The probe asks *whether*, never *what*: a declaration is a specification, and one
+  that changes under a running process is a deployment that has not been restarted.
 - **The model surface is four routes, and its error mapping decides what a caller retries.** `GET
   /models` and `GET /models/{model}` answer what the pool holds; `POST /models/{model}/predict` takes
   an address and `POST /models/{model}/predict/upload` takes bytes, because one handler branching on a
@@ -120,8 +129,10 @@ here.
   key is in, open once it is, in words as well as in the glyph — rather than what Swagger UI means by
   its own icons.
 - **Liveness is a route, not a probe loop.** `/health` answers without a key so a monitor and the
-  deploy script can ask it; nothing polls anything else. It reports the installed package version,
-  which is how a host running stale code is noticed.
+  deploy script can ask it, and it says only that this process is serving, with the version — which is
+  how a host running stale code is noticed. The one thing on a clock here is the pool probe above: it
+  asks backends about themselves, never about this host, and nothing asks a backend on the request
+  path.
 - **The package configures the root logger once, on import.** uvicorn configures loggers of its own
   and never the root one, so without it every line this package writes is discarded before journalctl
   sees it — including the team id each request is attributed to, which is what stands in for a counted

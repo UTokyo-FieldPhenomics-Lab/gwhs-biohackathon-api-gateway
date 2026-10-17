@@ -8,6 +8,7 @@ a failure was. What a model actually computes is the container's business and is
 
 from __future__ import annotations
 
+import asyncio
 import json
 import socket
 import threading
@@ -27,6 +28,7 @@ from biohack_gateway.models import (
     ModelRegistry,
     Reply,
     http_transport,
+    watch_pool,
 )
 from biohack_gateway.tokens import TokenPool
 
@@ -208,7 +210,12 @@ def test_the_directory_lists_what_the_model_declares(client: TestClient) -> None
     response = client.get("/models", headers=KEY)
 
     assert response.status_code == 200
-    assert response.json() == {
+    body = response.json()
+    # The age of the last look is part of the count, and it is the one number a test cannot predict
+    # to the second, so it is checked as a value rather than compared as one.
+    age = body["models"][0].pop("checked_seconds_ago")
+    assert isinstance(age, int) and 0 <= age < 60
+    assert body == {
         "models": [
             {
                 "id": MODEL,
@@ -442,6 +449,113 @@ def test_a_backend_that_is_switched_off_is_listed_with_nothing_declared(
     assert entry["resolution"] is None
     assert entry["parameters"] == []
     assert entry["backends_up"] == 2
+
+
+def test_a_machine_that_never_answered_is_not_published_as_up(
+    tmp_path: Path, index_dir: Path
+) -> None:
+    """A machine that was off when the process started is not "up" for want of a failure.
+
+    This was the count's oldest lie: `backends_up` counted the backends that had not *recently
+    failed*, and a machine that had never answered at all had failed against nothing — so a pair of
+    switched-off machines was published as two backends up, and a reader was told to press Run.
+    """
+    backends = FakeBackends(health=[Reply(status=0, body=b"")])
+    client = next(build_client(tmp_path, index_dir, backends))
+
+    entry = client.get("/models", headers=KEY).json()["models"][0]
+
+    assert entry["backends_up"] == 0
+    assert entry["max_in_flight"] == 0
+    assert entry["checked_seconds_ago"] == 0  # it was asked; it said nothing
+    refused = client.post(
+        f"/models/{MODEL}/predict", headers=KEY, json={"dataset": "gwhd", "row": 0}
+    )
+    assert refused.status_code == 503  # the published zero means the same thing to a caller
+
+
+def test_a_probe_finds_a_machine_that_dies_and_one_that_comes_back() -> None:
+    """Availability is asked, not inferred: no request has to fail for the count to change.
+
+    The same pass must not re-read what the model serves. A declaration is a specification, and one
+    that changes under a running process is a deployment that has not been restarted — so the probe
+    asks *whether*, never *what*, and a resolution of 700 arriving on port 8000 changes nothing.
+    """
+    ready = Reply(status=200, body=json.dumps(DECLARATION).encode())
+    changed = Reply(status=200, body=json.dumps({**DECLARATION, "resolution": 700}).encode())
+    silence = Reply(status=0, body=b"")
+    backends = FakeBackends(health=[ready, changed, silence, changed])
+    registry = ModelRegistry({MODEL: [FIRST]}, BACKEND_TOKEN, backends)
+
+    assert registry.describe(MODEL).backends_up == 1  # the startup declaration is the first look
+
+    registry.probe()
+    described = registry.describe(MODEL)
+    assert described.backends_up == 1
+    assert described.resolution == 1008  # the declaration was not read a second time
+
+    registry.probe()
+    assert registry.describe(MODEL).backends_up == 0  # found without a request failing
+    assert 0 <= (registry.describe(MODEL).checked_seconds_ago or 0) < 60  # and it says how new
+
+    registry.probe()
+    assert registry.describe(MODEL).backends_up == 1  # and back, with nothing restarted
+
+
+def test_the_watch_loop_keeps_asking_until_it_is_cancelled() -> None:
+    """The loop is the clock: every machine, every interval, and no further once cancelled."""
+    backends = FakeBackends()
+    registry = ModelRegistry({MODEL: [FIRST, SECOND]}, BACKEND_TOKEN, backends)
+    asked_at_start = len(backends.asked)
+
+    async def run() -> None:
+        watching = asyncio.create_task(watch_pool(registry, interval=0.01))
+        await asyncio.sleep(0.05)
+        watching.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await watching
+
+    asyncio.run(run())
+
+    # More than one pass, and both machines in each: the two are not ordered in the assertion, only
+    # counted, because the probe itself decides the order.
+    assert len(backends.asked) - asked_at_start >= 4
+
+
+def test_the_application_starts_the_probe_with_the_process(
+    tmp_path: Path, index_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The loop belongs to the app: entering it starts the clock, leaving it stops the clock.
+
+    Without this, the loop is a function nobody calls, and every published age is the startup one.
+    """
+    monkeypatch.setattr("biohack_gateway.models.PROBE_INTERVAL_SECONDS", 0.01)
+    backends = FakeBackends()
+    pool = tmp_path / "tokens.json"
+    TokenPool({TEAM: TOKEN}).save(pool)
+    models_path = tmp_path / "models.json"
+    models_path.write_text(json.dumps({MODEL: [FIRST]}), encoding="utf-8")
+    app = create_app(
+        tokens_path=pool,
+        index_dir=index_dir,
+        data_base_url=BASE,
+        models_path=models_path,
+        backend_token=BACKEND_TOKEN,
+        model_transport=backends,
+    )
+
+    with TestClient(app, raise_server_exceptions=False):
+        before = len(backends.asked)
+        time.sleep(0.1)
+        driven = len(backends.asked) - before
+
+    assert driven >= 1, "the app started without asking the pool again"
+
+    stopped = len(backends.asked)
+    time.sleep(0.05)
+    # One last pass may already have been in its worker thread when the task was cancelled; a second
+    # one would mean the loop outlived the app.
+    assert len(backends.asked) - stopped <= 1
 
 
 def test_a_container_still_loading_describes_itself_once_it_is_up(
