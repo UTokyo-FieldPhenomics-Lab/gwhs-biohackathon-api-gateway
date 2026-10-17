@@ -221,8 +221,8 @@ On a machine you are sitting at, the whole lifecycle is four commands: `docker p
 and `docker rm -f <model>` followed by the run line when something it was *created* with has to change.
 Nothing has to be repeated to start it, because the card, the port and the backend token live in the
 container's own configuration rather than in the image — which is exactly why the full `docker run` line
-is written out, with the Windows and Linux differences, in
-[`deploy/gpu-backends.md`](deploy/gpu-backends.md#controlling-a-container-on-a-machine-you-are-sitting-at).
+is written out, on both systems, in
+[`deploy/gpu-backends.md`](deploy/gpu-backends.md#32-the-run-line).
 
 ## Changing dependencies
 

@@ -96,7 +96,10 @@ of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-layout.md
   history, log output, anecdotes, or "we tried X". If it cannot be stated in a few lines, it
   is a note, not a rule, and belongs in `references/`. `models.md` is the one file describing a
   directory that is not part of this repository's own tree: `models/` is a submodule, and the rules
-  for operating it are still this repository's to keep.
+  for operating it are still this repository's to keep. `backend-pool.md` is the one file that is not
+  a package's: it holds the machines that serve a model, who may reach them, and one router per fault
+  domain, and it is kept current in place because an agent acting on a stale row acts on a machine
+  that has moved.
 - **`references/` — detail, decisions, and lessons.** Every non-trivial session writes one
   file named `YYYYMMDDHH_<topic>.md` recording what was done, the commands run, the observed
   results, what broke, and what to do differently next time. This is the only place for
@@ -112,6 +115,9 @@ of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-layout.md
 - The containers behind the GPU backends, and the link to their private repository:
   [`.agents/rules/models.md`](.agents/rules/models.md) — what `models/` is for, and the constraints
   that keep it inert for this repository's own build and tests.
+- The machines that serve a model, and who may reach them:
+  [`.agents/rules/backend-pool.md`](.agents/rules/backend-pool.md) — the pool itself, kept current,
+  and the reason an address there means nothing outside the lab's tailnet.
 - Execution records and lessons: [`.agents/references/`](.agents/references)
 - A host that answers from elsewhere but not from one network:
   [`references/2026101513_host-unreachable-from-the-utokyo-network.md`](.agents/references/2026101513_host-unreachable-from-the-utokyo-network.md)

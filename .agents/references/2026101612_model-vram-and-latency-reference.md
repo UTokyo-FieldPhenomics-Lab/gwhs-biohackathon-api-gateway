@@ -16,7 +16,8 @@ the harness calls `Sam3TextMasker`, `CascadePspRefiner` and `MaskingPipeline` as
 - GPU: RTX 3090, 24,078 MiB visible, driver 610.57.04. **This machine is `labpc` itself** — hostname
   `crest-nerv`, `192.168.250.228`, tailnet `nerv-linux` — so these are a pool member's own numbers and
   need no translating into a placement decision. Admitted against the **23 GB budget** of a 24 GB card
-  (Decision 8's 1 GB reserve), per [`../../deploy/gpu-backends.md`](../../deploy/gpu-backends.md).
+  (Decision 8's 1 GB reserve), per
+  [`../../.agents/rules/backend-pool.md`](../../.agents/rules/backend-pool.md).
 - Image: `packages/masking/tests/images/wheat head/DSC_001_20240619_154505_128521.jpg`, 3456×5184 —
   the demo's own domain and the resolution the pipeline is developed against.
 - Prompt: `wheat head`. SAM 3.1 `imgsz=1036`, CascadePSP `L=900`, `crop_expand=1.20`.
