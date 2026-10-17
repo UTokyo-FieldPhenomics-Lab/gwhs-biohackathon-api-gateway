@@ -34,30 +34,28 @@ published `area` exactly, and the sums agree with each other. Only the two machi
 - **Not nondeterminism run to run.** Repeating the call on the 3090 returns the same 18 objects and the
   same 109,419 px every time.
 
-## The two candidates
+## Resolved: two cards, one stack
 
-1. **Two different cards.** A 5090 and a 3090 choose different cuBLAS/cuDNN kernels and the forward
-   pass runs in bfloat16, so mask boundaries move by a pixel and the proposal set can change at the
-   margin — enough for a different object count and roughly a percent of mask area. This would be
-   ordinary numerics and needs no fix, only a documented expectation: an answer is one machine's
-   answer.
-2. **Two different inputs to the model.** A different checkpoint, a different image preprocessing, or
-   a different torch/cuda build between the two images would produce exactly this shape of difference
-   and *is* a defect — the pool's premise is that any backend of an id is interchangeable.
+Measured after both backends were rebuilt to carry a `computed_by` record, which answers in one field
+what this note could only ask before — same image, same prompt, same `confidence_threshold` 0.25:
 
-## What settles it
+| Backend | `compute_capability` | `cuda` | `torch` | `gwfss` row 4 |
+|---|---|---|---|---|
+| labpc, RTX 3090 | **`8.6`** (Ampere) | 12.8 | 2.10.0+cu128 | **18 objects, 109,419 px** |
+| lab 5090 | **`12.0`** (Blackwell) | 12.8 | 2.10.0+cu128 | **17 objects, 102,002 px** |
 
-- Ask **each** backend directly for the same call — `docker exec` on one and the tailnet address of the
-  other — and compare the per-object `score`, `area` and `bbox` lists. Candidate 1 leaves scores within
-  a few thousandths and boxes within a pixel; candidate 2 does not.
-- Compare the checkpoint each container actually loaded: its size and hash, read inside each
-  container, not from the build host.
-- Compare `torch.__version__` and `torch.version.cuda` inside both images, since the pipeline pins them
-  in `pyproject.toml` but two builds can resolve differently if the lock is not honoured.
+The card, its capability, CUDA and torch are the only fields either backend reports, and one of them
+differs: the kernel family the runtime selects. That is candidate 1 and it is ordinary numerics, not a
+defect — the checkpoint, the code and the pinned stack are the same on both machines.
 
-Until one of them is excluded, the documentation page carries the weaker, still-true statement — a
-mask's boundary, and the pixel count that follows from it, is one card's figure — and the recorded
-example is the 3090's answer, stored whole so it can be checked rather than trusted.
+What it costs is a promise, not correctness: **an answer is one machine's answer**, so a documentation
+page that published "this call finds seventeen heads" would be false on the other card. The page states
+the mechanism instead of a count, and a participant comparing two calls should expect a pixel, a
+percent of an area, or an object of difference when the pool has mixed cards.
+
+If a count ever has to be stable across the pool, the fix is a homogeneous pool — the same card and the
+same build — not a code change. Mixed cards are the normal state here, and now the answer says which
+one it came from.
 
 ## Update, 2026-10-17
 
