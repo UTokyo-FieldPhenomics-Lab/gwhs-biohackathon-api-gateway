@@ -65,13 +65,16 @@ Rules state what must hold and why — never history, measurements, or anecdotes
 - **GPU backends are never publicly reachable.** The gateway reaches them over an authenticated,
   non-public link and each requires its own token; CloudFront never forwards to them. The transport —
   a VPN, a private network, or a provider tunnel — is an implementation detail, not a fixed route.
-- **Keys are revocable, and limiting them is server-side — not built yet.** The intended mechanism is
-  a global and a per-key concurrency gate plus a per-key request rate, with revocation removing the
-  team from the token pool; nothing enforces it today, and attribution comes from the team id in the
-  request log meanwhile. A per-key *count* quota is deliberately absent: a count needs persistence, a
-  lifetime, and a top-up path, and its only effect is a human round-trip at the moment a team is
-  blocked, while the concurrency gate protects the thing that actually runs out — GPU slots. The
-  trigger for a count: a backend billed per request, or a fairness complaint between teams.
+- **Keys are revocable, and each one is capped at the pool's width.** A token may have **three**
+  requests in flight, never four: `ConcurrencyGate` counts per team in the request middleware and
+  refuses the fourth with `429 quota_exceeded` immediately rather than queueing it. Three is the pool's
+  declared `max_in_flight`, so a cap that disagreed with `GET /models` would be a second source of
+  truth about capacity. Revocation removes the team from the token pool, and attribution comes from the
+  team id in the request log. A per-key *request rate* is still absent, and so is a per-key *count*
+  quota: a count needs persistence, a lifetime, and a top-up path, and its only effect is a human
+  round-trip at the moment a team is blocked. The trigger for a count: a backend billed per request,
+  or a fairness complaint between teams. The trigger for a rate: observed bursts that a cap of three
+  in flight does not contain.
 
 ## Scope discipline
 

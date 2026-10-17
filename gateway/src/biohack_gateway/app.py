@@ -36,6 +36,7 @@ from biohack_gateway.auth import Authenticator
 from biohack_gateway.dataset_index import DEFAULT_INDEX_DIR, load_datasets
 from biohack_gateway.datasets import DEFAULT_DATA_BASE_URL, create_dataset_router
 from biohack_gateway.frames import frame_reporter
+from biohack_gateway.limits import MAX_CONCURRENT_PER_TOKEN, ConcurrencyGate
 from biohack_gateway.models import (
     DEFAULT_MODELS_FILE,
     ModelRegistry,
@@ -392,6 +393,7 @@ def create_app(
         The gateway application, ready for uvicorn.
     """
     registry = ModelRegistry(load_models(models_path), backend_token, model_transport)
+    slots = ConcurrencyGate()
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -564,8 +566,28 @@ def create_app(
             )
 
         request.state.team_id = team_id
+        if not slots.acquire(team_id):
+            # Refused here rather than queued: the cap is the pool's own width, so a team at it is
+            # asking for more lanes than exist, and a wait nobody can see is worse than an answer
+            # the client can act on.
+            logger.info(
+                "%s %s team=%s refused: %d in flight",
+                request.method,
+                request.url.path,
+                team_id,
+                slots.in_flight(team_id),
+            )
+            return _error(
+                429,
+                ErrorCode.QUOTA_EXCEEDED,
+                f"at most {MAX_CONCURRENT_PER_TOKEN} requests at once per token; "
+                "retry when one finishes",
+            )
         logger.info("%s %s team=%s", request.method, request.url.path, team_id)
-        return await call_next(request)
+        try:
+            return await call_next(request)
+        finally:
+            slots.release(team_id)
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request: Request, exc: RequestValidationError) -> JSONResponse:

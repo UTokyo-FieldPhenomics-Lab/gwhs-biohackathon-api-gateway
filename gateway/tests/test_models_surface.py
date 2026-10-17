@@ -971,3 +971,74 @@ def _models_path(tmp_path: Path) -> Path:
     path = tmp_path / "models.json"
     path.write_text(json.dumps({MODEL: [FIRST, SECOND]}), encoding="utf-8")
     return path
+
+
+def test_a_token_cannot_hold_more_than_three_requests_at_once(
+    tmp_path: Path, index_dir: Path
+) -> None:
+    """A key is capped at the pool's own width, and another team's key is untouched by it.
+
+    The cap is what stops one team's loop from occupying every lane while others wait: three is the
+    pool's declared `max_in_flight`, so a team may reach the pool's width and never exceed it. The
+    fourth request is refused at once rather than queued, because a wait nobody can see is worse
+    than an answer the client can act on.
+    """
+    delay = 0.5
+    other_team, other_token = "gw-02", "Qv7mNp2Rt5Wx8Zc3Bk6Hd9Lj4Fs1Gy0At"
+    other_key = {"X-API-Key": other_token}
+
+    def transport(
+        method: str, url: str, headers: Mapping[str, str], body: bytes | None, timeout: float
+    ) -> Reply:
+        if "/health" in url:
+            return Reply(status=200, body=json.dumps(DECLARATION).encode())
+        time.sleep(delay)
+        return Reply(status=200, body=json.dumps(PREDICTION).encode())
+
+    pool = tmp_path / "tokens.json"
+    TokenPool({TEAM: TOKEN, other_team: other_token}).save(pool)
+    app = create_app(
+        tokens_path=pool,
+        index_dir=index_dir,
+        data_base_url=BASE,
+        models_path=_models_path(tmp_path),
+        backend_token=BACKEND_TOKEN,
+        model_transport=transport,
+    )
+    served = _served_by_uvicorn(app)
+    port = next(served)
+    base = f"http://127.0.0.1:{port}"
+    ask = {"dataset": "gwhd", "row": 0}
+    try:
+        gate = threading.Barrier(4)
+        held: list[int] = []
+
+        def send() -> None:
+            gate.wait()
+            held.append(
+                httpx.post(
+                    f"{base}/models/{MODEL}/predict", headers=KEY, json=ask, timeout=30
+                ).status_code
+            )
+
+        senders = [threading.Thread(target=send) for _ in range(3)]
+        for sender in senders:
+            sender.start()
+        gate.wait()
+        time.sleep(0.1)
+
+        refused = httpx.post(f"{base}/models/{MODEL}/predict", headers=KEY, json=ask, timeout=30)
+        stranger = httpx.post(
+            f"{base}/models/{MODEL}/predict", headers=other_key, json=ask, timeout=30
+        )
+        for sender in senders:
+            sender.join(30)
+
+        assert held == [200, 200, 200], "the three in flight were served"
+        assert refused.status_code == 429
+        assert refused.json()["error"]["code"] == "quota_exceeded"
+        assert stranger.status_code == 200, "the cap is per token, not per host"
+        freed = httpx.post(f"{base}/models/{MODEL}/predict", headers=KEY, json=ask, timeout=30)
+        assert freed.status_code == 200, "the cap was never released"
+    finally:
+        next(served, None)

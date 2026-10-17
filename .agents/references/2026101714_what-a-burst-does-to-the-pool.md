@@ -74,3 +74,34 @@ published and a team can loop over thousands of rows instead of ten.
 overridable), `/tmp/ltb.py` (one backend directly, `X-Backend-Token`). They are scratch files and were
 not added to the repository; the two properties they found are now tests in
 `gateway/tests/test_models_surface.py`.
+
+## The per-token cap, added the same day
+
+The measurements above were taken with one participant key, which is also what a single team's loop
+looks like: nothing stopped it from occupying all three lanes. `ConcurrencyGate`
+(`gateway/src/biohack_gateway/limits.py`) now counts requests in flight per team in the request
+middleware and refuses the fourth with `429 quota_exceeded` instead of parking it. Three is the pool's
+declared `max_in_flight`, so the cap and `GET /models` cannot disagree.
+
+Verified against the deployed gateway with six simultaneous calls from one token: **3 × 200, 3 × 429**,
+the refusals in 0.08 s, one request per card, and the token's next call answered `200` once the three
+drained. The cross-team half — a second key unaffected while the first is at its cap — is covered by
+`test_a_token_cannot_hold_more_than_three_requests_at_once`, because the host holds one team's token.
+
+A consequence worth knowing before reading any of the tables above as current behaviour: a load test
+from a single token can no longer show throughput, only the cap. Measuring the pool again needs one
+token per simulated team.
+
+## What is still unbounded
+
+- **An upload's size.** Nothing limits the body: Caddy's `request_body` is unset, and the handler reads
+  the whole file into memory (`file.file.read()`) before forwarding it. The host has **1936 MiB** of
+  RAM, so three concurrent 500 MB uploads are enough to have the gateway killed for OOM. The model
+  resizes every input to 1008² anyway, so a size cap costs no capability — this is the next thing to
+  fix, and it is one line at the edge rather than code in the surface.
+- **The wait before a handler starts.** Admitted requests still compete for uvicorn's 40 anyio threads.
+  With a cap of three per token, 20 teams can admit 60 at once, and the 41st waits for a thread with no
+  bound and no timeout. Only worth instrumenting if the event sees that many teams working at once.
+- **The response budget is per socket operation, not per request.** A client can be made to wait
+  `CONNECT_TIMEOUT_SECONDS + RESPONSE_TIMEOUT_SECONDS` per backend attempt. No observed failure; the
+  160-round p95 of 11.77 s was thread-pool queueing, not this.
