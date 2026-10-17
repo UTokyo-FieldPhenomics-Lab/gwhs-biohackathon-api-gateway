@@ -31,6 +31,11 @@ measurement of a real model.
   the image with Run at the end of that row*, and shown to the user as three drawn alternatives before
   any code changed. The mess was specific: the parameters sat below the button that runs the model, on
   the far side of the image row, and the outcome line wrapped into the gap between them.
+  *(Revised 2026-10-17: the user's reading was the one about causality, and it wins — a published row
+  comes from the dataset surface and needs no model, so the image is now the **first** row, fetched and
+  previewed before a declaration is asked for, and Run closes the parameters row instead. The order is
+  image → model → parameters + Run; see
+  [`2026101712_the-image-comes-first.md`](2026101712_the-image-comes-first.md).)*
 - **"show the equivalent curl"** — the page prints the call the controls describe, built from those
   same controls, the page's own origin, and nothing written down twice.
 
