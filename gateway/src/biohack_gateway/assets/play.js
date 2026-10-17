@@ -169,28 +169,48 @@
     }
   };
 
-  // The model's own attributes, as its declaration gives them: what it runs at, how many machines
-  // are answering for it, and how many requests they hold at once. They are shown as facts and not
-  // in the colour of something that succeeded — and each is said once. The resolution is quoted here
-  // because it belongs to the model; a run does not repeat it.
+  // The model's attributes, as its declaration and the last probe give them: what it runs at, how many
+  // machines are answering, how many requests they hold — and how long ago that was asked. The count
+  // is a probe's verdict, so its age is part of the claim, and it keeps growing on screen: a verdict
+  // the page can no longer refresh must not be shown as if it were fresh. This is also the one place
+  // that decides whether Run may be pressed, so the button and the line can never disagree.
+  let facts = {text: "", bad: false, age: 0, at: 0};
+
+  /** Forget what the model row said, so the one-second tick stops rewriting whatever replaces it. */
+  const clearFacts = () => { facts = {text: "", bad: false, age: 0, at: 0}; };
+
+  const renderFacts = () => {
+    if (!facts.text) return;
+    const seconds = facts.age + Math.max(0, Math.round((Date.now() - facts.at) / 1000));
+    say($("model-state"), facts.text + " · checked " + seconds + " s ago", facts.bad ? false : null);
+  };
+
+  const showFacts = (entry) => {
+    const parts = [];
+    if (entry.resolution) parts.push("runs at " + entry.resolution + " px");
+    if (entry.backends_up) {
+      parts.push(entry.backends_up +
+        (entry.backends_up === 1 ? " backend up" : " backends up"));
+      if (entry.max_in_flight) {
+        parts.push(entry.max_in_flight +
+          (entry.max_in_flight === 1 ? " request at a time" : " requests at a time"));
+      }
+    } else {
+      parts.push("no backend is answering, so nothing can be run");
+    }
+    facts = {
+      text: parts.join(" · "),
+      bad: !entry.backends_up,
+      age: entry.checked_seconds_ago || 0,
+      at: Date.now(),
+    };
+    renderFacts();
+  };
+
   const loadModel = async (id) => {
     const declaration = await call("/models/" + encodeURIComponent(id));
     showParameters(declaration);
-    const facts = [];
-    if (declaration.resolution) facts.push("runs at " + declaration.resolution + " px");
-    if (declaration.backends_up) {
-      facts.push(declaration.backends_up +
-        (declaration.backends_up === 1 ? " backend up" : " backends up"));
-      if (declaration.max_in_flight) {
-        facts.push(declaration.max_in_flight +
-          (declaration.max_in_flight === 1 ? " request at a time" : " requests at a time"));
-      }
-      say($("model-state"), facts.join(" · "), null);
-    } else {
-      // A reader who pressed Run would wait out a timeout to learn what this line already knows.
-      facts.push("no backend is answering, so nothing can be run");
-      say($("model-state"), facts.join(" · "), false);
-    }
+    showFacts(declaration);
     $("run").disabled = !declaration.backends_up;
     // Refreshed after the declaration and not before: the command carries the parameters this model
     // declares, and until the answer arrives those are still the previous model's.
@@ -226,7 +246,10 @@
         entry.id + " (" + entry.rows + (entry.rows === 1 ? " row)" : " rows)"));
       syncSource();
       if (directory.models.length) await loadModel(directory.models[0].id);
-      else say($("model-state"), "this gateway has no models configured", false);
+      else {
+        clearFacts();
+        say($("model-state"), "this gateway has no models configured", false);
+      }
       say($("connect-state"), "connected", true);
       preview();
     } catch (error) {
@@ -247,6 +270,7 @@
     marks.replaceChildren();
     $("full").hidden = true;
     fitted = null;
+    clearFacts();
     $("response").hidden = true;
     previewToken += 1;
     syncSource();
@@ -277,7 +301,11 @@
   });
 
   model.addEventListener("change", () => {
-    loadModel(model.value).catch((error) => say($("model-state"), error.message, false));
+    loadModel(model.value).catch((error) => {
+      // The row now holds a message the ticker did not write, so the tick has to stop writing over it.
+      clearFacts();
+      say($("model-state"), error.message, false);
+    });
   });
 
   $("source").addEventListener("change", () => {
@@ -471,6 +499,7 @@
       return;
     }
     $("run").disabled = true;
+    running = true;
     say(state, "running…");
     // A preview still in flight belongs to a choice this run has moved past, and must not be allowed
     // to draw over the result.
@@ -508,9 +537,40 @@
     } catch (error) {
       say(state, error.message, false);
     } finally {
-      $("run").disabled = false;
+      running = false;
+      // Back to what the last probe said rather than to "enabled": a run that finished while the pool
+      // went empty must not leave a button that would answer 503.
+      $("run").disabled = facts.bad;
     }
   });
+
+  // The count is a probe's verdict, and a verdict ages: the page asks the directory again every few
+  // seconds while it is on screen. One call, and only to the directory — never to a model's own
+  // record, because re-reading a declaration would rebuild the controls under the reader's hands, and
+  // because what a model serves does not change while the process serving it runs. A failed ask
+  // changes nothing: the age keeps climbing on screen, which is what says the page has stopped being
+  // told anything.
+  const POLL_SECONDS = 10;
+  let running = false;
+
+  const poll = async () => {
+    if (!key || !model.value || document.visibilityState !== "visible") return;
+    try {
+      const directory = await call("/models");
+      const entry = directory.models.find((candidate) => candidate.id === model.value);
+      if (!entry) return;
+      showFacts(entry);
+      $("run").disabled = running || !entry.backends_up;
+    } catch (error) {
+      // Silence on purpose: an error line here would replace the facts with a message about the page.
+    }
+  };
+
+  // The age is rewritten by the second so it can never look fresher than it is, and the directory is
+  // asked again every POLL_SECONDS so it usually does not have to. Both are local and cheap; neither
+  // touches a backend.
+  setInterval(renderFacts, 1000);
+  setInterval(poll, POLL_SECONDS * 1000);
 
   // The address is two values, so it is worth previewing on either of them changing. The number field
   // also fires per keystroke, and "12" would otherwise fetch rows 1 and 12: the typing waits.
