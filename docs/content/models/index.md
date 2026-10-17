@@ -23,6 +23,9 @@ curl -s -H "X-API-Key: $KEY" "$API/models"
 { "models": [
   { "id": "sam3.1-meta", "resolution": 1008, "backends_up": 1, "max_in_flight": 1,
     "checked_seconds_ago": 3,
+    "machines": [
+      { "machine": "lab-3090", "gpu": "NVIDIA GeForce RTX 3090",
+        "compute_capability": "8.6", "cuda": "12.8", "torch": "2.10.0+cu128" } ],
     "parameters": [
       { "name": "prompt", "default": "wheat head",
         "description": "The text this model is asked to find in the image." },
@@ -31,11 +34,15 @@ curl -s -H "X-API-Key: $KEY" "$API/models"
 ```
 
 This page has no key and is built from markdown, so the map above is written by hand from what the
-host answered on 16 October 2026 — the `curl` is what makes it live. `backends_up` is how many
+host answered on 17 October 2026 — the `curl` is what makes it live. `backends_up` is how many
 machines answered the gateway's last probe for that id, and `checked_seconds_ago` is how long ago
 that was: the gateway asks its backends every fifteen seconds, so this is a verdict with an age
 rather than a promise, and the page that runs a model shows both. `0` means a call is refused rather
-than queued — safe to retry, not worth waiting on.
+than queued — safe to retry, not worth waiting on. `machines` is one record per answering machine — its
+name, card, capability and stack — so which machine would answer, and what it is, is known **before**
+the call rather than inferred by making two and comparing them. A model with two different cards behind
+it says so here, which is what makes the answer to the same call allowed to differ by a pixel or by an
+object.
 
 ## Call it
 
