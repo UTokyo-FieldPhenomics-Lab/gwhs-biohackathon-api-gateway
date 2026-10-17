@@ -19,7 +19,7 @@ by either of the two above, so it stays readable while the host is stopped.
 | Certificate | ACM in **`us-east-1`**, because CloudFront requires it there whatever the origin's region is |
 | Domains | `api.global-wheat.com` → the host's Elastic IP, TLS terminated on the host by Caddy (§1.5); `data.global-wheat.com` → the distribution; `docs.global-wheat.com` → GitHub Pages (§6), which is not ours to run |
 | Docs site | static, on GitHub Pages, published from an Actions artifact (§6) — no host, no bucket, and no certificate we manage |
-| GPU backends | the compute plane's machines, which nothing here creates: the inventory, the fault domains the routers define, and the list format the gateway is configured from are in [`gpu-backends.md`](gpu-backends.md) |
+| GPU backends | the compute plane's machines, which nothing here creates: the pool is in [`../.agents/rules/backend-pool.md`](../.agents/rules/backend-pool.md), and bringing one up plus the list the gateway is configured from are in [`gpu-backends.md`](gpu-backends.md) |
 | Region and zone | the region is environment configuration and the host and bucket share one (`eu-central-1`); no zone is pinned, so a replacement instance may land in any of them |
 
 Three facts behind that table, each measured rather than assumed:
@@ -132,8 +132,9 @@ the constraint behind them is in [`../.agents/rules/deploy.md`](../.agents/rules
 
 **A backend machine needs no client of its own.** The node in that console per location is a router
 advertising its own `/24`, so the machines behind it are reached by their own private addresses with
-nothing installed on them — [`gpu-backends.md`](gpu-backends.md) holds that inventory, the fault domains the
-routers define, and the list the gateway is configured from.
+nothing installed on them — which machines exist and what each holds is
+[`../.agents/rules/backend-pool.md`](../.agents/rules/backend-pool.md), and bringing one up and
+listing it for the gateway is [`gpu-backends.md`](gpu-backends.md).
 
 ## 1.4 Bind the API domain
 
@@ -249,7 +250,8 @@ The directory holds four things, and which of them the gateway can read is the p
 appears with the first issued token, `models.json` with the first backend written into it, `index/`
 with the first publish, and `publish/` is filled in §5. Both of the first two are edited by hand, and
 neither is in the repository; the model-to-backend list and the token it pairs with are documented in
-[`gpu-backends.md`](gpu-backends.md), which is where the machines they name are.
+[`gpu-backends.md`](gpu-backends.md) §4, and the machines they name are
+[`../.agents/rules/backend-pool.md`](../.agents/rules/backend-pool.md).
 
 **The one setting the gateway reads from its environment is the backend token.** It is the credential
 it presents to a GPU backend, it has to match what that backend was started with, and it is unset by
@@ -257,8 +259,8 @@ default: a gateway without it answers every inference with `503` rather than let
 `401`, because that reply would read to a participant as their own key being wrong. Rotating it means
 changing **every** end — this file and a restart of every backend on every model's list, not one
 container, because a backend left on the old value answers `401` and takes its whole model down with
-it; the rule and the one-request probe are in [`gpu-backends.md`](gpu-backends.md). There is no second
-copy anywhere, and the value never enters the repository.
+it; the rule and the one-request probe are in [`gpu-backends.md`](gpu-backends.md#4-on-the-gateway-host-putting-it-in-a-models-list).
+There is no second copy anywhere, and the value never enters the repository.
 
 **What `index/` holds today:** `gwhd.db`, `gwfss.db`, and `gwhs-temp.db` — the first ten rows of each
 dataset, published on 2026-10-15 so that all three answer while the full sets are still being prepared.

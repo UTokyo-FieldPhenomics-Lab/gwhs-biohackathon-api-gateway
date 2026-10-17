@@ -86,12 +86,33 @@ value was quoted *with* the underscore and the reply restated it *without*, and 
 actually executed afterwards — the `docker run` at 18:40 and the verification calls that followed — used
 the 42.
 
-Two things to carry forward, both now in [`gpu-backends.md`](../../deploy/gpu-backends.md): a backend
-whose token differs does not fall through to the next one (the gateway reads `401` as its own credential
+Two things to carry forward, both now in
+[`gpu-backends.md`](../../deploy/gpu-backends.md#4-on-the-gateway-host-putting-it-in-a-models-list): a
+backend whose token differs does not fall through to the next one (the gateway reads `401` as its own credential
 refused and answers `503` without trying the rest), and the mismatch is invisible from outside because
 `/health` needs no token — both ends declared themselves, `GET /models` read `backends_up: 2`, and every
 request simply went to the backend listed first. **Unified on the 42-character value**, which required no
 change to the 3090 at all: one `sed` on the host's `env` and one container recreated on the 5090.
+
+## What a backend sees of its caller
+
+Scoping the firewall to the tailnet raised the obvious alternative — allow the gateway's address at the
+backend instead of carrying a token — and one measurement killed it. From the same host, against two
+machines, on 2026-10-16:
+
+| Path | What arrived |
+|---|---|
+| `labpc`, behind `room-router-a` | the caller's own tailnet address (in `sshd` on port 22) |
+| the 5090, behind `room-router-d` | `the 5090's own proxy` — the room router, not the caller |
+
+Which hop rewrote it was not identified and does not have to be. What settles the question is that the
+container behind Docker Desktop sees a *third* address again, because the port proxy is a hop of its
+own: an allowlist would hold on one machine and silently not on the next, and it would bind a backend
+to a gateway address this design wants disposable — a re-registered tailnet node moves it. So the
+credential in the request is the lock and the address is not
+([`backend-pool.md`](../../.agents/rules/backend-pool.md)); to measure a path rather than assume it,
+start the container, `curl -s http://<backend-lan-address>:12711/health` from the host, and read the
+client address in the container's own log — on Linux that agrees with `sshd`, on Windows it does not.
 
 ## Failover, measured once the two ends agreed
 

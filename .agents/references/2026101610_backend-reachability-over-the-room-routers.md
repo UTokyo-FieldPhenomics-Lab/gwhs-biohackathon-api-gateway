@@ -111,8 +111,9 @@ That corrects the plan's earlier assumption that a second independent domain had
 - **Tags and an ACL are owed before the first backend joins**, per `project.md`: the tailnet carries
   other people's devices and nothing separates them. The per-backend token is the second lock, not the
   first. `deploy/README.md` §1.3 records the event's decision to deviate — one ACL file rewrites four
-  other owners' policy — so the invariant stands and the exception is written down. The inventory and
-  the per-OS bring-up recipes are in [`../../deploy/gpu-backends.md`](../../deploy/gpu-backends.md).
+  other owners' policy — so the invariant stands and the exception is written down. The machines are
+  [`../../.agents/rules/backend-pool.md`](../../.agents/rules/backend-pool.md) and the per-OS bring-up
+  recipes are in [`../../deploy/gpu-backends.md`](../../deploy/gpu-backends.md).
 - **Latency is Tokyo→Frankfurt**, 234–259 ms host→campus direct and 242–350 ms campus→host, so a relay
   costs little latency but a shared relay costs throughput and jitter — relevant for image payloads.
 
