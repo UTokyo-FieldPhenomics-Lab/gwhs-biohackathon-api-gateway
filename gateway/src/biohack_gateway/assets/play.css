@@ -126,8 +126,9 @@ html[data-scheme="dark"] #play {
   background: var(--accent);
   border-color: var(--accent);
 }
-/* The run button closes the row it belongs to rather than standing on a line of its own: the address
-   is what has to be right before pressing it, and the row above has just set that. */
+/* The run button closes the last row rather than standing on a line of its own: the image, the model
+   and its parameters have all been set by the time the eye gets there, so it is the last thing read
+   and pressing it runs everything to its left. */
 #play #run {
   margin-left: auto;
 }
@@ -151,11 +152,15 @@ html[data-scheme="dark"] #play {
   color: var(--bad);
 }
 
-/* The model's own parameters, generated from what it declares. A label wraps its control so a row
-   that has to wrap keeps each name beside the thing it names. The row sits with the model rather
-   than below the button that runs it, and the value a slider is on is shown beside it: a slider
-   with no number is a control a reader can neither read nor set deliberately. */
+/* The model's own parameters, generated from what it declares. They are a group inside the last row
+   rather than a row of their own, so the Run button can close that row: the reader settles the image,
+   then the model, then its knobs, and the button is at the end of what is left. A label wraps its
+   control so a row that has to wrap keeps each name beside the thing it names, and the value a slider
+   is on is shown beside it — a slider with no number is one a reader cannot set deliberately. */
 #play #parameters {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 0.4rem 1rem;
 }
 #play #parameters label {
