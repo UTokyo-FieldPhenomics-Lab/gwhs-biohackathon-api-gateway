@@ -24,12 +24,9 @@ repo_url = "https://github.com/UTokyo-FieldPhenomics-Lab/gwhs-biohackathon-api-g
 repo_name = "UTokyo-FieldPhenomics-Lab/gwhs-biohackathon-api-gateway"
 edit_uri = "edit/main/docs/content/"
 
-# The framed API pages need two files: one sizes each frame and passes the reader's palette into it,
-# the other hides the heading of a page that carries nothing but a frame. They live in
-# `docs/content/api/`, which holds no page of its own — the reference is an iframe inside
-# `interactive.md`, so that directory exists only for these two.
+# The framed API pages need one file: it sizes each frame and passes the reader's palette into it. It
+# lives in `docs/content/api/`, beside the pages that use it.
 extra_javascript = ["api/frame.js"]
-extra_css = ["api/frame.css"]
 
 # The interactive reference is an external link rather than a generated section: it is FastAPI's own
 # Swagger UI on the API host, which needs no renderer here and cannot be a static page. Every page
@@ -37,10 +34,25 @@ extra_css = ["api/frame.css"]
 # docs/content and is never published.
 nav = [
   { "Start here" = "index.md" },
-  { "Datasets" = "datasets/index.md" },
-  { "Models" = "models/index.md" },
-  { "Clients" = "clients/index.md" },
-  { "Interactive API reference" = "interactive.md" },
+  { "Calling the API" = [
+      { "Raw HTTP" = "api/http.md" },
+      { "Clients" = "api/clients.md" },
+      { "Base API reference" = "api/reference.md" },
+  ] },
+  { "Datasets" = [
+      { "Datasets" = "datasets/index.md" },
+      { "gwhd" = "datasets/gwhd.md" },
+      { "gwfss" = "datasets/gwfss.md" },
+      { "gwhs" = "datasets/gwhs.md" },
+  ] },
+  { "Models" = [
+      { "Models" = "models/index.md" },
+      { "sam3.1-meta" = "models/sam3.1-meta.md" },
+  ] },
+  { "Examples" = [
+      { "Live demo" = "examples/demo.md" },
+      { "Notebook" = "examples/notebook.md" },
+  ] },
 ]
 
 [project.theme]

@@ -1,58 +1,48 @@
-# Global Wheat BioHackathon API
+# Start here
 
 Build an agricultural application **without downloading the dataset, deploying a model, or owning a
-GPU**. Two calls carry the whole experience: fetch one image, and get one model result.
+GPU**. Two calls carry the whole thing: fetch one image, and get one model result.
 
-| | |
-|---|---|
-| Dataset plane | **live** — what each dataset holds, its images, and one row's annotation |
-| Image plane | **live** — `https://data.global-wheat.com`, no key, long cache |
-| Model plane | **live** — one segmentation model: send an image address or your own photograph, get boxes and masks back |
+## Three addresses
 
-## Call it
+| address | what answers | key |
+|---|---|---|
+| `https://data.global-wheat.com` | the image and mask files themselves | none |
+| `https://api.global-wheat.com` | datasets, annotations, model runs | every request |
+| `https://docs.global-wheat.com` | this site | none |
 
-Every route except `/health` needs your team's token in the `X-API-Key` header. Tokens are issued per
-team, so ask the organisers for yours. In the [interactive reference](interactive.md) you can paste it
-into the field above the call list and try every call from there — the page sends the header for you
-and remembers the key in your browser.
+`data.*` only serves static files, so no request reaches our gateway and there is nothing to abuse: it
+answers without a key and caches for a long time. An `api.*` call spends gateway work and a share of a
+GPU, so every one of them carries a key.
+
+## What you can get
+
+- **Three datasets** — `gwhd` (head boxes), `gwfss` (organ masks), `gwhs` (one mask per spikelet) —
+  addressed as `(dataset, row)`. → [Datasets](datasets/index.md)
+- **One model** — `sam3.1-meta`, text-prompted segmentation, on three GPUs. → [Models](models/index.md)
+- **A client per language** — one file, downloaded rather than installed, which resolves an address,
+  fetches the object, walks pages, and decodes masks. → [Clients](api/clients.md)
+
+## Your first call
+
+Keys are issued to teams: **one key per team, and one key may have three requests in flight at once**.
+Ask the organisers for yours.
 
 ```bash
 export API=https://api.global-wheat.com
-export KEY=<your team's token>
+export KEY=<your team's key>
 
-curl -s "$API/health"
 curl -s -H "X-API-Key: $KEY" "$API/datasets"
-curl -s -H "X-API-Key: $KEY" "$API/datasets/gwhd"
-curl -s -H "X-API-Key: $KEY" "$API/datasets/gwhd/images?limit=2"
-curl -s -H "X-API-Key: $KEY" "$API/datasets/gwhd/images/0"
 ```
 
-| call | what it is |
-|---|---|
-| `/health` | liveness and version — the one route that needs no key |
-| `/datasets` | every dataset, one line each |
-| `/datasets/<id>` | that dataset's contract: its fields, filters, classes, and palette |
-| `/datasets/<id>/images` | a page of rows — addresses and counts, never the annotations themselves |
-| `/datasets/<id>/images/<row>` | one row's annotation |
+The same call from a client is `client.datasets()`. The first ten rows of each published dataset
+answer today; the full sets are published before the event.
 
-Every address is `(dataset, row)`, and rows repeat across datasets, so a row number on its own means
-nothing. A response's `image_url` and `mask_url` point at `https://data.global-wheat.com` and need no
-key, so display them directly: the API never carries image bytes.
+## Where to go
 
-## The datasets
-
-| id | one row is |
-|---|---|
-| `gwhd` | an image and its wheat-head bounding boxes — CC-BY-4.0 |
-| `gwfss` | an image and a semantic mask, one colour per class — CC-BY-4.0 |
-| `gwhs` | an image and object-level RLE masks with tags and attributes — CC-BY-4.0, released once the full annotation is |
-
-The API answers the **first ten rows** of each published dataset today, which is enough to build
-against. The full sets are published before the event, and the same calls then return every row.
-
-## Next
-
-- [Datasets](datasets/index.md) — what each one holds, and how a response maps onto the image
-- [Models](models/index.md) — the model you can call, what it accepts, and one you can run from this site
-- [Clients](clients/index.md) — one file per language, so a call is a function and a mask is decoded
-- [Interactive API reference](interactive.md) — every route, with a try-it button, without leaving this site
+- [Raw HTTP](api/http.md) — the contract, every route on one line, and the four calls
+- [Base API reference](api/reference.md) — every route with its parameters, and a try-it form
+- [Clients](api/clients.md) — the same API as a function, in Python, JavaScript, or Java
+- [Datasets](datasets/index.md) — what a row holds; one page per dataset
+- [Models](models/index.md) — what the model does, on what hardware, and when to use your own
+- [Live demo](examples/demo.md) · [Notebook](examples/notebook.md) — see it run, or run it yourself

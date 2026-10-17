@@ -10,7 +10,7 @@ import {test} from "node:test";
 
 import {ApiError, Client, label_masks, rle_decode} from "../global-wheat.js";
 
-const EXAMPLE = new URL("../../../docs/content/models/example-prediction.json", import.meta.url);
+const EXAMPLE = new URL("../../../docs/content/examples/example-prediction.json", import.meta.url);
 // A recorded call: eighteen objects of a 512x512 prediction, each with its area and its RLE.
 
 function fake(replies) {
