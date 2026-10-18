@@ -51,7 +51,8 @@ of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-layout.md
 ├── zensical.toml          docs site config: docs/content → site/, published to GitHub Pages
 ├── docs/                  documentation subproject (Zensical)
 │   ├── data-layout.md     internal contract: object layout, addressing, index fields — unpublished
-│   ├── scripts/           make_figures.py (every figure), make_notebook.py (the .ipynb), sync_clients.py
+│   ├── scripts/           make_figures.py (every figure), make_notebook.py (the .ipynb),
+│   │                      record_notebook.py (the quickstart's recorded outputs), sync_clients.py
 │   └── content/           the site's pages and assets: the only thing Zensical builds
 │       ├── api/           the contract, the clients, the framed reference, and the frame's script
 │       ├── datasets/      what a row is, then one page per dataset, with their figures
