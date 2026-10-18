@@ -21,18 +21,27 @@ it is a verdict with an age rather than a promise. `0` means a call is refused r
 
 Two things are fixed by the pool rather than by the request:
 
-- **The model runs at 1008 px square.** A resolution parameter would make the memory one request needs
-  a variable, and the pool could no longer say in advance what fits on a card. Your image is resized to
-  1008² *without preserving aspect ratio*, and the answer reports `resolution_used` so you can tell how
-  coarse a mask is at full size.
+- **The model runs at a side it was measured at**, one of `672`, `784`, `896` or `1008` pixels square,
+  and 1008 is the default and the ceiling. Your image is resized to that square *without preserving
+  aspect ratio*, and the answer reports `resolution_used` so you can tell how coarse a mask is at full
+  size. A larger `imgsz` is not an error: it runs at the ceiling and says so in `warnings`. A smaller
+  one is faster and worse on small objects — the table on the model page has the numbers. No model
+  accepts a resolution it was not run at.
 - **Three requests in flight per key, no queue.** Over it, `429`. The three are three across the whole
   team, not three per person; see [Limits](../api/http.md#limits).
+
+**What is not a parameter, and why.** `device`, `half` and any per-request precision or memory switch
+describe **the machine**, not the model: they belong to the container's deployment, and a caller who
+could set them would decide how much of a card one request takes — which is the number the pool
+admits against. A knob is exposed only when it cannot raise that figure. `imgsz` passes that test
+downwards only, which is why it has a ceiling rather than a range, and why a value above it is clamped
+instead of honoured.
 
 ## The models
 
 | id | what it is | runs at | measured |
 |---|---|---|---|
-| [`sam3.1-meta`](sam3.1-meta.md) | SAM 3.1 — text-prompted segmentation, [Meta's own code and checkpoint](https://github.com/facebookresearch/sam3) | 1008 px square | 0.36 s per inference on a 3090 |
+| [`sam3.1-meta`](sam3.1-meta.md) | SAM 3.1 — text-prompted segmentation, [Meta's own code and checkpoint](https://github.com/facebookresearch/sam3) | 672 / 784 / 896 / 1008 px square | 0.36 s per inference on a 3090 at 1008; parameters and their encodings on the model page |
 
 An id names **whose weights these are**, not where they run: a collaborator's fine-tune of the same
 model appears as an id of its own, named after the data it was trained on. Every id this API serves is

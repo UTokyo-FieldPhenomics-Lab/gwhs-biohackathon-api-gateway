@@ -10,17 +10,64 @@ served as an id of its own is where field counts would come from.
 
 ## Parameters
 
-Every parameter a model takes is **declared by that model**, repeated by `GET /models`, and forwarded
-verbatim. This one declares two:
+Every parameter a model takes is **declared by that model**, published by `GET /models`, and checked
+against that declaration before the request reaches a machine. A name this model does not declare, a
+value outside its declared bounds or set, or a name sent twice is a `400`, and the message lists what
+the model does accept — so a typo costs one round trip, not a guess.
 
-| parameter | default | range | what it does |
+<!-- parameters:start -->
+| parameter | default | accepts | what it does |
 |---|---|---|---|
-| `prompt` | `wheat head` | any text | what the model is asked to find |
-| `confidence_threshold` | `0.5` | `0` – `1` | how sure it must be before it reports an object |
+| `prompt` | `wheat head` | text, at most 200 characters | The text this model is asked to find in the image. |
+| `boxes` | — | `[[x, y, w, h, label], …]`, in the image's pixels | Exemplar boxes: the object you mean, shown rather than named. A negative box says what it is not. |
+| `points` | — | `[[x, y, label], …]`, in the image's pixels | Click points: one spot on the object, or one that is not it. |
+| `confidence_threshold` | `0.5` | `0` – `1` | How sure the model must be before it reports an object. |
+| `imgsz` | `1008` | `672`, `784`, `896`, `1008`; a larger value runs at `1008` | The square side the network runs at. A smaller one is faster and worse on small objects; a larger one runs at the ceiling and says so in `warnings`. |
+<!-- parameters:end -->
 
-Both are optional: a parameter you leave out is the published default. Anything outside a declared
-range is a `400`, and the message names the parameter. There is deliberately no resolution parameter —
-the side the model runs at belongs to the machine that holds the weights, and it is 1008.
+Every parameter is optional: leaving one out is the default in the table. Two of them are not simple
+values — `boxes` and `points` are JSON, and `imgsz` has a ceiling — and both are described once, in
+[Raw HTTP § Model parameters](../api/http.md#model-parameters).
+
+## Prompting
+
+**One prompt at a time is the easy case, and any of them works alone.** A phrase finds the concept; a
+box is an exemplar of it; a point marks one spot. They combine because the detector's prompt is the
+text features concatenated with the geometry features, so a box beside a phrase is an exemplar beside
+a concept rather than a replacement for it:
+
+```bash
+# a phrase
+"$API/models/sam3.1-meta/predict?prompt=wheat%20head"
+# a phrase and one exemplar box — a box around a head you know is one
+"$API/models/sam3.1-meta/predict?prompt=wheat%20head&boxes=[[480,290,110,360,1]]"
+# a box alone, no text
+"$API/models/sam3.1-meta/predict?boxes=[[480,290,110,360]]"
+```
+
+What was measured on a 512 px `gwfss` row, `prompt=wheat head&confidence_threshold=0.25`: text alone
+found 18 objects; one exemplar box found 13, overlapping the text answer by IoU 0.98, and adding a
+**negative** box took 16 down to 13 — the label subtracts. A point is accepted and runs, but its
+effect is not characterised: a positive point beside the phrase changed the answer in a way that no
+longer matched the text-only result, and a negative point did not reliably subtract. Boxes are what
+this page shows for that reason. If you use points, read the answer rather than trusting it.
+
+## Size
+
+`imgsz` is one of four sides this model was actually run at — `672`, `784`, `896`, `1008` — and 1008
+is both the default and the ceiling. A larger value is not an error: it runs at the ceiling and says
+so in `warnings`, and `resolution_used` carries the side that ran either way. Build queues are
+counted in requests, not pixels, so a smaller side is the one lever that makes a loop faster:
+
+| `imgsz` | one 512 px row | against the 1008 answer |
+|---|---|---|
+| `672` | 0.13 s | largest object IoU 0.97 |
+| `896` | 0.18 s | 0.97 |
+| `1008` | 0.21 s | — |
+
+Faster and cheaper, and **worse on small objects**: the price of a smaller side is that a head a few
+tens of pixels across stops resolving, which is already this checkpoint's weak case. Measured on a
+RTX 3090 with the container's own image; your numbers will differ by the card.
 
 ## The answer
 

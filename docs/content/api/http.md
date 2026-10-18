@@ -75,6 +75,52 @@ Every refusal is one body, whichever route produced it:
 Nothing is retried for you. `503` and `504` are worth another call, `400` never is, and a client that
 guessed would hide which of the two happened.
 
+## Model parameters
+
+A model's parameters are **that model's own**, named as its own documentation names them, and listed
+by `GET /models/<id>` with their defaults and bounds. There is no wrapper vocabulary: SAM 3.1 declares
+`prompt`, `boxes`, `points`, `confidence_threshold`, `imgsz`; another model may declare something
+else entirely, and a name it did not declare is a `400` whose message lists what it does accept.
+
+They travel as **flat query parameters** on both predict routes, one value each:
+
+```bash
+"$API/models/sam3.1-meta/predict?prompt=wheat%20head&confidence_threshold=0.25"
+```
+
+### Geometry: `boxes` and `points`
+
+A geometry parameter is **one JSON array in one parameter**, in the coordinates of the image the
+model was given — the image's own pixels, top-left origin, whatever its size:
+
+| parameter | one entry | example |
+|---|---|---|
+| `boxes` | `[x, y, w, h, label]` | `[[480, 290, 110, 360, 1]]` |
+| `points` | `[x, y, label]` | `[[256, 300, 1], [40, 40, 0]]` |
+
+`label` is `1` for a positive entry and `0` for a negative one, and it may be left out — the default
+is positive. Order is kept, so a negative entry applies after the positive ones before it. The
+coordinates are the same `[x, y, width, height]` convention the answer's `bbox` uses, so a box you
+read from an answer can be sent back unchanged.
+
+A list is **never** split into repeated parameters: `?boxes=1&boxes=2` is a `400`, because
+`?split=train&split=val` means something on the dataset routes and nothing here. Send one array.
+
+### `imgsz`
+
+A size parameter is an enumerated list, not a range: `GET /models/<id>` publishes the sides the model
+was actually run at. A value above the list is **not** refused — the model runs at its ceiling and
+says so, and `resolution_used` tells you the side that ran either way:
+
+```json
+{ "resolution_used": 896,
+  "warnings": [{"code": "resolution_clamped", "message": "imgsz clamped: …"}],
+  "objects": [ … ] }
+```
+
+`warnings` is absent from an answer that needed none. A value below the smallest published side is a
+`400`: the model was never run there, and the answer would be neither fast nor meaningful.
+
 ## Limits
 
 | what | limit | over it |
