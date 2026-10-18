@@ -17,7 +17,9 @@ shape of an answer. A *model's* parameters are not in that document, because the
 
 Two things are true of all three:
 
-- **A key is required, and it is issued to your team.** One key per team, three requests in flight at
-  once; over that the API answers `429` rather than queueing. See [Limits](http.md#limits).
+- **A key is required, and it is issued to your team.** One key per team, three *inferences* in
+  flight at once; over that the API answers `429` rather than queueing. A metadata read — a dataset
+  listing, a row, the model directory — never takes one of those three. See
+  [Limits](http.md#limits).
 - **Bytes never come from `api.*`.** A response carries an absolute `data.*` address for its image or
   mask, which needs no key — so displaying an image is a CDN request, not one of your three.

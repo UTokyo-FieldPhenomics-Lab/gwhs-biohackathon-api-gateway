@@ -78,9 +78,9 @@ CONCURRENCY_ENV = "BIOHACK_MAX_CONCURRENT_PER_TOKEN"
 
 Unset is the normal state: the cap is then the pool's own width, read from the declarations
 `GET /models` sums. It exists for one purpose — a load test from a single key, which the pool's
-width would refuse after three requests — so raising it is a deliberate act on the host and needs a
-restart to take effect. A value of `0` disables the cap, and a value that is not a number is ignored
-with a log line rather than silently becoming zero.
+width would refuse after three inferences — so raising it is a deliberate act on the host and needs
+a restart to take effect. A value of `0` disables the cap, and a value that is not a number is
+ignored with a log line rather than silently becoming zero.
 """
 
 BACKEND_TOKEN_ENV = "BIOHACK_BACKEND_TOKEN"
@@ -132,6 +132,43 @@ field for a secret in a page that anything may embed is a field that anything ma
 why each names the one site allowed to frame it. Every other path, including ones that do not exist,
 is behind the gate.
 """
+
+LANE_SUFFIXES = ("/predict", "/predict/upload")
+"""The two routes below a model that occupy one of the pool's lanes.
+
+A lane is GPU time, and it is the only scarce thing a participant can hold: a metadata read is an
+in-memory lookup that answers in microseconds and queues behind nothing. The per-token ceiling
+exists so one team's loop cannot take every lane — so it counts these two routes and nothing else.
+Before this was made explicit the middleware counted every request, which refused a page's own load
+(a dataset listing, a row's detail, the model directory) on a pool whose `max_in_flight` was one.
+"""
+
+
+def occupies_lane(path: str) -> bool:
+    """Report whether a route consumes one of the pool's inference lanes.
+
+    Parameters
+    ----------
+    path : str
+        The request's path, already stripped of a trailing slash.
+
+    Returns
+    -------
+    bool
+        `True` for ``POST /models/{model}/predict`` and ``…/predict/upload``, which are the only two
+        routes that reach a backend's GPU; `False` for everything else, including the model
+        directory and the whole dataset surface.
+
+    Notes
+    -----
+    A path test rather than a marker on the route handlers, because the middleware is where the
+    team is known and it is one place: the alternative is a dependency every future route has to
+    remember, and the entry that forgets it would be uncounted rather than obviously wrong. The
+    suffix names the model surface's own two operations, and
+    `test_the_lane_is_only_the_two_predict_routes` is what keeps them in step.
+    """
+    return path.startswith("/models/") and path.endswith(LANE_SUFFIXES)
+
 
 _ASSETS = Path(__file__).parent / "assets"
 """The page material this application serves, one language to a file.
@@ -585,12 +622,16 @@ def create_app(
             )
 
         request.state.team_id = team_id
-        if not slots.acquire(team_id):
+        # A slot is a GPU lane, so only the routes that reach a backend take one. Counting a
+        # metadata read would refuse a participant's page load on the strength of work no machine
+        # is doing, which is the opposite of what the cap is for.
+        counted = occupies_lane(path)
+        if counted and not slots.acquire(team_id):
             # Refused here rather than queued: the cap is the pool's own width, so a team at it is
             # asking for more lanes than exist, and a wait nobody can see is worse than an answer
             # the client can act on.
             logger.info(
-                "%s %s team=%s refused: %d in flight",
+                "%s %s team=%s refused: %d lanes busy",
                 request.method,
                 request.url.path,
                 team_id,
@@ -599,13 +640,14 @@ def create_app(
             return _error(
                 429,
                 ErrorCode.QUOTA_EXCEEDED,
-                f"at most {slots.ceiling()} requests at once per token; retry when one finishes",
+                f"at most {slots.ceiling()} inferences at once per token; retry when one finishes",
             )
         logger.info("%s %s team=%s", request.method, request.url.path, team_id)
         try:
             return await call_next(request)
         finally:
-            slots.release(team_id)
+            if counted:
+                slots.release(team_id)
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request: Request, exc: RequestValidationError) -> JSONResponse:

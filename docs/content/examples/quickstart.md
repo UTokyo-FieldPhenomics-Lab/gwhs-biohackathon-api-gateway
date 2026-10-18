@@ -43,8 +43,8 @@ shared.
 
 ## 2. Get a key
 
-The organisers issue one key per team, and one key may have three requests in flight. This asks for it
-once, in memory:
+The organisers issue one key per team, and one key may have three *inferences* in flight — reading a
+listing or a row is not counted. This asks for the key once, in memory:
 
 ```python
 import getpass

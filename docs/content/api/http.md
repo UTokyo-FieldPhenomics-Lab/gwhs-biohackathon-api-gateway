@@ -68,7 +68,7 @@ Every refusal is one body, whichever route produced it:
 | `401` | `invalid_key` | the key is wrong, or missing |
 | `404` | `not_found` | no such dataset or model |
 | `413` | `payload_too_large` | an upload over 15 MB |
-| `429` | `quota_exceeded` | three requests in flight already from this key; nothing was queued |
+| `429` | `quota_exceeded` | three inferences in flight already from this key; nothing was queued |
 | `503` | `unavailable` | no machine is answering this model. Safe to retry |
 | `504` | `upstream_timeout` | the model took too long. Safe to retry |
 
@@ -125,9 +125,13 @@ says so, and `resolution_used` tells you the side that ran either way:
 
 | what | limit | over it |
 |---|---|---|
-| requests in flight, per key | 3 | `429`, not a queue |
+| inferences in flight, per key | 3 | `429`, not a queue |
+| any other request | none | — |
 | an uploaded image | 15 MB | `413` |
 | an uploaded image, decoded | 50 megapixels | `400` |
 
-The three in flight are three across the whole team, not three per person: one key is one team's
-share of the pool.
+The three are three across the whole team, not three per person: one key is one team's share of the
+GPU pool. **Only the two predict routes count.** A dataset listing, a row's detail and the model
+directory are answered from memory and queue behind no machine, so they are never refused for being
+one request too many; a page that loads several of them at once is not competing with anybody's
+inference.

@@ -23,7 +23,7 @@ import pytest
 import uvicorn
 from fastapi.testclient import TestClient
 
-from biohack_gateway.app import create_app
+from biohack_gateway.app import create_app, occupies_lane
 from biohack_gateway.models import (
     RESPONSE_TIMEOUT_SECONDS,
     UNHEALTHY_SECONDS,
@@ -996,6 +996,84 @@ def _models_path(tmp_path: Path, backends: list[str] | None = None) -> Path:
     path = tmp_path / "models.json"
     path.write_text(json.dumps({MODEL: backends or [FIRST, SECOND]}), encoding="utf-8")
     return path
+
+
+def test_a_metadata_read_never_takes_an_inference_lane(tmp_path: Path, index_dir: Path) -> None:
+    """A cap of one refuses the second *inference* and lets the directory answer anyway.
+
+    A lane is GPU time; a dataset listing is an in-memory lookup that queues behind nothing. Before
+    this was explicit, the middleware counted every request, so a page's own load — the dataset
+    listing, a row's detail, the model directory — could be refused while no machine was busy.
+    """
+    delay = 0.6
+
+    def transport(
+        method: str, url: str, headers: Mapping[str, str], body: bytes | None, timeout: float
+    ) -> Reply:
+        if "/health" in url:
+            return Reply(status=200, body=json.dumps(DECLARATION).encode())
+        time.sleep(delay)
+        return Reply(status=200, body=json.dumps(PREDICTION).encode())
+
+    app = create_app(
+        tokens_path=_pool_path(tmp_path),
+        index_dir=index_dir,
+        data_base_url=BASE,
+        models_path=_models_path(tmp_path),
+        backend_token=BACKEND_TOKEN,
+        model_transport=transport,
+        max_concurrent_per_token=1,
+    )
+    served = _served_by_uvicorn(app)
+    port = next(served)
+    base = f"http://127.0.0.1:{port}"
+    ask = {"dataset": "gwhd", "row": 0}
+    held: list[int] = []
+    try:
+        busy = threading.Thread(
+            target=lambda: held.append(
+                httpx.post(
+                    f"{base}/models/{MODEL}/predict", headers=KEY, json=ask, timeout=30
+                ).status_code
+            )
+        )
+        busy.start()
+        time.sleep(0.15)  # the inference is inside the backend now, holding the only lane
+
+        while_inference = {
+            "models": httpx.get(f"{base}/models", headers=KEY, timeout=30).status_code,
+            "datasets": httpx.get(f"{base}/datasets", headers=KEY, timeout=30).status_code,
+            "row": httpx.get(f"{base}/datasets/gwhd/images/0", headers=KEY, timeout=30).status_code,
+            "second inference": httpx.post(
+                f"{base}/models/{MODEL}/predict", headers=KEY, json=ask, timeout=30
+            ).status_code,
+        }
+        busy.join(30)
+
+        assert while_inference == {
+            "models": 200,
+            "datasets": 200,
+            "row": 200,
+            "second inference": 429,
+        }, "the lane is for inference; the directory does not queue behind it"
+        assert held == [200]
+    finally:
+        next(served, None)
+
+
+def test_the_lane_is_only_the_two_predict_routes() -> None:
+    """The middleware's classifier, which is the whole of the rule, in one place."""
+    for path in ("/models/sam3.1-meta/predict", "/models/sam3.1-meta/predict/upload"):
+        assert occupies_lane(path), path
+    for path in (
+        "/models",
+        "/models/sam3.1-meta",
+        "/datasets",
+        "/datasets/gwhd/images/0",
+        "/health",
+        "/play",
+    ):
+        assert not occupies_lane(path), path
 
 
 def test_a_token_cannot_hold_more_than_three_requests_at_once(

@@ -26,7 +26,8 @@ GPU, so every one of them carries a key.
 
 ## Your first call
 
-Keys are issued to teams: **one key per team, and one key may have three requests in flight at once**.
+Keys are issued to teams: **one key per team, and one key may have three inferences in flight at
+once** — reading a dataset listing or a row is never counted against them.
 Ask the organisers for yours.
 
 ```bash

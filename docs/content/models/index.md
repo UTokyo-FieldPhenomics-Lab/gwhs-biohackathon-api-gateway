@@ -27,8 +27,10 @@ Two things are fixed by the pool rather than by the request:
   size. A larger `imgsz` is not an error: it runs at the ceiling and says so in `warnings`. A smaller
   one is faster and worse on small objects — the table on the model page has the numbers. No model
   accepts a resolution it was not run at.
-- **Three requests in flight per key, no queue.** Over it, `429`. The three are three across the whole
-  team, not three per person; see [Limits](../api/http.md#limits).
+- **Three inferences in flight per key, no queue.** Over it, `429`. The three are three across the
+  whole team, not three per person, and only the predict routes take one — a dataset listing or the
+  model directory is answered from memory and never queues behind a GPU; see
+  [Limits](../api/http.md#limits).
 
 **What is not a parameter, and why.** `device`, `half` and any per-request precision or memory switch
 describe **the machine**, not the model: they belong to the container's deployment, and a caller who

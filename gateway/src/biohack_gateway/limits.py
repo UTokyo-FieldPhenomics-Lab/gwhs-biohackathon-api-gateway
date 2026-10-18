@@ -1,9 +1,15 @@
-"""How many requests one participant key may have in flight at once.
+"""How many inferences one participant key may have in flight at once.
 
 The gateway is a fixed number of serial GPU lanes — one per backend, each declaring
 `max_in_flight` 1 — so the only thing a client can consume is a lane, and the only fair unit to hold
-is one request per lane. Without a cap, one team's loop takes every lane and every other team waits
-behind it, which is the fairness complaint this cap exists to prevent rather than to measure.
+is one *inference* per lane. Without a cap, one team's loop takes every lane and every other team
+waits behind it, which is the fairness complaint this cap exists to prevent rather than to measure.
+
+**Only the two predict routes take a lane.** A dataset listing, a row's detail and the model
+directory are in-memory lookups that answer in microseconds and queue behind no GPU; charging one of
+them a lane would let a page's own load be refused while no machine was busy, which is the
+opposite of what the cap is for. `app.occupies_lane` is the one place that decides; the middleware
+applies it.
 
 **The ceiling is the pool's declared width**, read from the same declarations `GET /models` sums,
 so a cap that disagreed with the published capacity would be a second source of truth about it. On

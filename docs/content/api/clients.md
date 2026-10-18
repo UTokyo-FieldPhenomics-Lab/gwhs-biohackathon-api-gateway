@@ -73,7 +73,8 @@ export GLOBAL_WHEAT_API_KEY="the key your team was given"
 
 `Client()` picks that up. `GLOBAL_WHEAT_API` overrides the host, which is only useful while
 something is being tested; the default is `https://api.global-wheat.com`. The key is issued per team
-by the organisers, and one key may have three requests in flight — see [Limits](http.md#limits).
+by the organisers, and one key may have three *inferences* in flight — metadata reads are not
+counted against it. See [Limits](http.md#limits).
 
 ## Methods
 
