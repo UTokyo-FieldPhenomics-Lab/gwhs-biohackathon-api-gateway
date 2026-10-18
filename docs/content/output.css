@@ -1,0 +1,57 @@
+/* A recorded result, sitting under the cell that produced it.
+ *
+ * A result is not code: it cannot be run and there is nothing in it worth copying, so it takes no
+ * code card — no background, no clipboard button, no line anchors. What is left is monospaced text
+ * under a small muted label, which is how a notebook shows a cell's output, and it is what tells a
+ * reader at a glance which block they can lift into their own cell and which one is the answer.
+ */
+
+/* The label. A hairline rule runs down the block, so a result reads as one piece with its cell even
+ * when it is long enough to scroll past. */
+.md-typeset .output::before {
+  content: "Output";
+  display: block;
+  margin: 0 0 0.1rem;
+  color: var(--md-default-fg-color--light);
+  font-size: 0.55rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* No code card: the theme paints `pre > code` with the code background and pads it like a snippet. */
+.md-typeset .output pre,
+.md-typeset .output code {
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
+  color: var(--md-default-fg-color);
+}
+
+/* A result lines up with the code above it, not with the page: the theme insets a snippet's text by
+ * 1.25em inside its card, and a result that started at the card's edge would read as a new block
+ * rather than as the same cell's answer. */
+.md-typeset .output {
+  padding-left: 1.25em;
+}
+
+/* Hug the cell above: the gap is what says "this came from that", so it stays smaller than a
+ * paragraph break. */
+.md-typeset .highlight + .output {
+  margin-top: -0.4rem;
+}
+
+/* There is nothing to copy out of a result, and a button that copies what a reader cannot run is a
+ * button that only invites the mistake. */
+.md-typeset .output .md-code__nav,
+.md-typeset .output .md-code__button {
+  display: none;
+}
+
+/* An HTML result — a table Jupyter rendered — is already laid out; it only needs the same label and
+ * the same distance from the cell. */
+.md-typeset .output > table {
+  margin: 0;
+}

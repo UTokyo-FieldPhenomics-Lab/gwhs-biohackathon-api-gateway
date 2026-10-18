@@ -7,6 +7,9 @@ the build publishes the fresh one, and committed, because Colab can only open a 
 a GitHub path. `git diff --exit-code` in the workflow is what notices a `.ipynb` that was not
 regenerated and committed with the page that changed.
 
+The page also shows what each cell printed. Those results are written onto it by
+`docs/scripts/record_notebook.py` from one real run, and they never travel into the notebook.
+
 The page therefore has to be convertible, and the converter refuses what it cannot carry rather than
 publishing a notebook with a hole in it:
 
@@ -20,6 +23,10 @@ publishing a notebook with a hole in it:
   file beside it to resolve them against.
 - Anything between `<!-- notebook: skip -->` and `<!-- /notebook: skip -->` stays on the page: that is
   where the download buttons live, and a button is not a cell.
+- Anything between `<!-- output -->` and `<!-- /output -->` stays on the page too, and for the
+  opposite reason: it is what one real run printed, and a notebook that shipped it would hand the
+  reader our numbers instead of their own. The page shows the recorded result; the notebook is for
+  running.
 """
 
 from __future__ import annotations
@@ -44,6 +51,9 @@ SITE = "https://docs.global-wheat.com/examples/"
 SKIP = re.compile(r"<!--\s*/?\s*notebook: skip\s*-->")
 """The markers around content that belongs to the page and not to the notebook."""
 
+OUTPUT = re.compile(r"<!--\s*/?\s*output\s*-->")
+"""The markers around a recorded result: the page's, never the notebook's."""
+
 FENCE = re.compile(r"^```(?P<lang>[A-Za-z0-9_+-]*)\s*$")
 """A fence's opening or closing line; the language is empty when it carries none."""
 
@@ -58,6 +68,9 @@ class Unconvertible(Exception):
 def strip_skipped(text: str) -> str:
     """Remove every block that is the page's own.
 
+    Both kinds go: the page's chrome, marked `notebook: skip`, and a recorded result, marked
+    `output`. A notebook carries neither.
+
     Parameters
     ----------
     text : str
@@ -71,8 +84,9 @@ def strip_skipped(text: str) -> str:
     out: list[str] = []
     skipping = False
     for line in text.splitlines():
-        if SKIP.fullmatch(line.strip()):
-            skipping = not line.strip().startswith("<!-- /")
+        stripped = line.strip()
+        if SKIP.fullmatch(stripped) or OUTPUT.fullmatch(stripped):
+            skipping = not stripped.startswith("<!-- /")
             continue
         if not skipping:
             out.append(line)

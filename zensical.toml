@@ -27,9 +27,11 @@ edit_uri = "edit/main/docs/content/"
 # The framed API pages need one file: it sizes each frame and passes the reader's palette into it. It
 # lives in `docs/content/api/`, beside the pages that use it.
 extra_javascript = ["api/frame.js"]
-# The footer's two-block credit. The text itself is in `docs/overrides/partials/copyright.html` — one
-# place, because a credit split between a config value and a template is a credit that goes stale.
-extra_css = ["footer.css"]
+# Two stylesheets: the footer's two-block credit, whose text is in
+# `docs/overrides/partials/copyright.html` — one place, because a credit split between a config value
+# and a template is a credit that goes stale — and the quickstart's recorded results, which take a
+# code block's monospace without its card.
+extra_css = ["footer.css", "output.css"]
 
 # The interactive reference is an external link rather than a generated section: it is FastAPI's own
 # Swagger UI on the API host, which needs no renderer here and cannot be a static page. Every page

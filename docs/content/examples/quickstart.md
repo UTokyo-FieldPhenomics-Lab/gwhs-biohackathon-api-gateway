@@ -22,7 +22,7 @@ launching a session on it.
 One file, downloaded from this site rather than installed from a package index:
 
 ```bash
-curl -O https://docs.global-wheat.com/clients/global_wheat.py
+curl -sSO https://docs.global-wheat.com/clients/global_wheat.py
 ```
 
 ```python
@@ -31,6 +31,12 @@ import global_wheat
 client = global_wheat.Client()
 print(type(client).__name__)
 ```
+
+<!-- output -->
+``` { .text .output }
+Client
+```
+<!-- /output -->
 
 `Client()` reads the key from the environment, so nothing is pasted into a cell that gets saved or
 shared.
@@ -55,6 +61,14 @@ for dataset in client.datasets():
     print(f"{dataset['id']:12s} {dataset['rows']:>4} rows  {dataset['geometry'] or 'palette'}")
 ```
 
+<!-- output -->
+``` { .text .output }
+gwfss          10 rows  palette
+gwhd           10 rows  boxes
+gwhs-temp      10 rows  rle
+```
+<!-- /output -->
+
 `describe` is the dataset's own contract — its filters, its classes, its palette — fetched once and
 remembered by the client:
 
@@ -63,6 +77,13 @@ description = client.describe("gwhs-temp")
 print(sorted(description["filters"]))
 print(sorted(description["filters"]["category"]))
 ```
+
+<!-- output -->
+``` { .text .output }
+['attribute', 'category', 'split', 'tags']
+['peduncle', 'spikelet _-_underdeveloped_side1', 'spikelet _-_underdeveloped_side2', 'spikelet_-_side1', 'spikelet_-_side2', 'spikelet_-_terminal']
+```
+<!-- /output -->
 
 ## 4. One row
 
@@ -76,6 +97,13 @@ print(row["width"], "x", row["height"], "—", len(row["objects"]), "objects")
 first = row["objects"][0]
 print(first["category"], first["bbox"], first["attributes"])
 ```
+
+<!-- output -->
+``` { .text .output }
+592 x 2509 — 24 objects
+spikelet_-_side1 [231.0, 923.0, 126.0, 162.0] ['Green-Spikelet']
+```
+<!-- /output -->
 
 ## 5. The picture
 
@@ -94,6 +122,10 @@ thumbnail.thumbnail((400, 1200))
 thumbnail
 ```
 
+<!-- output -->
+![What step 5 returns](quickstart-step5.png)
+<!-- /output -->
+
 ## 6. One mask
 
 Each object's `rle` was decoded as the answer arrived, and the raw string is still beside the mask.
@@ -103,6 +135,12 @@ The cheap proof that the decode is right: the pixel count equals the reported `a
 mask = first["mask"]
 print(mask.shape, mask.dtype, int(mask.sum()), first["area"])
 ```
+
+<!-- output -->
+``` { .text .output }
+(2509, 592) bool 12074 12074.0
+```
+<!-- /output -->
 
 Drawing it is ordinary NumPy — the mask is already row-major and the size of the image:
 
@@ -116,6 +154,10 @@ ImageDraw.Draw(drawn).rectangle([x, y, x + w, y + h], outline=(11, 107, 203), wi
 drawn.thumbnail((400, 1200))
 drawn
 ```
+
+<!-- output -->
+![What step 6 returns](quickstart-step6.png)
+<!-- /output -->
 
 ## 7. A model
 
@@ -132,6 +174,15 @@ for found in answer["objects"]:
     print(found["idx"], round(found["score"], 3), int(found["area"]), found["bbox"])
 ```
 
+<!-- output -->
+``` { .text .output }
+sam3.1-meta at 1008 px
+answered by lab-5090 NVIDIA GeForce RTX 5090
+1 objects
+0 0.52 173716 [164.4509735107422, 227.70089721679688, 254.7406463623047, 1460.6804504394531]
+```
+<!-- /output -->
+
 ## 8. A palette mask
 
 `gwfss` is the other kind of annotation: one mask image, one colour per organ. `label_masks` splits it
@@ -144,6 +195,16 @@ palette_mask = np.asarray(Image.open(BytesIO(client.mask_bytes("gwfss", 0))))
 for name, pixels in client.label_masks(palette_mask, "gwfss").items():
     print(f"{name:12s} {int(pixels.sum()):>7d} px")
 ```
+
+<!-- output -->
+``` { .text .output }
+['background', 'head', 'stem', 'leaf']
+background    146817 px
+head               0 px
+stem            1920 px
+leaf          113407 px
+```
+<!-- /output -->
 
 ## 9. Your own photograph
 
@@ -162,6 +223,12 @@ else:
     print("put a photo beside this notebook, or upload one in Colab and name it here")
 ```
 
+<!-- output -->
+``` { .text .output }
+put a photo beside this notebook, or upload one in Colab and name it here
+```
+<!-- /output -->
+
 ## 10. When it fails
 
 A refusal is one body — `{"error": {"code": …, "message": …}}` — and the client raises it as one error
@@ -174,6 +241,13 @@ except global_wheat.ApiError as error:
     print(error.status, error.code)
     print(error.message)
 ```
+
+<!-- output -->
+``` { .text .output }
+404 not_found
+no such row
+```
+<!-- /output -->
 
 Nothing is retried for you: `503` and `504` are worth another call, `400` never is.
 
