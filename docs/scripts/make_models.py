@@ -102,6 +102,15 @@ def render(entry: dict[str, Any]) -> str:
     """
     parameters = entry.get("parameters") or []
     if not parameters:
+        if entry.get("declared"):
+            # A model that declares nothing is a different fact from one that has not declared yet,
+            # and the gateway publishes which it is. Printing "no backend has declared this model"
+            # for a model that answered its declaration would be a page saying the opposite of the
+            # truth, which is what this table exists to prevent.
+            return (
+                "This model declares **no parameters**: an image is the whole request, and a query "
+                "string is refused rather than ignored."
+            )
         return (
             f"No backend has declared this model yet, so `GET /models/{entry['id']}` lists no "
             "parameters. Nothing about the model's surface is guessed here."
@@ -161,19 +170,32 @@ def main() -> int:
         did not are a failing build rather than a quiet lie.
     """
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", default="sam3.1-meta")
+    parser.add_argument(
+        "--model", default=None, help="one model id; by default, every model the directory lists"
+    )
     parser.add_argument("--fixture", type=Path, default=FIXTURE)
     parser.add_argument("--page", type=Path, default=None)
     args = parser.parse_args()
 
-    page = args.page or REPO / "docs" / "content" / "models" / f"{args.model}.md"
     directory = json.loads(args.fixture.read_text(encoding="utf-8"))
-    entry = next((model for model in directory["models"] if model["id"] == args.model), None)
-    if entry is None:
-        raise SystemExit(f"{args.model} is not in {args.fixture}; re-record it")
+    if args.model:
+        entries = [model for model in directory["models"] if model["id"] == args.model]
+        if not entries:
+            raise SystemExit(f"{args.model} is not in {args.fixture}; re-record it")
+    else:
+        # Every id the directory lists is a model the API answers, so every one of them has a page.
+        # Iterating is what makes CI notice a deployed model whose page was never written: the run
+        # fails on the missing file rather than printing "already current" for the one page it knows.
+        entries = directory["models"]
 
-    changed = rewrite(page, render(entry))
-    print(f"{page.relative_to(REPO)}: {'rewritten' if changed else 'already current'}")
+    for entry in entries:
+        page = args.page if (args.page and args.model) else (
+            REPO / "docs" / "content" / "models" / f"{entry['id']}.md"
+        )
+        if not page.is_file():
+            raise SystemExit(f"{page} does not exist; every model in the directory has a page")
+        changed = rewrite(page, render(entry))
+        print(f"{page.relative_to(REPO)}: {'rewritten' if changed else 'already current'}")
     return 0
 
 

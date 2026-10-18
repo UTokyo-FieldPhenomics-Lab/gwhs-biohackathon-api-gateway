@@ -1,6 +1,10 @@
 """Draw the documentation figures from the data the API actually serves.
 
-    uv run --project docs --with pillow --with numpy python docs/scripts/make_figures.py
+    uv run --project docs --with pillow --with numpy --with requests \
+        python docs/scripts/make_figures.py
+
+`requests` is there because the geometry is decoded by the client, and the client imports it
+for its HTTP half; nothing in this script makes a request with it.
 
 Every figure is built from real published data: row 0 of `gwhd` and `gwfss`, and row 0 of the
 instance dataset whose schema `gwhs` will publish. The images are fetched from
@@ -29,6 +33,7 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 DATASETS = REPO / "docs/content/datasets"
 EXAMPLES = REPO / "docs/content/examples"
 RECORD = REPO / "clients/fixtures/example-prediction.json"
+PREDICTION = FIXTURES / "gwfss-row4-prediction.json"
 CLIENT_PYTHON = REPO / "clients/python"
 PAGES = REPO / "docs/content"
 
@@ -142,11 +147,15 @@ def download(work: Path) -> dict[str, Image.Image]:
         "gwhd": f"{DATA}/gwhd/images/00000000.jpg",
         "gwfss": f"{DATA}/gwfss/images/00000000.png",
         "gwfss_mask": f"{DATA}/gwfss/masks/00000000.png",
+        "gwfss4": f"{DATA}/gwfss/images/00000004.png",
+        "gwfss4_mask": f"{DATA}/gwfss/masks/00000004.png",
         "instance": f"{DATA}/gwhs-temp/images/00000000.jpg",
     }
     images = {}
     for name, url in sources.items():
-        path = work / Path(url).name.replace("00000000", name)
+        # Named after the figure, not after the object: two rows of one dataset would otherwise
+        # collide on the same file name and the second would silently overwrite the first.
+        path = work / f"{name}{Path(url).suffix}"
         urlretrieve(url, path)                                            # noqa: S310 (a fixed URL)
         images[name] = Image.open(path).convert("RGB")
     return images
@@ -162,6 +171,7 @@ def main() -> None:
         draw_gwhd(images["gwhd"], boxes)
         draw_bbox_diagram()
         draw_gwfss(images["gwfss"], images["gwfss_mask"])
+        draw_prediction(images["gwfss4"], images["gwfss4_mask"])
         draw_instance(images["instance"], objects, rles)
     draw_known_good()
 
@@ -238,6 +248,44 @@ def draw_gwfss(image: Image.Image, mask: Image.Image) -> None:
                            16 + (index // 2) * (tile_side + strip + gap)))
     save(tiles, DATASETS / "mask-output.png")
     save(mask, DATASETS / "mask-input.png")
+
+
+def draw_prediction(image: Image.Image, truth_mask: Image.Image) -> None:
+    """The model's classes beside the dataset's own mask, on the row the demo uses.
+
+    Both panels are tinted the same way — the colour over the photograph, so the organ is still
+    visible under it — because the point is not that one picture is prettier, it is which pixels the
+    two disagree about.
+    """
+    prediction = json.loads(PREDICTION.read_text(encoding="utf-8"))
+    base = np.asarray(image).astype(np.float32)
+
+    def tint(masks: dict[str, np.ndarray]) -> Image.Image:
+        canvas = base.copy()
+        for name, mask in masks.items():
+            colour = np.array(CLASS_COLOURS[name], dtype=np.float32)
+            canvas[mask] = 0.55 * colour + 0.45 * base[mask]
+        return Image.fromarray(canvas.astype(np.uint8))
+
+    predicted = {
+        str(obj["category"]): rle_mask(
+            str(obj["rle"]["counts"]), int(obj["rle"]["size"][0]), int(obj["rle"]["size"][1])
+        )
+        for obj in prediction["objects"]
+    }
+    truth = np.asarray(truth_mask)
+    measured = {
+        name: np.all(truth == np.array(colour, dtype=np.uint8), axis=-1)
+        for name, colour in CLASS_COLOURS.items()
+        if name != "background"
+    }
+    save(
+        figure(
+            (panel(tint(predicted), 420, 420), "gwfss-segformer-b4"),
+            (panel(tint(measured), 420, 420), "the dataset's mask"),
+        ),
+        PAGES / "models" / "gwfss-row4-prediction.jpg",
+    )
 
 
 def draw_instance(image: Image.Image, objects: list[dict[str, float]],

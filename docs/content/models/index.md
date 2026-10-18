@@ -1,8 +1,9 @@
 # Models
 
-One model answers today, and calling it is one request: **you send an image address (or your own
-photograph) and a prompt, and you get boxes, scores, and masks back**. No weights travel to you,
-nothing runs on your machine, and there is no environment to set up.
+Two models answer today, and calling either is one request: **you send an image address (or your own
+photograph) and you get masks back**. One finds what you describe in words; the other labels every
+pixel of a wheat canopy as head, stem or leaf. No weights travel to you, nothing runs on your machine,
+and there is no environment to set up.
 
 ## What runs it
 
@@ -21,12 +22,13 @@ it is a verdict with an age rather than a promise. `0` means a call is refused r
 
 Two things are fixed by the pool rather than by the request:
 
-- **The model runs at a side it was measured at**, one of `672`, `784`, `896` or `1008` pixels square,
-  and 1008 is the default and the ceiling. Your image is resized to that square *without preserving
-  aspect ratio*, and the answer reports `resolution_used` so you can tell how coarse a mask is at full
-  size. A larger `imgsz` is not an error: it runs at the ceiling and says so in `warnings`. A smaller
-  one is faster and worse on small objects — the table on the model page has the numbers. No model
-  accepts a resolution it was not run at.
+- **Each model runs at a side it was measured at.** `sam3.1-meta` runs at one of `672`, `784`, `896`
+  or `1008` pixels square, 1008 the default and the ceiling; `gwfss-segformer-b4` runs at the `512`
+  it was trained at and offers no choice at all. Your image is resized to that square *without
+  preserving aspect ratio*, and the answer reports `resolution_used` so you can tell how coarse a
+  mask is at full size. A larger `imgsz` is not an error: it runs at the ceiling and says so in
+  `warnings`. A smaller one is faster and worse on small objects — the table on the model page has
+  the numbers. No model accepts a resolution it was not run at.
 - **Three inferences in flight per key, no queue.** Over it, `429`. The three are three across the
   whole team, not three per person, and only the predict routes take one — a dataset listing or the
   model directory is answered from memory and never queues behind a GPU; see
@@ -44,6 +46,7 @@ instead of honoured.
 | id | what it is | runs at | measured |
 |---|---|---|---|
 | [`sam3.1-meta`](sam3.1-meta.md) | SAM 3.1 — text-prompted segmentation, [Meta's own code and checkpoint](https://github.com/facebookresearch/sam3) | 672 / 784 / 896 / 1008 px square | 0.36 s per inference on a 3090 at 1008; parameters and their encodings on the model page |
+| [`gwfss-segformer-b4`](gwfss-segformer-b4.md) | the GWFSS dataset's own SegFormer-B4 baseline — semantic organ segmentation, [CC-BY-4.0 weights](https://huggingface.co/GlobalWheat/GWFSS_Segformer_b4), no parameters | 512 px square | 0.038 s per inference on a 3090; mIoU 0.70 on the ten published rows, stems the weak class; numbers on the model page |
 
 An id names **whose weights these are**, not where they run: a collaborator's fine-tune of the same
 model appears as an id of its own, named after the data it was trained on. Every id this API serves is

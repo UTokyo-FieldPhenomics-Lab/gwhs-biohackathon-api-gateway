@@ -29,6 +29,12 @@ The machines that serve a model, and the only path that reaches them. Bringing o
   and no host.
 - **A machine is a backend only when it appears here and in the gateway's `models.json`.** The table
   is what may serve; the list is what does serve, in order.
+- **A model's host port is the model's, the same number on every machine.** `12711` is `sam3.1-meta`
+  wherever it runs and `12712` is `gwfss-segformer-b4`, so an address names the model and the host
+  without a third field to keep true. Inside a container the port stays `12711` for both: each has
+  its own network namespace, and the host-side number is the one that routes. A port that meant one
+  model here and another there would make a wrong `-p` silent until the first call, and would make
+  an address in a record unreadable without knowing which machine wrote it.
 - **This table is current state, and the measurements behind it are references.** Fill a row in when
   a machine is measured, keep the row when the machine retires and change its status, and never
   delete one: a machine that disappears from here is a machine the next person reconfigures blind.

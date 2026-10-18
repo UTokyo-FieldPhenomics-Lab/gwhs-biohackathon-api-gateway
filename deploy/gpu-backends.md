@@ -24,7 +24,8 @@ these addresses gets a timeout — that is the design, not a fault.
 What makes a machine reachable is therefore two facts, and neither is a client on the machine:
 
 1. It sits on one of those LANs, behind a router that advertises the `/24`.
-2. **A container publishes its port on the LAN interface**, which is `docker run -p 12711:12711`.
+2. **A container publishes its port on the LAN interface**, which is `docker run -p <the model's
+   port>:12711`.
    The default binding is `0.0.0.0`, and that is what the router forwards into.
 
 Binding to `127.0.0.1` and publishing it with `tailscale serve` is the *alternative*, needing a
@@ -35,9 +36,12 @@ the reason the Windows machine uses Desktop.
 
 Conventions that hold everywhere and are not re-decided per machine:
 
-- **Port `12711`**, inside the container and on the host alike: one number, never a mapping. It is
-  not a service port, it sits outside both ephemeral ranges (`32768–60999` on Linux, `49152–65535` on
-  Windows), and it is deliberately **not 8000**, which is the gateway's own socket on its host.
+- **A model's port is the model's, and the same number on every machine.** `12711` is
+  `sam3.1-meta`, `12712` is `gwfss-segformer-b4`, wherever they run. Inside a container the port is
+  always `12711` — each container has its own network namespace, so two models on one host do not
+  collide there — and the host side carries the model's number. It sits outside both ephemeral
+  ranges (`32768–60999` on Linux, `49152–65535` on Windows), and it is deliberately **not 8000**,
+  which is the gateway's own socket on its host.
 - **A card is admitted against the card minus 1 GB**, never against the card — the desktop drives the
   same display. For scale, the demo model holds 8.5 GB resident.
 - **One router is one fault domain.** So however many machines the laboratory holds, they fail
@@ -204,9 +208,12 @@ VM*, where the router cannot reach them.
    usually nothing to do. If a published port does not answer, the rule is:
 
    ```powershell
-   New-NetFirewallRule -DisplayName "biohack backend 12711" -Direction Inbound -Protocol TCP `
-     -LocalPort 12711 -RemoteAddress <the 5090's LAN>/24,100.64.0.0/10 -Action Allow
+   New-NetFirewallRule -DisplayName "biohack backends" -Direction Inbound -Protocol TCP `
+     -LocalPort 12711,12712 -RemoteAddress <the 5090's LAN>/24,100.64.0.0/10 -Action Allow
    ```
+
+   One rule lists every model port the machine publishes; a machine that adds a model adds its
+   number here, not a second rule that quietly differs.
 
 9. **Windows blocks ICMP echo by default**, so a machine that answers nothing to `ping` is not
    necessarily down. Never use ping as the reachability test for this backend — use a TCP probe.
@@ -267,13 +274,13 @@ not in the image**, which is why `docker run` is written out in full:
 | `--name <model>` | the container's name | `docker ps -a` |
 | `--gpus all` | `HostConfig.DeviceRequests` | `docker inspect --format '{{.HostConfig.DeviceRequests}}' <model>` |
 | `--restart unless-stopped` | `HostConfig.RestartPolicy` | `docker inspect --format '{{.HostConfig.RestartPolicy.Name}}' <model>` |
-| `-p 12711:12711` | `HostConfig.PortBindings` | `docker port <model>` |
+| `-p <the model's port>:12711` | `HostConfig.PortBindings` | `docker port <model>` |
 | `-e BACKEND_TOKEN=…` | `Config.Env` | `docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' <model>` |
 | `-e SAM31_MACHINE=…` | `Config.Env` | the same `docker inspect` |
 
-    docker run -d --gpus all --restart unless-stopped -p 12711:12711 \
+    docker run -d --gpus all --restart unless-stopped -p <the model's port>:12711 \
       -e BACKEND_TOKEN=<the value in the gateway host's env> \
-      -e SAM31_MACHINE=<this machine's name> --name <model> <image>
+      -e <the image's machine variable>=<this machine's name> --name <model> <image>
 
 - `-e BACKEND_TOKEN=…` is **mandatory** — the entrypoint refuses to start without it — and it must
   equal the gateway host's `BIOHACK_BACKEND_TOKEN`. A different value is not a stale backend, it is a
@@ -289,8 +296,10 @@ not in the image**, which is why `docker run` is written out in full:
   check refuses to start, which is it doing its job.
 - `--restart unless-stopped` is what brings the backend back after a reboot. Never `always`: the
   entrypoint refuses a card it cannot fit, and `always` turns that refusal into a loop.
-- `-p 12711:12711` publishes on the LAN. Do not bind loopback, and do not map a different host port:
-  the gateway's list, the router and the firewall rule all name one number.
+- `-p <the model's port>:12711` publishes on the LAN. Do not bind loopback, and never publish two
+  models on one host port: the gateway's list, the router and the firewall rule all name that
+  number, and a model that borrowed another's would answer under the wrong name until the first
+  call.
 
 `docker start` needs none of it — everything is already recorded, which is why stop/start is safe and
 why a *changed* value means creating the container again. **Only the restart policy can be changed in
@@ -362,8 +371,9 @@ This is the part that fails during an event and looks like a network fault.
 **The list is host configuration, not repository content** — it names running machines. It is
 `models.json` in `~/.config/biohack-gateway/`, beside the token pool, one entry per model:
 
-    {"sam3.1-meta": ["http://<address>:12711"],
-     "yolo":       ["http://<address>:12711", "http://<address>:12711"]}
+    {"sam3.1-meta":        ["http://<address>:12711"],
+     "gwfss-segformer-b4": ["http://<address>:12712"],
+     "yolo":               ["http://<address>:12713", "http://<address>:12713"]}
 
 A file that does not parse means **no models**, never all of them, so a typo in host configuration
 cannot become a gateway that answers for models nobody configured. **Order is preference:** routing

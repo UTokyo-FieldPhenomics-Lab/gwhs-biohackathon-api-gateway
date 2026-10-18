@@ -1,5 +1,9 @@
 # `gwfss-segformer-b4` — the dataset's own baseline, served
 
+Status: **P1–P3 done, serving on `labpc`** (2026-10-18). The container is built and answering on
+`12712`, the gateway lists it with `parameters: []`, and the model page is generated and
+published. P4 (three machines) and P5 (`/play`) are open.
+
 ## Goal
 
 One more model id, `gwfss-segformer-b4`: the segmentation baseline published with the dataset we
@@ -25,9 +29,11 @@ today:
 |---|---|---|
 | parameters | 13.68 M | **64.00 M** |
 | safetensors | 54.7 MB | **256.1 MB** |
-| one 512² inference | 6.6 ms | **24.8 ms** |
+| one 512² inference, forward only | 6.6 ms | **24.8 ms** |
 | 16 CPU threads | 243 ms | **857 ms** |
 | GPU added, loaded → one inference | 322 → 551 MiB | **655 → 1115 MiB** |
+| one 512² call through the container's whole path | — | **38 ms**, +840 MiB |
+| the largest allowed upload (8000x6000) | — | **688 ms**, 1539 MiB torch peak |
 | mIoU, 4 classes | 0.665 | **0.701** |
 | per class: background / head / stem / leaf | .744 / .857 / .237 / .823 | **.747 / .866 / .366 / .825** |
 | pixel accuracy | 0.881 | **0.884** |
@@ -78,10 +84,13 @@ objects in the bucket); the full 1,096 are published **after** the whole path ha
 before the event. Nothing in this plan publishes dataset objects, and the model page says "ten rows
 today" where it could otherwise be read as the whole set.
 
-**D8 — Deploy order and the port.** Container first, then the gateway: a declaration is read once
-and never re-read. On `labpc` the container publishes `12713` on all interfaces (`-p 12713:12713`) —
-binding it to `127.0.0.1` makes it unreachable from the gateway host, which is not a failure the
-container can see.
+**D8 — Deploy order, and the port is the model's.** Container first, then the gateway: a declaration
+is read once and never re-read. A model's host port is fixed by the model, not by the machine —
+`sam3.1-meta` is `12711` everywhere, `gwfss-segformer-b4` is `12712` everywhere — so a port number
+means one thing in `models.json` on every host. On `labpc` the container publishes
+`-p 12712:12711`: `12712` on the LAN, `12711` inside its own network namespace, where it does not
+collide with the sibling container. Binding the host side to `127.0.0.1` makes it unreachable from
+the gateway host, which is not a failure the container can see.
 
 ## Steps
 
@@ -116,11 +125,11 @@ token and names the model.
 
 ### P2 — `labpc`, and the first real call
 
-- Build on `labpc`, run with `--gpus all -p 12713:12713 -e BACKEND_TOKEN=… -e GWFSS_MACHINE=lab-3090`,
+- Build on `labpc`, run with `--gpus all -p 12712:12711 -e BACKEND_TOKEN=… -e GWFSS_MACHINE=lab-3090`,
   no `restart: always` (the admission refusal must stay visible).
 - Measure `resident_gb` and `per_request_gb` the way the SAM figures were measured (card usage before
   the container, after loading, after one inference) and put the numbers in the labels.
-- Add `"gwfss-segformer-b4": ["http://<address>:12713"]` to the host's `models.json`, then
+- Add `"gwfss-segformer-b4": ["http://<address>:12712"]` to the host's `models.json`, then
   restart the gateway.
 - Call it through the gateway, not around it.
 

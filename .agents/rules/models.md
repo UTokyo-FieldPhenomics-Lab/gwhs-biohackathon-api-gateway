@@ -48,3 +48,16 @@ normalisation belongs are [`gateway.md`](gateway.md)'s rules.
 - **The submodule's own `AGENTS.md` points back here and repeats nothing.** Contributors work in that
   repository, so its entry point links this repository's `AGENTS.md` and `rules/`; a second copy of
   these constraints would be a second thing to keep true.
+
+- **A checkpoint is an id, never a request parameter.** Two checkpoints are two ids, even when they
+  share every other fact: a `variant` parameter would let one request choose a different set of
+  weights, and therefore a different memory figure, which is what the parameter rule in
+  `gateway.md` forbids. A `Dockerfile` may select its checkpoint from an environment variable, so a
+  second id costs a container rather than a second codebase.
+- **A semantic model publishes one object per class, and its box is an extent.** Background is the
+  complement and is not published; a class with no pixels is omitted. Instances are a post-process
+  the network did not produce, so the container does not invent them — counting belongs in a short
+  example a participant can read and run.
+- **A model's geometry is COCO's compressed RLE, and no model adds a second encoding.** A class map
+  is smaller as an indexed PNG, and that is not a reason: one decoder across the dataset surface and
+  every model is what makes a participant's code work on both.
