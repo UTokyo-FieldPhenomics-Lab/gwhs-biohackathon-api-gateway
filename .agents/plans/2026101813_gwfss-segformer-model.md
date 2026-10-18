@@ -1,8 +1,10 @@
 # `gwfss-segformer-b4` — the dataset's own baseline, served
 
-Status: **P1–P3 done, serving on `labpc`** (2026-10-18). The container is built and answering on
-`12712`, the gateway lists it with `parameters: []`, and the model page is generated and
-published. P4 (three machines) and P5 (`/play`) are open.
+Status: **implemented and serving on three machines** (2026-10-18). The container answers on
+`12712` on `lab-5090`, `lab-3090` and `homepc-4090`; the gateway lists it with `parameters: []` and
+`backends_up: 3`; the model page is generated and published; `/play` offers it, with
+`?model=gwfss-segformer-b4` preselected. What remains is the full `gwfss` publish, which this plan
+deliberately left out.
 
 ## Goal
 

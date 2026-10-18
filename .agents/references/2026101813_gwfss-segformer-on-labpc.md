@@ -98,12 +98,56 @@ head 88,848 px, stem 15,437, leaf 124,434, background 33,425 — in 25,711 bytes
   the client's decoder. It needs `--with requests` for that import; the docstring records why.
 - `zensical build --strict` is clean and `make_models.py` produces no diff.
 
+## P4 — three machines
+
+| machine | address | image | build |
+|---|---|---|---|
+| `lab-5090` | `lab-5090:12712` | 18.1 GB | inside WSL, by `ssh → wsl -e bash` |
+| `lab-3090` | `lab-3090:12712` | 18.2 GB | on `labpc` |
+| `homepc-4090` | `homepc-4090:12712` | 11.3 GB | on `homepc` |
+
+The folder travelled as a 55 kB tarball: `scp` to the Linux host, and `cat | ssh → wsl` to the Windows
+one, with the sha256 checked on the far side before extracting — the transfer goes through `cmd`, so
+the check is the only thing that says the bytes arrived intact.
+
+The 5090 answered on `12712` **without a new Windows firewall rule**. Docker Desktop's proxy adds a
+rule per process rather than per port, so the rule published for `12711` covered the second container
+too. Convenient, and not something to rely on: `deploy/gpu-backends.md` still says to add the port to
+the rule when a published port does not answer.
+
+`GET /models` then read `backends_up: 3` for both models. The same call on all three cards:
+
+```
+lab-5090    head 88,849  stem 15,437  leaf 124,432
+lab-3090    head 88,848  stem 15,437  leaf 124,434
+homepc-4090 head 88,848  stem 15,437  leaf 124,434
+```
+
+Scores are identical to three decimals; the masks differ by one or two pixels on the 5090. That is the
+same card difference the SAM pool recorded as 18 objects versus 17, now measured on a second model.
+
+## P5 — `/play`
+
+Verified in a browser against the live gateway with a temporary `ops-play` token:
+
+- the model list offered both ids, and the model line read `3 backends up · 3 requests at a time`;
+- choosing `gwfss-segformer-b4` rendered **no parameter controls** — the legend stayed hidden and the
+  parameter span had zero children — and the `curl` line carried no query string;
+- `gwfss` row 4 painted a 512×512 canvas, and the page's own check read
+  `3 objects · Σ decoded mask = 228,718 px, Σ area = 228,718 px — equal` (the 5090 answered).
+
+`/play?model=<id>` now preselects the model the link names, and an id the directory does not list is
+ignored rather than shown. The gateway host was pulled to `4a7d233` and restarted; the model page
+links to the preselected page. The browser had no stored key before the test, the temporary key was
+cleared afterwards, and `ops-play` was revoked — the pool holds `dev` alone again.
+
+Pulling the parent repository on the gateway host prints `Could not access submodule 'models'` and
+applies the change anyway: that checkout never initialises the submodule, and the gateway reads
+nothing from it.
+
 ## Open
 
-- **P4** — the same image on `homepc-4090` and `lab-5090`, `models.json` with three addresses.
-- **P5** — `/play`: the page is declaration-driven, so the model is already in the dropdown; the step
-  is the verification (no parameter controls, no query string, row 4 paints three classes) and a
-  recorded example.
 - **The full `gwfss` publish** — ten rows today, 1,096 before the event, as agreed.
-- The site deploy for `24e7b2b` succeeded; <https://docs.global-wheat.com/models/gwfss-segformer-b4/>
-  answers, the figure is served as a 173 kB JPEG, and the index lists the model.
+- **B1** stays unserved and linked from the model page.
+- <https://docs.global-wheat.com/models/gwfss-segformer-b4/> answers; the figure is served as a
+  173 kB JPEG and the index lists the model.
