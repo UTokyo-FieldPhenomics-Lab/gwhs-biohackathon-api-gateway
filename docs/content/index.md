@@ -19,7 +19,8 @@ GPU, so every one of them carries a key.
 
 - **Three datasets** — `gwhd` (head boxes), `gwfss` (organ masks), `gwhs` (one mask per spikelet) —
   addressed as `(dataset, row)`. → [Datasets](datasets/index.md)
-- **One model** — `sam3.1-meta`, text-prompted segmentation, on three GPUs. → [Models](models/index.md)
+- **One model** — `sam3.1-meta`: text, box or point prompts, at one of four sizes, on three GPUs. →
+  [Models](models/index.md)
 - **A client per language** — one file, downloaded rather than installed, which resolves an address,
   fetches the object, walks pages, and decodes masks. → [Clients](api/clients.md)
 
@@ -41,7 +42,7 @@ answer today; the full sets are published before the event.
 ## Where to go
 
 - [Raw HTTP](api/http.md) — the contract, every route on one line, and the four calls
-- [Base API reference](api/reference.md) — every route with its parameters, and a try-it form
+- [Base API reference](api/reference.md) — every route with the fields of its answer, and a try-it form
 - [Clients](api/clients.md) — the same API as a function, in Python, JavaScript, or Java
 - [Datasets](datasets/index.md) — what a row holds; one page per dataset
 - [Models](models/index.md) — what the model does, on what hardware, and when to use your own
