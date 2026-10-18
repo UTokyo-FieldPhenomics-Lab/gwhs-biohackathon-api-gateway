@@ -104,6 +104,11 @@ It is **not** an operator dashboard: no addresses, no VRAM, no queue depth, no l
 - **No `imgsz`, and no client-set resolution.** Resolution is the container's property: a
   client-set one would make the memory peak a variable, and admission could no longer be computed
   in advance.
+  > **Superseded 2026-10-18** by
+  > [`2026101811_model-parameter-contract.md`](2026101811_model-parameter-contract.md): `imgsz` is
+  > exposed as a measured allow-list under a ceiling the container clamps to and reports. A size
+  > *below* the ceiling cannot raise the peak, which is what the objection was about; the ceiling is
+  > unchanged and admission is still computed in advance.
 - **The parameters are declared by the model at `/health`**, repeated by `GET /models`, and
   forwarded verbatim as query parameters. The gateway adds none of its own and interprets none.
 
@@ -180,7 +185,7 @@ conversation can promise.
 |---|---|
 | Participants call a backend directly | Backends must stay private, and a per-backend token would reach participants |
 | The gateway proxies image bytes by default | It gives up the CDN and the cost model, against "image bytes never cross the gateway" |
-| A client-set resolution or `imgsz` | Resolution is the container's; otherwise the memory peak is a variable and admission cannot be computed |
+| A client-set resolution or `imgsz` | Resolution is the container's; otherwise the memory peak is a variable and admission cannot be computed. **Superseded 2026-10-18** by [`2026101811_model-parameter-contract.md`](2026101811_model-parameter-contract.md): a size below the ceiling cannot raise the peak, so `imgsz` is exposed as a measured allow-list the container clamps to |
 | Lifecycle in the id (`-demo`, `-prod`) | An id describes a model, not a deployment |
 | A scheduler now (queue, priority, preemption) | One machine is already saturated; there is nothing to schedule |
 | An operator dashboard now | Two operators and `/health` are enough; decide in the event week |

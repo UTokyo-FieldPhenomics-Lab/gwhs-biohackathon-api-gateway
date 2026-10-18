@@ -55,10 +55,27 @@ here.
   and answers `unavailable`, because telling a participant their key is wrong sends them to look in
   the wrong place.
 - **A model's control parameters are the model's, never the gateway's.** The container declares what
-  it accepts, with defaults and bounds, in its own `/health`; the gateway repeats that declaration from
-  `GET /models` and forwards a request's values verbatim without knowing their names. That is what
-  keeps a new model to a configuration change — and it is why nothing here may name a parameter: a
-  `prompt` written into this package would be a second place the model's own contract lives.
+  it accepts, with types, defaults and bounds, in its own `/health`; the gateway repeats that
+  declaration from `GET /models`, validates a request against it, and forwards the values verbatim.
+  Nothing here may name a parameter: a `prompt` written into this package would be a second place the
+  model's own contract lives, which is what keeps a new model to a configuration change. What the
+  gateway enforces is only what the declaration already answers — a name the model did not declare, a
+  value outside its type or bounds or set, a name sent twice, a combination its declaration rules out
+  — and it refuses those `400` before a machine is asked. Meaning stays the backend's: whether a
+  point lies on the image, what a negative label does, which values in the list actually produce a
+  good answer. The one place a value outside the declaration is forwarded is a ceiling marked
+  `clamp`, where the container answers at its ceiling and says so in the answer's `warnings`.
+- **A parameter may only be one that cannot raise the admitted memory peak.** Per-inference knobs are
+  the surface; deployment properties are not. `device` and `half` belong to the container's
+  deployment and never enter the contract. A resolution knob is exposed only with a declared ceiling
+  the container clamps to and reports, because a client-set size that could grow the peak would make
+  admission something that cannot be computed in advance — and a size in the list is a size that was
+  run, not one a stride formula implies.
+- **An undeclared model is not validated, and `declared` says which case it is.** A model whose
+  `/health` has never been read publishes an empty parameter list that means "nothing was said", not
+  "nothing is accepted". Validating against it would refuse a call that works — a container answering
+  a body the gateway could not parse is exactly that case — so validation is skipped only there, and
+  `GET /models` publishes the flag so a reader can tell the two apart.
 - **Two surfaces, one process.** The model surface does auth, gating, and routing; the dataset surface
   serves metadata, facets, and addressing. They share the error contract, authentication, and
   configuration. The dataset surface owns no bytes and calls no backend.
