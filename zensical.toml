@@ -54,6 +54,7 @@ nav = [
   { "Models" = [
       { "Models" = "models/index.md" },
       { "sam3.1-meta" = "models/sam3.1-meta.md" },
+      { "gwfss-segformer-b4" = "models/gwfss-segformer-b4.md" },
   ] },
   { "Examples" = [
       { "Live demo" = "examples/demo.md" },
