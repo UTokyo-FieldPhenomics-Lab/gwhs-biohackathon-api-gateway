@@ -548,6 +548,22 @@ def test_a_bounded_parameter_shows_the_number_it_is_set_to(client: TestClient) -
     assert 'input.type === "range"' in page
 
 
+def test_the_model_page_does_not_restate_the_side_the_model_runs_at(
+    client: TestClient,
+) -> None:
+    """The size is a control, and the fact after a run is `resolution_used`; prose would be a third.
+
+    The same removal as the count beside the Run button: once the side became a declared parameter,
+    the model row's "runs at 1008 px" contradicted the select one row below it, and a reader had two
+    places to reconcile. The row is the pool's state — machines answering, requests they hold, how
+    old that verdict is — and nothing else.
+    """
+    page = client.get(PLAY_PATH).text
+
+    assert "entry.resolution" not in page
+    assert '"runs at "' not in page, "the row does not print the side the model runs at"
+
+
 def test_the_model_page_says_what_came_back_once(client: TestClient) -> None:
     """The count and the Σ check are one line in the figure's caption, and that is the only one.
 

@@ -160,11 +160,11 @@ at the rebuilt image:
    `category` `wheat head`, `lab-3090`. That is the table on `examples/demo.md` — the container's
    arithmetic did not move, so neither the page's numbers nor `known-good.jpg` need touching.
 
-One non-change worth recording: the model line says "runs at 1008 px" while four sizes sit in the
-select. The fix is to name `imgsz` to find its `values`, and
-`test_the_model_page_names_no_model_and_no_parameter` forbids exactly that — a page that names a
-parameter is a page that will disagree with the next model. The sizes are the control's business, so
-the line keeps `resolution` and a comment says why.
+One non-change worth recording: the model row is the **pool's state** — machines answering, requests
+they hold, how old that verdict is — and it says nothing about the side the model runs at. The size is
+a control one row below; repeating it in prose started contradicting the select the moment the size
+became a declared parameter. `test_the_model_page_does_not_restate_the_side_the_model_runs_at` keeps
+it that way, for the same reason the answer's count left the Run button for the figure's caption.
 
 **One pre-existing fragility, found rather than caused — and now fixed by the lane rule.** The page's
 connect flow fans out (datasets, image detail, models), and under the old counting every one of those

@@ -195,11 +195,15 @@
     }
   };
 
-  // The model's attributes, as its declaration and the last probe give them: what it runs at, how many
-  // machines are answering, how many requests they hold — and how long ago that was asked. The count
-  // is a probe's verdict, so its age is part of the claim, and it keeps growing on screen: a verdict
-  // the page can no longer refresh must not be shown as if it were fresh. This is also the one place
-  // that decides whether Run may be pressed, so the button and the line can never disagree.
+  // The pool, as the last probe found it: how many machines are answering, how many requests they
+  // hold — and how long ago that was asked. The count is a probe's verdict, so its age is part of
+  // the claim, and it keeps growing on screen: a verdict the page can no longer refresh must not be
+  // shown as if it were fresh. This is also the one place that decides whether Run may be pressed,
+  // so the button and the line can never disagree.
+  //
+  // The side the model runs at is not repeated here. When it is a choice it is a control one row
+  // below, and when it is not, the answer's `resolution_used` is the fact; repeating it in prose is
+  // the second place a reader has to reconcile, which is why the resolution left this line before.
   let facts = {text: "", bad: false, age: 0, at: 0};
 
   /** Forget what the model row said, so the one-second tick stops rewriting whatever replaces it. */
@@ -213,10 +217,6 @@
 
   const showFacts = (entry) => {
     const parts = [];
-    // `resolution` is the side the model declares for itself, and it is the one thing this line can
-    // say without naming a parameter — which the page must not do, and a test enforces. When several
-    // sizes are offered they are the control's business: they are listed one row below.
-    if (entry.resolution) parts.push("runs at " + entry.resolution + " px");
     if (entry.backends_up) {
       parts.push(entry.backends_up +
         (entry.backends_up === 1 ? " backend up" : " backends up"));
