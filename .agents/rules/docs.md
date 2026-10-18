@@ -75,6 +75,14 @@ Package: `docs/`. Repo-wide invariants are in [`project.md`](project.md) and are
   data changes. It lives outside `docs/content/`, and it needs `--with pillow --with numpy` because
   the site's own environment carries neither. The quickstart's two pictures are the exception: they are
   what a cell returned, so the recorder writes them.
+- **A model's parameter table is the model's declaration, transcribed.** The table on a model page
+  lives between `<!-- parameters:start -->` and `<!-- parameters:end -->` and is written by
+  `docs/scripts/make_models.py` from `docs/scripts/fixtures/model-directory.json`, a recorded
+  `GET /models`; the workflow re-runs the script and `git diff --exit-code` is what stops the page from
+  describing a declaration that has moved. Handwriting the table instead is how it said `prompt` and
+  `confidence_threshold` while the container had five parameters. The fixture is refreshed by asking a
+  gateway pointed at the running container — not by a docs build, because `GET /models` needs a key and
+  a participant-facing site must not depend on a secret or on a host being up.
 - **One frame script serves both frames, and it lives in `docs/content/api/`.** The reference page is a
   frame inside `api/reference.md`, and the run-a-model page is a frame inside `examples/demo.md`;
   `docs/content/api/frame.js` sizes each one and passes the reader's palette into it. A frame is

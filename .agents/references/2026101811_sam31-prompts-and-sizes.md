@@ -88,6 +88,33 @@ uv run tests/prompts.py --base http://127.0.0.1:12712
 the four sides; `_sizes` refuses to start on a value that is not a multiple of 14, which is the check
 that would have saved the 640 experiment.
 
+## The site (P3)
+
+The parameter table on the model page is **generated from a recorded declaration**, not transcribed:
+
+- `docs/scripts/fixtures/model-directory.json` is a real `GET /models` answer. Recording it means
+  pointing a gateway at the running container and asking once — the API needs a key, so a *docs build*
+  cannot do it, and that is the reason this is a fixture rather than a live fetch. A site built from a
+  participant-facing repo must not hold a secret or depend on a host being up.
+- `docs/scripts/make_models.py` writes the table between `<!-- parameters:start/end -->` on a model
+  page: a `default` column, an `accepts` column derived mechanically from the declaration
+  (`values` → the list plus the clamp, `minimum`/`maximum` → a range, `max_length` → a character
+  bound), and the model's own description. Re-running it is idempotent.
+- `.github/workflows/docs.yml` runs it before the build and diffs `docs/content/models/`, the same
+  stale check the quickstart notebook gets. A container whose declaration moved and a page that did
+  not is a failing build.
+
+**markdown-exec does not work under Zensical**, which cost an hour and is worth not repeating: added
+as `[project.plugins] markdown-exec = {}` it does execute the block, but renders the *result* as a
+fenced code block — `result="markdown"` and `result="html"` both reach the reader as escaped text, and
+as a plain markdown extension it has no `makeExtension` at all. The generated-file-plus-stale-check
+pattern is what the repository already trusts.
+
+Content changed: the model page gained **Prompting** (text/box/point, with the measured numbers) and
+**Size** (the four sides, the clamp, latency against IoU); the models index now says what is *not* a
+parameter and why; and `api/http.md` carries the encoding once under **Model parameters**, which the
+model page links to instead of repeating.
+
 ## Left open
 
 - **The submodule pointer is not bumped.** `rules/models.md` says push before recording, and the push is

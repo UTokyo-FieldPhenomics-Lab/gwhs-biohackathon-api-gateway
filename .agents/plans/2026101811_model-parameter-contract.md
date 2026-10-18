@@ -303,17 +303,23 @@ rope cache). `models/sam31_official/processor.py` is new; `serve.py`, `infer.py`
 both READMEs changed. Submodule pointer not bumped yet: the rule is push before recording, and the
 push is the user's.
 
-**P3 — documentation site.** The parameter table on the model page generated at build time from the
-live `GET /models` with markdown-exec, replacing the hand-written table that already duplicates the
-declaration; one contract page for the `boxes`/`points` encoding; a short "what is not a parameter,
-and why" note naming `device`/`half`, so a participant or their agent stops trying them; and the
-measured size table from the matrix — latency and what happens to small heads at each size.
+**P3 — done (2026-10-18).** `docs/scripts/fixtures/model-directory.json` is a recorded `GET /models`
+from a gateway pointed at the rebuilt container; `docs/scripts/make_models.py` transcribes the
+declaration into the block between `<!-- parameters:start/end -->` on a model page, and the workflow
+re-runs it and diffs the result, the same stale check the quickstart notebook has. The model page
+gained **Prompting** and **Size** sections with the measured numbers; the models index says what is
+*not* a parameter and why (`device`, `half`); and `api/http.md` carries the encoding once
+(§ Model parameters: flat parameters, `boxes`/`points` as one JSON array in pixels, `imgsz` as an
+enumerated list with a clamp and a `warnings` entry). markdown-exec was tried first and abandoned: it
+executes under Zensical but renders its result as a code block, so `result="markdown"` and
+`result="html"` both reach the reader as escaped text.
 
-**P4 — the door for a second model (deferred, not built).** Nothing about validation is
-SAM-specific, so the evidence that the door is open is a gateway test: a fixture declaration whose
-shape differs from SAM's — a model with `conf`/`iou`/`classes`, no text prompt — validates through
-the same path and forwards the same query. `models.json`, a container and a page are then a
-configuration change, and that stays unbuilt until there is a model.
+**P4 — done, as the door rather than a second model.** Nothing about validation is SAM-specific, and
+the evidence is `test_a_second_model_shape_validates_through_the_same_path`: a fixture declaration
+shaped like a detector's own CLI (`conf`, `iou`, `classes`, and no text prompt at all) validates,
+forwards, and refuses `prompt` with a message listing what *it* accepts. No container, no
+`models.json` entry and no page were added, as instructed — those are a configuration change and a
+new folder when there is a model to put in them.
 
 **P5 — clients.** The signature does not change: `predict(model, dataset, row, prompt="wheat head")`
 is still the call. What changes is the **value encoding**, and it is not cosmetic: both clients turn a
