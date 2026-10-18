@@ -213,6 +213,9 @@
 
   const showFacts = (entry) => {
     const parts = [];
+    // `resolution` is the side the model declares for itself, and it is the one thing this line can
+    // say without naming a parameter — which the page must not do, and a test enforces. When several
+    // sizes are offered they are the control's business: they are listed one row below.
     if (entry.resolution) parts.push("runs at " + entry.resolution + " px");
     if (entry.backends_up) {
       parts.push(entry.backends_up +
