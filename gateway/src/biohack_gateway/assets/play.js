@@ -277,8 +277,15 @@
       const directory = await call("/models");
       fill(model, directory.models, (entry) => entry.id);
       model.disabled = !directory.models.length;
-      if (directory.models.length) await loadModel(directory.models[0].id);
-      else {
+      // A link may name the model it wants — `/play?model=<id>` — which is how a model page sends a
+      // reader here with the choice already made. An id this gateway does not serve is ignored
+      // rather than shown: the directory is the list of what answers, and a URL is not.
+      const wanted = new URLSearchParams(location.search).get("model");
+      const chosen = directory.models.find((entry) => entry.id === wanted) || directory.models[0];
+      if (chosen) {
+        model.value = chosen.id;
+        await loadModel(chosen.id);
+      } else {
         clearFacts();
         say($("model-state"), "this gateway has no models configured", false);
       }
