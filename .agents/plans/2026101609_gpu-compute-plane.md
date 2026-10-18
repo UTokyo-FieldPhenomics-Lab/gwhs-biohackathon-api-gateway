@@ -221,6 +221,12 @@ an image label, so a host can read it with `docker image inspect` without starti
 LABEL io.biohack.vram.resident_gb="3.7" io.biohack.vram.per_request_gb="1.8"
 ```
 
+**Changed at implementation:** `input_resolution` became **`io.biohack.input_sizes`**, a list, when the
+container began running four measured sides (2026-10-18). A single side and a list are two claims about
+one thing, and the list is the true one; the ceiling is its maximum.
+`models/sam31_official/tests/labels.py` now compares every label with the process's own default, which
+is the check this plan asked for and nothing had built.
+
 The figures are the measured ones (Task 1), and they are the reason this section exists in this
 shape: **a model made of two stages declares one budget covering both**, because both stay resident —
 which is why the SAM 3.1 container's 3.7 + 1.8 GB is not what a SAM 3.1 *plus CascadePSP* container

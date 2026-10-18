@@ -1,12 +1,15 @@
 # The model API surface: the contract, the naming, and the selector
 
-Status: **surface implemented and rehearsed; three steps still open** (2026-10-16). The four routes,
-the id, the discovery endpoint and the selector are in `gateway/src/biohack_gateway/models.py`; the
-container answers the same paths and declares its own parameters. 131 tests pass, `ruff` and
-`mypy --strict` are clean, and the end-to-end rehearsal (gateway → container → real SAM 3.1) returns
-a result identical to calling the container directly. Two of the open steps are handed to
-[`2026101617_play-page.md`](2026101617_play-page.md), and the notes below are the moved and
-translated discussion draft that decided all of it.
+Status: **implemented and serving; nothing in the code is left open** (plan 2026-10-16, live by
+2026-10-18). The four routes, the id, the discovery endpoint and the selector are in
+`gateway/src/biohack_gateway/models.py`; the platform is serving three backends
+(`backends_up: 3`). The parameter surface this plan left to the gateway was finished and superseded
+in shape by [`2026101811_✅model-parameter-contract.md`](2026101811_✅model-parameter-contract.md) —
+parameters are now validated against each model's declaration rather than forwarded blindly, and
+`imgsz` is exposed under a measured ceiling, which reverses this plan's third step below. What is
+still open is not code: the endpoint's latency composition, the rent-or-not meeting, and a second real
+container. The docs and demo step was handed to
+[`2026101617_play-page.md`](2026101617_play-page.md) and is complete there.
 
 Owner files: `gateway/src/biohack_gateway/models.py`, `gateway/src/biohack_gateway/app.py`,
 `gateway/src/biohack_gateway/datasets.py` (the shared `ObjectOut`),

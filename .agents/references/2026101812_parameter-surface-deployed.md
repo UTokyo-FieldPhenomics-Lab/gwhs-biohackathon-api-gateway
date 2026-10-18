@@ -61,11 +61,35 @@ removed in the same script; the pool is back to `dev` alone.
   five minutes. It took 2 m 28 s with the cache and 36 s to unpack.
 - `postgres`-less as before: nothing new on disk beyond the images.
 
+## What the build actually did, and the one correction to this record
+
+The builds were slow enough to look like a re-download. They were not:
+
+| Observation | Number |
+|---|---|
+| Weights layer in the rebuilt image | **3.5 GB, 25 hours old** — reused |
+| Code layer | **98.3 kB**, the only layer that changed |
+| Image total | 10.0 GB on `labpc`, 13.9 GB on the 5090 |
+| The 5090's build | 2 m 28 s total: **exporting layers 111.1 s + unpacking 36.4 s** |
+| A weight fetch measured on that machine | 3.5 GB in **3 m 33 s** |
+
+A re-fetch alone would have cost more than the whole build, so it did not happen: BuildKit spent the
+time re-materialising a 10–14 GB image into the docker store, which scales with image size and not
+with what changed. If releases ever get frequent enough for 2–3 minutes a machine to hurt, the two
+levers are mounting the code into the container (a change becomes a restart) or moving the weights to
+a volume (the image shrinks by 3.5 GB) — both trade away "the image carries its own checkpoint".
+
+**Corrected 2026-10-18:** an earlier version of this file said `SAM31_RESOLUTION` was "still set on all
+three run lines". It was in the **image**, from `Dockerfile`'s `ENV` block — `docker inspect <name>`
+resolves a *container*, and the running container had inherited it, which is what I read. `docker
+image inspect sam3.1-meta:latest` is the question that was being asked. The variable is gone from the
+Dockerfile now, and `tests/labels.py` is what stops the next dead one from surviving a rebuild.
+
 ## Left as it was
 
-- `SAM31_RESOLUTION` is still set on all three run lines and is now **ignored**: the container reads
-  `SAM31_SIZES`, whose default is the same four sides with 1008 as the ceiling. Removing it means
-  re-creating three containers for a variable that does nothing; it stays until the next re-create for
-  another reason, and the README's run line never had it.
+- `SAM31_RESOLUTION` is gone from the image source but still baked into the three **running**
+  containers, which ignore it. It disappears from an image the next time one is built; removing it from
+  the running containers is a re-create for a variable nothing reads, so it waits for the next deploy
+  for another reason.
 - The site deploy is a workflow, not a hand act: it builds the parameter table from the recorded
   fixture and fails on a diff, so a page that disagrees with the declaration cannot publish.
