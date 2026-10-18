@@ -1,6 +1,6 @@
 # SAM 3.1's parameters: boxes, points, and four sizes — what the card said
 
-Plan: [`plans/2026101811_model-parameter-contract.md`](../plans/2026101811_model-parameter-contract.md).
+Plan: [`plans/2026101811_✅model-parameter-contract.md`](../plans/2026101811_✅model-parameter-contract.md).
 P0 and P1 (the gateway) are in
 [`2026101811_model-parameter-validation.md`](2026101811_model-parameter-validation.md); this is P2, the
 container, run on **labpc's 3090 against the rebuilt image**, not through the pool — a 4090 or a 5090

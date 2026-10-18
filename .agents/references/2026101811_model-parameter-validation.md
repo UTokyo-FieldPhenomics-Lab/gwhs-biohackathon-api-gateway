@@ -1,6 +1,6 @@
 # The gateway validates a model's parameters against the model's declaration
 
-Plan: [`plans/2026101811_model-parameter-contract.md`](../plans/2026101811_model-parameter-contract.md).
+Plan: [`plans/2026101811_✅model-parameter-contract.md`](../plans/2026101811_✅model-parameter-contract.md).
 This records P0 and P1 — the gateway half. P2 (the container, on labpc's 3090) is not done.
 
 ## What was wrong

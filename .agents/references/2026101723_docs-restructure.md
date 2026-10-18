@@ -1,6 +1,6 @@
 # The site, restructured around what a participant asks
 
-Plan: [`../plans/2026101723_docs-restructure.md`](../plans/2026101723_docs-restructure.md). Rules that
+Plan: [`../plans/2026101723_✅docs-restructure.md`](../plans/2026101723_✅docs-restructure.md). Rules that
 bind the result: [`../rules/docs.md`](../rules/docs.md).
 
 ## What the site is now
