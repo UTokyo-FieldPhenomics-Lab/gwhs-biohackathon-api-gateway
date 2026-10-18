@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,9 @@ REPO = Path(__file__).resolve().parents[2]
 
 FIXTURE = REPO / "docs/scripts/fixtures/model-directory.json"
 """A recorded `GET /models`, refreshed by hand when a container's declaration changes."""
+
+SITE = REPO / "zensical.toml"
+"""The site's own configuration, whose `nav` is the only list of pages a reader can reach."""
 
 START = "<!-- parameters:start -->"
 END = "<!-- parameters:end -->"
@@ -127,6 +131,41 @@ def render(entry: dict[str, Any]) -> str:
     return "\n".join(rows)
 
 
+def navigation() -> set[str]:
+    """Every page path the site's navigation names.
+
+    Returns
+    -------
+    set of str
+        Paths as `zensical.toml` writes them, e.g. ``models/sam3.1-meta.md``.
+
+    Notes
+    -----
+    The Models section is enumerated there rather than collected from the directory, so a page can
+    exist, build, and answer its URL while no reader can reach it — which is exactly what happened
+    when the second model page landed. This is the check that would have caught it.
+    """
+
+    def walk(node: Any) -> set[str]:
+        if isinstance(node, str):
+            return {node}
+        if isinstance(node, dict):
+            found: set[str] = set()
+            for value in node.values():
+                found |= walk(value)
+            return found
+        if isinstance(node, list):
+            found = set()
+            for item in node:
+                found |= walk(item)
+            return found
+        return set()
+
+    document = tomllib.loads(SITE.read_text(encoding="utf-8"))
+    # `nav` lives under `[project]`; everything the site configures does.
+    return walk(document["project"]["nav"])
+
+
 def rewrite(page: Path, table: str) -> bool:
     """Put a rendered table between the page's markers.
 
@@ -188,12 +227,18 @@ def main() -> int:
         # fails on the missing file rather than printing "already current" for the one page it knows.
         entries = directory["models"]
 
+    reachable = navigation()
     for entry in entries:
         page = args.page if (args.page and args.model) else (
             REPO / "docs" / "content" / "models" / f"{entry['id']}.md"
         )
         if not page.is_file():
             raise SystemExit(f"{page} does not exist; every model in the directory has a page")
+        if not args.page and f"models/{entry['id']}.md" not in reachable:
+            raise SystemExit(
+                f"models/{entry['id']}.md is not in zensical.toml's nav: the page builds and "
+                "answers its URL, and no reader can reach it"
+            )
         changed = rewrite(page, render(entry))
         print(f"{page.relative_to(REPO)}: {'rewritten' if changed else 'already current'}")
     return 0
