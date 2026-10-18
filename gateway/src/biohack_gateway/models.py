@@ -18,10 +18,11 @@ weighted choice, which are for a pool larger than this one, and no health loop, 
 :data:`RESPONSE_TIMEOUT_SECONDS` is what that costs.
 
 **Control parameters come from the model, not from here.** A model declares what it accepts — the
-prompt it can be given, the threshold it applies — and the gateway repeats that declaration in
-``GET /models`` and forwards the values verbatim. It is the one place the parameters appear, so a
-new model needs no gateway change, the same bargain the dataset surface strikes with a published
-index.
+prompt it can be given, the boxes and points it can be aimed with, the threshold it applies, the
+sizes it was run at — and the gateway repeats that declaration in ``GET /models``, refuses a name or
+a value the declaration does not answer for, and forwards the rest verbatim. The declaration is the
+one place the parameters appear: no parameter name is written in this package, so a new model needs
+no gateway change, the same bargain the dataset surface strikes with a published index.
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ import asyncio
 import http.client
 import json
 import logging
+import math
 import socket
 import threading
 import time
@@ -37,9 +39,9 @@ import urllib.parse
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, NoReturn
 
-from fastapi import APIRouter, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
 from biohack_gateway.dataset_index import Dataset
@@ -140,24 +142,55 @@ is measured into a time series — it is one verdict, replaced by the next one.
 
 
 class ModelParameter(BaseModel):
-    """One control parameter a model accepts, as the model declares it.
+    """One control parameter a model accepts, as the model itself declares it.
+
+    The shape is deliberately a fragment of a control protocol rather than a description: the
+    gateway validates a request against these fields, so what a model publishes here is what a
+    caller is allowed to send and nothing else.
 
     Attributes
     ----------
     name : str
-        The parameter's name, which is the query parameter's name on the predict routes.
-    default : str or float or None
+        The parameter's name, which is the query parameter's name on the predict routes. Copied
+        from the model's own vocabulary — a wrapper, not a dialect — so two models may name the
+        same idea differently and both are right.
+    type : str
+        How a value is read: ``text``, ``number``, ``boolean``, ``enum``, ``boxes`` or ``points``.
+        The last two are JSON arrays, one per parameter, in the image's own pixels.
+    default : str or float or bool or None
         What the model uses when the client sends nothing, where it has a default.
     minimum, maximum : float or None
         The accepted range, where the parameter is numeric and bounded.
+    values : list of float or None
+        The sizes or steps the model was actually run at, where a range would promise more than was
+        measured. A value above the largest is governed by :attr:`above_maximum`.
+    enum : list of str or None
+        The accepted values, where the parameter is one of a set.
+    max_length : int or None
+        How long a text value may be, in characters.
+    required : bool
+        Whether a request must carry it.
+    requires, excludes : list of str
+        Names that must be present with it, and names that must not be.
+    above_maximum : str
+        ``reject`` (the default) refuses a value above the ceiling; ``clamp`` lets it through, for
+        the container to answer at the ceiling and report that it did.
     description : str
         One line saying what the parameter does, safe to publish.
     """
 
     name: str
-    default: str | float | None = None
+    type: Literal["text", "number", "boolean", "enum", "boxes", "points"] = "text"
+    default: str | float | bool | None = None
     minimum: float | None = None
     maximum: float | None = None
+    values: list[float] | None = None
+    enum: list[str] | None = None
+    max_length: int | None = None
+    required: bool = False
+    requires: list[str] = field(default_factory=list)
+    excludes: list[str] = field(default_factory=list)
+    above_maximum: Literal["reject", "clamp"] = "reject"
     description: str = ""
 
 
@@ -181,6 +214,11 @@ class ModelSummary(BaseModel):
     max_in_flight : int
         Requests the answering backends declare they can hold at once, summed. Published rather than
         enforced: the concurrency gate is not implemented yet.
+    declared : bool
+        Whether any backend has ever answered what it serves. `False` means the parameter list below
+        is empty because nothing has said anything — not because the model takes nothing. The
+        distinction decides whether a query is validated at all, so it is published rather than
+        inferred from an empty list.
     parameters : list of ModelParameter
         What the model accepts. Empty where no backend has declared anything.
     machines : list of ComputedBy
@@ -198,6 +236,7 @@ class ModelSummary(BaseModel):
     resolution: int | None = None
     backends_up: int = 0
     max_in_flight: int = 0
+    declared: bool = False
     parameters: list[ModelParameter] = field(default_factory=list)
     machines: list[ComputedBy] = field(default_factory=list)
     checked_seconds_ago: int | None = None
@@ -248,6 +287,25 @@ class ComputedBy(BaseModel):
     torch: str | None = None
 
 
+class ModelWarning(BaseModel):
+    """Something a model did that the request did not ask for, and the request was not refused.
+
+    A clamp is the case this exists for: the container answers at its ceiling and says so. It keeps
+    the error contract's two-part shape — a stable code a program branches on and a sentence a human
+    reads — without being an error, because the answer is a real answer.
+
+    Attributes
+    ----------
+    code : str
+        Stable discriminant, such as ``resolution_clamped``.
+    message : str
+        One line saying what was done instead, safe to surface to the caller.
+    """
+
+    code: str
+    message: str
+
+
 class ModelPrediction(BaseModel):
     """The answer to a predict request, whatever the model was.
 
@@ -258,15 +316,20 @@ class ModelPrediction(BaseModel):
     objects : list of ObjectOut
         The same object shape the dataset surface returns, so one decoder reads both.
     resolution_used : int or None
-        The side the model actually ran at, where it reports one.
+        The side the model actually ran at, where it reports one. This is the field that explains a
+        mask's blockiness, and the one that makes a clamped `imgsz` visible without a warning.
     computed_by : ComputedBy or None
         The machine that produced the answer, where the backend reports one.
+    warnings : list of ModelWarning
+        Anything the model did instead of what was asked. Absent from an answer that needed none,
+        because the field is additive and the gateway relays rather than invents.
     """
 
     model: str
     objects: list[ObjectOut]
     resolution_used: int | None = None
     computed_by: ComputedBy | None = None
+    warnings: list[ModelWarning] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -803,6 +866,7 @@ class ModelRegistry:
             resolution=declared.resolution if declared else None,
             backends_up=len(live),
             max_in_flight=sum(backend.max_in_flight for backend in live),
+            declared=any(backend.declared for backend in backends),
             parameters=declared.parameters if declared else [],
             machines=[backend.machine for backend in live if backend.machine is not None],
             # The age of the newest look, not the oldest: the probe asks a model's backends in one
@@ -1152,10 +1216,14 @@ async def watch_pool(registry: ModelRegistry, interval: float | None = None) -> 
         await asyncio.to_thread(registry.probe)
 
 
-MAX_PROMPT_LENGTH = 200
-"""Characters one prompt may carry. The model reads a short phrase, and a query string is not a
-place to put a megabyte of text: every prompt is forwarded verbatim into the backend's query string,
-so an unbounded one is a cheap way to make the pool carry it."""
+MAX_QUERY_BYTES = 2048
+"""Bytes one query string may carry.
+
+A transport cap, not a parameter's: the whole query is forwarded verbatim to a backend, so an
+unbounded one is a cheap way to make the pool carry it. It replaced a 200-character cap on one
+parameter name, because the names belong to the model and this package may not know which of them is
+the long one. Two kilobytes is about sixty hand-written boxes.
+"""
 
 _IMAGE_MAGIC: tuple[tuple[bytes, str], ...] = (
     (b"\xff\xd8\xff", "image/jpeg"),
@@ -1208,6 +1276,189 @@ def _image_media_type(payload: bytes) -> str:
             "(a phone's HEIC or a camera RAW file needs converting to JPEG first)"
         ),
     )
+
+
+def _refuse(message: str) -> NoReturn:
+    """Refuse a request in the contract's own error shape.
+
+    Parameters
+    ----------
+    message : str
+        One line naming the declared parameter and what it accepts, never a value the caller sent.
+
+    Raises
+    ------
+    HTTPException
+        Always, with `400` and a message Swagger shows as the reason.
+    """
+    raise HTTPException(status_code=400, detail=message)
+
+
+def _accepted(declared: Mapping[str, ModelParameter]) -> str:
+    """Name what a model does accept, for the refusal that lists it."""
+    return ", ".join(declared) or "no parameters"
+
+
+def _as_number(parameter: ModelParameter, value: str) -> float:
+    """Read a numeric value, refusing anything that is not a finite number."""
+    try:
+        number = float(value)
+    except ValueError:
+        _refuse(f"{parameter.name} must be a number")
+    if not math.isfinite(number):
+        _refuse(f"{parameter.name} must be a finite number")
+    return number
+
+
+def _check_bounds(parameter: ModelParameter, number: float) -> None:
+    """Refuse a number the declaration does not accept, unless the ceiling is the container's.
+
+    A `clamp` ceiling is the one place a value outside the declaration is forwarded: the container
+    cannot go above what it was measured at, and answering at the ceiling with a warning is more
+    useful than a refusal. Everything below the smallest accepted value is a mistake either way.
+    """
+    clamped = parameter.above_maximum == "clamp"
+    if parameter.values is not None:
+        offered = ", ".join(f"{value:g}" for value in parameter.values)
+        if number < min(parameter.values):
+            _refuse(f"{parameter.name} is one of {offered}")
+        if number > max(parameter.values) and not clamped:
+            _refuse(f"{parameter.name} is one of {offered}")
+        return
+    if parameter.minimum is not None and number < parameter.minimum:
+        _refuse(f"{parameter.name} must be at least {parameter.minimum:g}")
+    if parameter.maximum is not None and number > parameter.maximum and not clamped:
+        _refuse(f"{parameter.name} must be at most {parameter.maximum:g}")
+
+
+def _check_geometry(parameter: ModelParameter, value: str) -> None:
+    """Refuse a boxes or points value whose shape is not the one this contract publishes.
+
+    Shape only. A box is four numbers in the image's pixels and an optional label; a point is two
+    and an optional label. Whether a coordinate lies inside the image, and what a positive or
+    negative label means to a particular model, is the backend's business — it already decoded the
+    image, and this surface keeps no image decoder of its own.
+    """
+    coordinates = 4 if parameter.type == "boxes" else 2
+    lengths = (coordinates, coordinates + 1)
+    try:
+        document = json.loads(value)
+    except json.JSONDecodeError:
+        _refuse(f"{parameter.name} must be a JSON array of arrays")
+    if not isinstance(document, list) or not document:
+        _refuse(f"{parameter.name} must be a non-empty JSON array of arrays")
+    for element in document:
+        if not isinstance(element, list) or len(element) not in lengths:
+            _refuse(
+                f"each {parameter.name} entry is {coordinates} numbers, "
+                f"optionally followed by a 1 or 0 label"
+            )
+        for coordinate in element[:coordinates]:
+            if isinstance(coordinate, bool) or not isinstance(coordinate, (int, float)):
+                _refuse(f"{parameter.name} coordinates must be numbers")
+            if isinstance(coordinate, float) and not math.isfinite(coordinate):
+                _refuse(f"{parameter.name} coordinates must be finite numbers")
+        if len(element) == coordinates + 1 and element[-1] not in (0, 1):
+            _refuse(f"the label on a {parameter.name} entry is 1 for positive or 0 for negative")
+
+
+def _check_value(parameter: ModelParameter, value: str) -> None:
+    """Refuse a value the declaration does not accept, in the parameter's own terms."""
+    if parameter.type == "number":
+        _check_bounds(parameter, _as_number(parameter, value))
+    elif parameter.type == "boolean":
+        if value.lower() not in {"true", "false", "1", "0"}:
+            _refuse(f"{parameter.name} must be true or false")
+    elif parameter.type == "enum":
+        offered = ", ".join(parameter.enum or [])
+        if value not in (parameter.enum or []):
+            _refuse(f"{parameter.name} is one of {offered}")
+    elif parameter.type in {"boxes", "points"}:
+        _check_geometry(parameter, value)
+    elif parameter.max_length is not None and len(value) > parameter.max_length:
+        _refuse(f"{parameter.name} must be at most {parameter.max_length} characters")
+
+
+def validate_query(summary: ModelSummary, pairs: Sequence[tuple[str, str]]) -> None:
+    """Refuse a query that the model did not declare, before it reaches a machine.
+
+    Validated against the model's own declaration, which is the only place its contract lives: this
+    function knows no parameter name of its own, and a model whose declaration is different is a
+    configuration change rather than a code change.
+
+    Parameters
+    ----------
+    summary : ModelSummary
+        The model's entry, as `GET /models/{model}` publishes it. Its :attr:`ModelSummary.declared`
+        decides whether there is anything to validate against.
+    pairs : sequence of (str, str)
+        The query string's items in order, so a repeated name can be told apart from a single one.
+
+    Raises
+    ------
+    HTTPException
+        `400` for a name the model did not declare, a value it does not accept, a parameter sent
+        twice, or a combination its declaration rules out.
+
+    Notes
+    -----
+    A model that has never declared anything is not validated at all. Its parameter list is empty
+    because the gateway has not read one, not because the model takes nothing — a container whose
+    `/health` answered with an unreadable body is the case — and refusing there would break a call
+    that works. `declared` is what keeps those two apart.
+    """
+    if not summary.declared:
+        return
+    declared = {parameter.name: parameter for parameter in summary.parameters}
+    seen: dict[str, str] = {}
+    for name, value in pairs:
+        parameter = declared.get(name)
+        if parameter is None:
+            _refuse(f"{name} is not a parameter; this model accepts {_accepted(declared)}")
+        if name in seen:
+            _refuse(f"{name} is sent once; a value that is a list is one JSON array")
+        seen[name] = value
+        _check_value(parameter, value)
+    for parameter in summary.parameters:
+        if parameter.name not in seen:
+            if parameter.required:
+                _refuse(f"{parameter.name} is required")
+            continue
+        for other in parameter.requires:
+            if other not in seen:
+                _refuse(f"{parameter.name} requires {other}")
+        for other in parameter.excludes:
+            if other in seen:
+                _refuse(f"{parameter.name} and {other} are not accepted together")
+
+
+def _checked_query(summary: ModelSummary, request: Request) -> str:
+    """Validate a request's query and return it, verbatim, for forwarding.
+
+    Parameters
+    ----------
+    summary : ModelSummary
+        The model the request is for, as the directory publishes it.
+    request : Request
+        The incoming request.
+
+    Returns
+    -------
+    str
+        The raw query string, which is what a backend receives: the values are the model's and this
+        package does not decode and re-encode what it has only just validated.
+
+    Raises
+    ------
+    HTTPException
+        `400` when the query is over :data:`MAX_QUERY_BYTES`, or when
+        :func:`validate_query` refuses a name, a value, or a combination.
+    """
+    query = request.url.query
+    if len(query.encode("utf-8")) > MAX_QUERY_BYTES:
+        _refuse(f"the query string must be at most {MAX_QUERY_BYTES} bytes")
+    validate_query(summary, request.query_params.multi_items())
+    return query
 
 
 def create_model_router(
@@ -1298,17 +1549,6 @@ def create_model_router(
         model: str,
         request: Request,
         body: PredictInput,
-        prompt: str | None = Query(
-            None,
-            max_length=MAX_PROMPT_LENGTH,
-            description="The text the model is asked to find.",
-        ),
-        confidence_threshold: float | None = Query(
-            None,
-            ge=0.0,
-            le=1.0,
-            description="How sure the model must be before it reports an object.",
-        ),
     ) -> ModelPrediction:
         """Segment one image named by an address.
 
@@ -1317,13 +1557,10 @@ def create_model_router(
         model : str
             The model id from the path.
         request : Request
-            The incoming request, whose query string is forwarded verbatim.
+            The incoming request, whose query string is the model's own parameters. They are
+            validated against the declaration and then forwarded verbatim.
         body : PredictInput
             The address to resolve.
-        prompt : str or None, optional
-            The text prompt, where the model takes one.
-        confidence_threshold : float or None, optional
-            The confidence floor, where the model takes one.
 
         Returns
         -------
@@ -1333,14 +1570,16 @@ def create_model_router(
         Raises
         ------
         HTTPException
-            No model has that id; the address does not resolve; or every backend failed.
+            No model has that id; the query names something the model does not accept; the address
+            does not resolve; or every backend failed.
         """
-        registry.describe(model)  # refuses an unknown model before the address is even looked up
+        summary = registry.describe(model)
+        query = _checked_query(summary, request)
         url = _image_url(datasets, body.dataset, body.row, base)
         reply = registry.forward(
             model,
             path="predict",
-            query=request.url.query,
+            query=query,
             body=json.dumps({"input": {"url": url}}).encode(),
             content_type="application/json",
         )
@@ -1365,17 +1604,6 @@ def create_model_router(
         model: str,
         request: Request,
         file: UploadFile,
-        prompt: str | None = Query(
-            None,
-            max_length=MAX_PROMPT_LENGTH,
-            description="The text the model is asked to find.",
-        ),
-        confidence_threshold: float | None = Query(
-            None,
-            ge=0.0,
-            le=1.0,
-            description="How sure the model must be before it reports an object.",
-        ),
     ) -> ModelPrediction:
         """Segment one uploaded image.
 
@@ -1384,13 +1612,10 @@ def create_model_router(
         model : str
             The model id from the path.
         request : Request
-            The incoming request, whose query string is forwarded verbatim.
+            The incoming request, whose query string is the model's own parameters. They are
+            validated against the declaration and then forwarded verbatim.
         file : UploadFile
             The image. Read into memory and forwarded; never written to disk.
-        prompt : str or None, optional
-            The text prompt, where the model takes one.
-        confidence_threshold : float or None, optional
-            The confidence floor, where the model takes one.
 
         Returns
         -------
@@ -1400,7 +1625,8 @@ def create_model_router(
         Raises
         ------
         HTTPException
-            No model has that id, the upload is empty, or every backend failed.
+            No model has that id, the query names something the model does not accept, the upload is
+            empty, or every backend failed.
 
         Notes
         -----
@@ -1412,7 +1638,8 @@ def create_model_router(
         `predict` route is sync for the same reason; reading the body through `file.file` is what
         lets this one be.
         """
-        registry.describe(model)
+        summary = registry.describe(model)
+        query = _checked_query(summary, request)
         payload = file.file.read()
         if not payload:
             raise HTTPException(status_code=400, detail="the upload is empty")
@@ -1420,7 +1647,7 @@ def create_model_router(
         reply = registry.forward(
             model,
             path="predict/upload",
-            query=request.url.query,
+            query=query,
             body=payload,
             content_type=media_type,
         )

@@ -346,8 +346,8 @@ def test_the_model_page_loads_the_site_own_client(client: TestClient) -> None:
     the Clients page hands a participant to download — loaded by URL. A copy beside this module
     would be a second decoder to keep in step with the one the site promises is correct.
 
-    It is loaded as a **module**: the file is an ES module, and a classic `<script>` cannot parse its
-    `export` — the tag is what failed, silently, before this test named it.
+    It is loaded as a **module**: the file is an ES module, and a classic `<script>` cannot parse
+    its `export` — the tag is what failed, silently, before this test named it.
     """
     page = client.get(PLAY_PATH).text
 

@@ -42,8 +42,28 @@
     const value = parameter.default;
     const bounded = typeof parameter.minimum === "number" && typeof parameter.maximum === "number";
     const numeric = bounded || typeof value === "number";
-    const input = document.createElement("input");
-    if (numeric && bounded) {
+    const choices = parameter.values || parameter.enum;
+    let input;
+    if (Array.isArray(choices) && choices.length) {
+      // A declared set — the sizes a model was measured at, or the words it accepts — is a choice,
+      // not a number to type. This is why `values` exists in the declaration: a stride formula would
+      // invite a value nobody has run, and the page would have no way to show that.
+      input = document.createElement("select");
+      if (value === null || value === undefined) {
+        const empty = document.createElement("option");
+        empty.value = "";
+        empty.textContent = "—";
+        input.append(empty);
+      }
+      for (const choice of choices) {
+        const option = document.createElement("option");
+        option.value = String(choice);
+        option.textContent = String(choice);
+        input.append(option);
+      }
+      if (value !== null && value !== undefined) input.value = String(value);
+    } else if (numeric && bounded) {
+      input = document.createElement("input");
       input.type = "range";
       input.min = String(parameter.minimum);
       input.max = String(parameter.maximum);
@@ -52,16 +72,23 @@
         typeof value === "number" ? value : (parameter.minimum + parameter.maximum) / 2,
       );
     } else if (numeric) {
+      input = document.createElement("input");
       input.type = "number";
       input.step = "any";
       if (typeof value === "number") input.value = String(value);
       if (typeof parameter.minimum === "number") input.min = String(parameter.minimum);
       if (typeof parameter.maximum === "number") input.max = String(parameter.maximum);
     } else if (typeof value === "boolean") {
+      input = document.createElement("input");
       input.type = "checkbox";
       input.checked = value;
     } else {
+      input = document.createElement("input");
       input.type = "text";
+      // A geometry parameter is JSON in one value, so the placeholder shows the shape rather than
+      // describing it in a sentence the reader has to parse before typing.
+      if (parameter.type === "boxes") input.placeholder = "[[x, y, w, h, 1]]";
+      else if (parameter.type === "points") input.placeholder = "[[x, y, 1]]";
       if (value !== null && value !== undefined) input.value = String(value);
     }
     // A parameter the model declared no default for is sent only once the reader has touched

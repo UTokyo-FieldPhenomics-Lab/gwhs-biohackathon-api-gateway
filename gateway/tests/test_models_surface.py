@@ -245,6 +245,7 @@ def test_the_directory_lists_what_the_model_declares(client: TestClient) -> None
                 "resolution": 1008,
                 "backends_up": 2,
                 "max_in_flight": 2,
+                "declared": True,
                 "parameters": DECLARATION["parameters"],
                 # Two backends, two records — one per machine that answered, not one per model. Two
                 # identical entries mean an operator named two machines the same, which is theirs to
@@ -1299,8 +1300,13 @@ def test_an_upload_is_forwarded_with_the_type_its_bytes_are(
     assert body == png
 
 
-def test_a_prompt_longer_than_the_limit_is_refused(client: TestClient) -> None:
-    """A query string is not a place to put megabytes, and the field is one word of text."""
+def test_a_query_longer_than_the_cap_is_refused(client: TestClient) -> None:
+    """The cap is on the whole string, because the whole string is what a backend receives.
+
+    It replaced a per-parameter limit: with the parameter set belonging to the model, the gateway
+    cannot know which name is the long one, and a cap on the transport is what the reason for the
+    old field actually described.
+    """
     response = client.post(
         f"/models/{MODEL}/predict",
         headers=KEY,
@@ -1310,3 +1316,360 @@ def test_a_prompt_longer_than_the_limit_is_refused(client: TestClient) -> None:
 
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "invalid_request"
+
+
+# --------------------------------------------------------------------------------------------
+# The parameter contract: names, values, and combinations belong to the model, not to this package
+# --------------------------------------------------------------------------------------------
+
+ACCEPTED = ("prompt", "boxes", "points", "confidence_threshold", "imgsz")
+"""What the full fixture model declares, in the order it declares it."""
+
+PARAMETERS: list[dict[str, Any]] = [
+    {"name": "prompt", "type": "text", "default": "wheat head", "max_length": 200},
+    {"name": "boxes", "type": "boxes"},
+    {"name": "points", "type": "points"},
+    {
+        "name": "confidence_threshold",
+        "type": "number",
+        "default": 0.5,
+        "minimum": 0.0,
+        "maximum": 1.0,
+    },
+    {"name": "imgsz", "type": "number", "values": [672, 784, 896, 1008], "above_maximum": "clamp"},
+]
+FULL_DECLARATION: dict[str, Any] = {**DECLARATION, "parameters": PARAMETERS}
+
+SECOND_MODEL = "yolo-wheat"
+"""A model whose parameter set shares no name with SAM's, which is the point of the mechanism."""
+
+SECOND_DECLARATION: dict[str, Any] = {
+    **DECLARATION,
+    "model": SECOND_MODEL,
+    "parameters": [
+        {"name": "conf", "type": "number", "default": 0.25, "minimum": 0.0, "maximum": 1.0},
+        {"name": "iou", "type": "number", "default": 0.7, "minimum": 0.0, "maximum": 1.0},
+        {"name": "classes", "type": "text"},
+    ],
+}
+
+
+def client_for(
+    tmp_path: Path,
+    index_dir: Path,
+    declaration: dict[str, Any] | None,
+    *,
+    replies: Mapping[str, list[Reply]] | None = None,
+    health: list[Reply] | None = None,
+    models: Any = None,
+) -> tuple[TestClient, FakeBackends]:
+    """Build a client over a backend that declares this set of parameters.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        The test's temporary directory, for the token pool and the model list.
+    index_dir : Path
+        The fixture index addresses resolve through.
+    declaration : dict or None
+        What the backend answers at `/health`.
+    replies : mapping of str to list of Reply, optional
+        Programmed predict answers, per backend.
+    health : list of Reply, optional
+        Programmed declaration reads, which is how a test makes a backend unreadable.
+    models : Any
+        The model-to-backend list. `None` writes the fixture's two backends.
+
+    Returns
+    -------
+    tuple of (TestClient, FakeBackends)
+        The client and the transport, so a test can read what was forwarded.
+    """
+    backends = FakeBackends(replies=replies, declaration=declaration, health=health)
+    return next(build_client(tmp_path, index_dir, backends, models=models)), backends
+
+
+def test_an_undeclared_parameter_is_refused_and_the_accepted_ones_are_named(
+    tmp_path: Path, index_dir: Path
+) -> None:
+    """A typo is the common case, and the answer says what would have worked."""
+    client, backends = client_for(tmp_path, index_dir, FULL_DECLARATION)
+
+    response = client.post(
+        f"/models/{MODEL}/predict?promt=wheat", headers=KEY, json={"dataset": "gwhd", "row": 0}
+    )
+
+    assert response.status_code == 400
+    body = response.json()["error"]
+    assert body["code"] == "invalid_request"
+    for name in ACCEPTED:
+        assert name in body["message"], "a caller fixes a typo from the accepted list"
+    assert backends.predict_calls() == [], "nothing undeclared reaches a machine"
+
+
+def test_the_upload_route_refuses_the_same_way(tmp_path: Path, index_dir: Path) -> None:
+    """Two routes, one contract: a parameter the model does not take is refused on both."""
+    client, backends = client_for(tmp_path, index_dir, FULL_DECLARATION)
+
+    response = client.post(
+        f"/models/{MODEL}/predict/upload?promt=head",
+        headers=KEY,
+        files={"file": ("photo.jpg", b"\xff\xd8\xff\xe0 bytes", "image/jpeg")},
+    )
+
+    assert response.status_code == 400
+    assert "prompt" in response.json()["error"]["message"]
+    assert backends.predict_calls() == []
+
+
+def test_a_value_outside_the_declared_bounds_is_refused(tmp_path: Path, index_dir: Path) -> None:
+    """The bound is the model's, read from its declaration, not a number in a signature."""
+    client, backends = client_for(tmp_path, index_dir, FULL_DECLARATION)
+
+    response = client.post(
+        f"/models/{MODEL}/predict?confidence_threshold=2",
+        headers=KEY,
+        json={"dataset": "gwhd", "row": 0},
+    )
+
+    assert response.status_code == 400
+    assert "confidence_threshold" in response.json()["error"]["message"]
+    assert backends.predict_calls() == []
+
+
+def test_a_text_parameter_over_its_declared_length_is_refused(
+    tmp_path: Path, index_dir: Path
+) -> None:
+    """A length the model declares is enforced by the gateway, and it is the model's number."""
+    client, _ = client_for(tmp_path, index_dir, FULL_DECLARATION)
+
+    response = client.post(
+        f"/models/{MODEL}/predict",
+        headers=KEY,
+        json={"dataset": "gwhd", "row": 0},
+        params={"prompt": "w" * 300},
+    )
+
+    assert response.status_code == 400
+    assert "prompt" in response.json()["error"]["message"]
+
+
+def test_a_model_that_declares_nothing_refuses_every_parameter(
+    tmp_path: Path, index_dir: Path
+) -> None:
+    """An empty declaration is a model with no knobs, not a gateway with nothing to check."""
+    client, _ = client_for(tmp_path, index_dir, {**DECLARATION, "parameters": []})
+
+    response = client.post(
+        f"/models/{MODEL}/predict?prompt=wheat", headers=KEY, json={"dataset": "gwhd", "row": 0}
+    )
+
+    assert response.status_code == 400
+
+
+def test_a_model_whose_declaration_could_not_be_read_forwards_its_query(
+    tmp_path: Path, index_dir: Path
+) -> None:
+    """A machine that answers but whose body cannot be read is not a model with no parameters.
+
+    Refusing here would break a call that works: the container takes the parameter, the gateway
+    merely failed to read the list. The published `declared` flag is what tells the two apart.
+    """
+    client, backends = client_for(
+        tmp_path, index_dir, None, health=[Reply(status=200, body=b"not a declaration")]
+    )
+
+    listed = client.get("/models", headers=KEY).json()["models"][0]
+    response = client.post(
+        f"/models/{MODEL}/predict?prompt=wheat%20head&boxes=%5B%5B1%2C2%2C3%2C4%2C1%5D%5D",
+        headers=KEY,
+        json={"dataset": "gwhd", "row": 0},
+    )
+
+    assert listed["declared"] is False
+    assert listed["parameters"] == []
+    assert response.status_code == 200
+    assert backends.predict_calls()[0][1].endswith(
+        "/predict?prompt=wheat%20head&boxes=%5B%5B1%2C2%2C3%2C4%2C1%5D%5D"
+    )
+
+
+def test_the_directory_says_whether_a_model_has_declared_anything(
+    client: TestClient,
+) -> None:
+    """An empty parameter list because nothing answered is not one that is empty by design."""
+    entry = client.get(f"/models/{MODEL}", headers=KEY).json()
+
+    assert entry["declared"] is True
+    assert entry["parameters"] == DECLARATION["parameters"]
+
+
+def test_structured_parameters_are_forwarded_untouched(tmp_path: Path, index_dir: Path) -> None:
+    """Boxes and points travel as one JSON value each, in the image's own pixel coordinates."""
+    client, backends = client_for(tmp_path, index_dir, FULL_DECLARATION)
+    query = "points=%5B%5B10%2C20%2C1%5D%2C%5B30%2C40%2C0%5D%5D&boxes=%5B%5B1%2C2%2C3%2C4%5D%5D"
+
+    response = client.post(
+        f"/models/{MODEL}/predict?{query}", headers=KEY, json={"dataset": "gwhd", "row": 0}
+    )
+
+    assert response.status_code == 200
+    assert backends.predict_calls()[0][1].endswith(f"/predict?{query}")
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "boxes=%5B1%2C2%2C3%2C4%5D",  # one box, not a list of boxes
+        "boxes=%5B%5D",  # nothing to prompt with
+        "boxes=%5B%5B1%2C2%2C3%5D%5D",  # three numbers
+        "boxes=%5B%5B1%2C2%2C3%2C4%2C2%5D%5D",  # a label that is neither positive nor negative
+        "boxes=%5B%5B1%2C2%2C3%2C%22x%22%5D%5D",  # not a number
+        "boxes=not-json",
+        "points=%5B%5B1%2C2%2C3%2C4%5D%5D",  # four numbers on a point
+        "points=%5B%5B1%5D%5D",  # one number
+    ],
+)
+def test_a_malformed_structured_value_is_refused(
+    tmp_path: Path, index_dir: Path, query: str
+) -> None:
+    """The shape is checked here; what the points mean stays the backend's business."""
+    client, backends = client_for(tmp_path, index_dir, FULL_DECLARATION)
+
+    response = client.post(
+        f"/models/{MODEL}/predict?{query}", headers=KEY, json={"dataset": "gwhd", "row": 0}
+    )
+
+    assert response.status_code == 400
+    assert backends.predict_calls() == []
+
+
+def test_a_size_above_the_ceiling_is_forwarded_for_the_container_to_clamp(
+    tmp_path: Path, index_dir: Path
+) -> None:
+    """The ceiling is the container's to apply: it answers at the ceiling and says so."""
+    client, backends = client_for(tmp_path, index_dir, FULL_DECLARATION)
+
+    response = client.post(
+        f"/models/{MODEL}/predict?imgsz=2000", headers=KEY, json={"dataset": "gwhd", "row": 0}
+    )
+
+    assert response.status_code == 200
+    assert backends.predict_calls()[0][1].endswith("/predict?imgsz=2000")
+
+
+def test_a_size_below_the_smallest_declared_one_is_refused(tmp_path: Path, index_dir: Path) -> None:
+    """Below the smallest value the model was measured at is not a preference, it is a mistake."""
+    client, backends = client_for(tmp_path, index_dir, FULL_DECLARATION)
+
+    response = client.post(
+        f"/models/{MODEL}/predict?imgsz=320", headers=KEY, json={"dataset": "gwhd", "row": 0}
+    )
+
+    assert response.status_code == 400
+    assert "imgsz" in response.json()["error"]["message"]
+    assert backends.predict_calls() == []
+
+
+def test_a_parameter_repeated_is_refused(tmp_path: Path, index_dir: Path) -> None:
+    """One name, one value. A list expanded into repeated names is a client bug, and it is named."""
+    client, backends = client_for(tmp_path, index_dir, FULL_DECLARATION)
+
+    response = client.post(
+        f"/models/{MODEL}/predict?prompt=a&prompt=b",
+        headers=KEY,
+        json={"dataset": "gwhd", "row": 0},
+    )
+
+    assert response.status_code == 400
+    message = response.json()["error"]["message"]
+    assert "once" in message or "JSON" in message
+    assert backends.predict_calls() == []
+
+
+def test_a_warning_from_a_backend_reaches_the_caller(tmp_path: Path, index_dir: Path) -> None:
+    """A clamp is done, not refused, so the answer carries what was done and why."""
+    clamped = {
+        **PREDICTION,
+        "resolution_used": 1008,
+        "warnings": [
+            {"code": "resolution_clamped", "message": "ran at 1008: the container's ceiling"}
+        ],
+    }
+    client, _ = client_for(
+        tmp_path,
+        index_dir,
+        FULL_DECLARATION,
+        replies={FIRST: [Reply(status=200, body=json.dumps(clamped).encode())]},
+    )
+
+    body = client.post(
+        f"/models/{MODEL}/predict?imgsz=2000", headers=KEY, json={"dataset": "gwhd", "row": 0}
+    ).json()
+
+    assert body["resolution_used"] == 1008
+    assert body["warnings"] == clamped["warnings"]
+
+
+def test_no_warning_key_when_the_backend_sent_none(tmp_path: Path, index_dir: Path) -> None:
+    """The field is additive: an answer that needed no warning does not grow one."""
+    client, _ = client_for(tmp_path, index_dir, FULL_DECLARATION)
+
+    body = client.post(
+        f"/models/{MODEL}/predict?imgsz=2000", headers=KEY, json={"dataset": "gwhd", "row": 0}
+    ).json()
+
+    assert "warnings" not in body, "the gateway relays the backend; it does not invent a warning"
+
+
+def test_a_boolean_default_survives_the_declaration(tmp_path: Path, index_dir: Path) -> None:
+    """A boolean is a boolean: `true` used to arrive as `1.0`, which no control can render."""
+    declaration = {
+        **DECLARATION,
+        "parameters": [{"name": "recursive", "type": "boolean", "default": True}],
+    }
+    client, _ = client_for(tmp_path, index_dir, declaration)
+
+    (parameter,) = client.get(f"/models/{MODEL}", headers=KEY).json()["parameters"]
+
+    assert parameter["type"] == "boolean"
+    assert parameter["default"] is True
+
+
+def test_a_second_model_shape_validates_through_the_same_path(
+    tmp_path: Path, index_dir: Path
+) -> None:
+    """No SAM name appears in the mechanism: a model with its own names is configured, not coded."""
+    client, backends = client_for(
+        tmp_path,
+        index_dir,
+        SECOND_DECLARATION,
+        models={SECOND_MODEL: [FIRST, SECOND]},
+    )
+
+    accepted = client.post(
+        f"/models/{SECOND_MODEL}/predict?conf=0.3&iou=0.6",
+        headers=KEY,
+        json={"dataset": "gwhd", "row": 0},
+    )
+    refused = client.post(
+        f"/models/{SECOND_MODEL}/predict?prompt=wheat",
+        headers=KEY,
+        json={"dataset": "gwhd", "row": 0},
+    )
+
+    assert accepted.status_code == 200
+    assert backends.predict_calls()[0][1].endswith("/predict?conf=0.3&iou=0.6")
+    assert refused.status_code == 400
+    assert "conf" in refused.json()["error"]["message"]
+
+
+def test_the_openapi_document_no_longer_names_a_parameter(tmp_path: Path, index_dir: Path) -> None:
+    """The signature is the model's; listing `prompt` here would list it for every model."""
+    client, _ = client_for(tmp_path, index_dir, FULL_DECLARATION)
+
+    operation = client.app.openapi()["paths"]["/models/{model}/predict"]["post"]
+    names = {parameter["name"] for parameter in operation.get("parameters", [])}
+
+    assert "prompt" not in names
+    assert "confidence_threshold" not in names
