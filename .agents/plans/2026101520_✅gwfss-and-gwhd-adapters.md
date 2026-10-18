@@ -1,7 +1,10 @@
 # gwfss and gwhd readers, and the vocabulary as a URL
 
-Status: **implemented and pre-flighted locally; not committed or deployed, by request** (2026-10-15) — see
-[`../references/2026101520_gwfss-and-gwhd-adapters.md`](../references/2026101520_gwfss-and-gwhd-adapters.md)
+Status: **done** (implemented 2026-10-15; committed and published since). Both adapters live in
+`datasets/src/biohack_datasets/adapters/`, the published objects answer
+(`https://data.global-wheat.com/gwfss/images/00000004.png` was fetched for a model run on 2026-10-18),
+and the gateway lists both datasets. The record is
+[`../references/2026101520_gwfss-and-gwhd-adapters.md`](../references/2026101520_gwfss-and-gwhd-adapters.md).
 
 ## Goal and acceptance
 

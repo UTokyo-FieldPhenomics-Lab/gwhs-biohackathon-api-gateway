@@ -1,9 +1,12 @@
 # The GPU compute plane: the pool, the protocol, and what a container must declare
 
-Status: **planned, nothing implemented** (2026-10-16). The rule changes this plan owes are listed
-under [Rule changes owed at implementation](#rule-changes-owed-at-implementation) and are
-deliberately **not** written into `.agents/rules/` yet — each lands in the pull request that
-implements the thing needing it, per the process in [`../rules/project.md`](../rules/project.md).
+Status: **implemented and serving** (planned 2026-10-16; carrying traffic by 2026-10-18). The three
+acceptance criteria hold on the live pool: backends are added and removed through `models.json`
+alone, a dead backend costs one timeout and the next answers, and a container that cannot fit
+refuses at start-up with its numbers. Three machines serve `sam3.1-meta` behind the gateway
+(`backends_up: 3` on 2026-10-18). The rules this plan owed landed in `gateway.md` (routing, the
+lane-based cap), `backend-pool.md` and `models.md`. **Not built:** the rented `eu-central-1` path,
+and the additional machines in the pool table — so this plan stays open until that decision is made.
 
 ## Goal and acceptance
 

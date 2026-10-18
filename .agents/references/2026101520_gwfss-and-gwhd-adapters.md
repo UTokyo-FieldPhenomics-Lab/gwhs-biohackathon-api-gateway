@@ -1,6 +1,6 @@
 # gwfss and gwhd readers: the mask schema, the box schema, and the vocabulary as a URL
 
-Plan: [`../plans/2026101520_gwfss-and-gwhd-adapters.md`](../plans/2026101520_gwfss-and-gwhd-adapters.md).
+Plan: [`../plans/2026101520_✅gwfss-and-gwhd-adapters.md`](../plans/2026101520_✅gwfss-and-gwhd-adapters.md).
 Left uncommitted and undeployed by request; the complete selection is cached locally.
 
 ## What was built
