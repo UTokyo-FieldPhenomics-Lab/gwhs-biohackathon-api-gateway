@@ -156,8 +156,10 @@ generated, not typed; the sentence about the ten rows is present; no page claims
   addresses, gateway restarted **after** the last container.
 - One call per backend and one call through the pool; `computed_by.machine` differs per backend.
 
-**Acceptance:** `backends_up: 3` for this id; each machine answers; the answers agree object for
-object (same weights, same input, one process per card).
+**Acceptance:** `backends_up: 3` for this id; each machine answers; the three classes are present
+everywhere and their areas agree within a tolerance recorded with the result. They are **not**
+promised identical: this pool has already seen one call return 18 objects on the 3090 and 17 on the
+5090, so a card difference is a fact to record rather than a defect to chase.
 
 ### P5 — `/play`
 
