@@ -334,7 +334,9 @@ public final class GlobalWheat {
          * @param model the model id
          * @param dataset the dataset id
          * @param row the absolute row; the gateway resolves the address, so no URL is ever sent
-         * @param params the model's own parameters, forwarded verbatim under their own names
+         * @param params the model's own parameters, under their own names. A geometry parameter is
+         *     one value: {@code Map.of("boxes", List.of(List.of(480, 290, 110, 360, 1)))} goes out
+         *     as one JSON array in one parameter, never as five repeated names
          * @return {@code model}, {@code objects}, {@code resolution_used}, {@code computed_by}
          */
         public Map<String, Object> predict(
@@ -343,7 +345,7 @@ public final class GlobalWheat {
             body.put("dataset", dataset);
             body.put("row", row);
             Map<String, Object> answer =
-                    call("POST", "/models/" + segment(model) + "/predict", params, body, null);
+                    call("POST", "/models/" + segment(model) + "/predict", modelQuery(params), body, null);
             decodeObjects(answer);
             return answer;
         }
@@ -370,7 +372,12 @@ public final class GlobalWheat {
         public Map<String, Object> predict_file(
                 String model, byte[] image, String filename, Map<String, ?> params) {
             Map<String, Object> answer =
-                    call("POST", "/models/" + segment(model) + "/predict/upload", params, null, image);
+                    call(
+                            "POST",
+                            "/models/" + segment(model) + "/predict/upload",
+                            modelQuery(params),
+                            null,
+                            image);
             decodeObjects(answer);
             return answer;
         }
@@ -484,6 +491,36 @@ public final class GlobalWheat {
             body.write(image);
             body.write(("\r\n--" + BOUNDARY + "--\r\n").getBytes(StandardCharsets.UTF_8));
             return body.toByteArray();
+        }
+
+        /**
+         * Encode a model's own parameters: one value per name, a list or map as one JSON value.
+         *
+         * <p>A geometry parameter is an array of entries — {@code boxes} is {@code [[x, y, w, h,
+         * label], …]} — so it travels as one JSON value in one parameter. Repeating the name instead
+         * is what the dataset filters do, and it means something else there.
+         *
+         * @param params the caller's map, which may be null
+         * @return the same names with values ready for {@link #queryString}, or null when there is
+         *     nothing to send
+         */
+        private static Map<String, Object> modelQuery(Map<String, ?> params) {
+            if (params == null || params.isEmpty()) {
+                return null;
+            }
+            Map<String, Object> query = new LinkedHashMap<>();
+            for (Map.Entry<String, ?> entry : params.entrySet()) {
+                Object value = entry.getValue();
+                if (value == null) {
+                    continue;
+                }
+                boolean scalar =
+                        value instanceof String
+                                || value instanceof Number
+                                || value instanceof Boolean;
+                query.put(entry.getKey(), scalar ? String.valueOf(value) : Json.write(value));
+            }
+            return query.isEmpty() ? null : query;
         }
 
         /** Encode query pairs, repeating a key for every value of a list. */

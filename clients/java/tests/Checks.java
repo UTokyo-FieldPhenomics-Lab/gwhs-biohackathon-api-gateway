@@ -58,6 +58,24 @@ public final class Checks {
             check("predict sends the parameters in the query", predictCall.contains("prompt=wheat+head"));
             check("the key travels", predictCall.contains("key=t0ken"));
 
+            client.predict(
+                    "sam3.1-meta",
+                    "gwhs-temp",
+                    7,
+                    Map.of(
+                            "prompt",
+                            "wheat head",
+                            "boxes",
+                            List.of(List.of(480, 290, 110, 360, 1)),
+                            "recursive",
+                            true));
+            String geometryCall = seen.get(seen.size() - 1);
+            check(
+                    "a geometry parameter is one JSON value",
+                    geometryCall.contains("boxes=%5B%5B480%2C290%2C110%2C360%2C1%5D%5D"));
+            check("a geometry parameter is not five names", !geometryCall.contains("boxes=480"));
+            check("a boolean is true", geometryCall.contains("recursive=true"));
+
             Map<String, Object> uploaded =
                     client.predict_file("sam3.1-meta", new byte[] {(byte) 0xff, (byte) 0xd8}, "photo.jpg", null);
             check("an upload answers", uploaded.get("model").equals("sam3.1-meta"));

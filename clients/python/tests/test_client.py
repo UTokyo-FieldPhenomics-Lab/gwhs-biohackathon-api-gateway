@@ -192,6 +192,45 @@ def test_an_upload_sends_the_file_as_the_field_named_file(tmp_path: Path) -> Non
     assert session.calls[0]["url"].endswith("/predict/upload")
 
 
+def test_a_geometry_parameter_is_one_json_value_in_one_parameter() -> None:
+    """`boxes` is an array of boxes, not five parameters named `boxes`."""
+    client, session = make([Reply(200, {"model": "sam3.1-meta", "objects": []})])
+    client.predict(
+        "sam3.1-meta", "gwhs-temp", 7, prompt="wheat head", boxes=[[480, 290, 110, 360, 1]]
+    )
+
+    assert session.calls[0]["params"] == {
+        "prompt": "wheat head",
+        "boxes": "[[480,290,110,360,1]]",
+    }
+
+
+def test_an_upload_encodes_a_geometry_parameter_the_same_way() -> None:
+    """One encoder, both routes: the upload carries the same query contract as the address call."""
+    client, session = make([Reply(200, {"model": "sam3.1-meta", "objects": []})])
+    client.predict_file(
+        "sam3.1-meta", b"\x89PNG\r\n\x1a\n", points=[[256, 300, 1], [40, 40, 0]]
+    )
+
+    assert session.calls[0]["params"] == {"points": "[[256,300,1],[40,40,0]]"}
+
+
+def test_a_boolean_is_true_or_false_and_an_unset_value_is_left_out() -> None:
+    """`True` is not what the API reads, and a `None` is the caller saying nothing."""
+    client, session = make([Reply(200, {"model": "sam3.1-meta", "objects": []})])
+    client.predict("sam3.1-meta", "gwhs-temp", 7, recursive=True, prompt=None)
+
+    assert session.calls[0]["params"] == {"recursive": "true"}
+
+
+def test_the_filter_repetition_stays_on_the_dataset_routes() -> None:
+    """`?split=train&split=val` narrows a listing, so that convention must not follow `boxes`."""
+    client, session = make([Reply(200, {"images": [], "next_cursor": None})])
+    client.images("gwhd", split=["train", "val"])
+
+    assert session.calls[0]["params"] == {"split": ["train", "val"], "limit": 100}
+
+
 def test_the_key_is_not_sent_to_the_image_plane(monkeypatch: pytest.MonkeyPatch) -> None:
     """``data.*`` is public, and a token in a CDN's logs is a token leaked."""
     seen: dict[str, Any] = {}

@@ -141,6 +141,40 @@ test("an upload sends the file as the field named file", async () => {
   assert.equal(calls[0].options.headers["Content-Type"], undefined); // the boundary is the runtime's
 });
 
+test("a geometry parameter is one JSON value in one parameter", async () => {
+  const {client: api, calls} = client([{status: 200, body: {model: "sam3.1-meta", objects: []}}]);
+  await api.predict("sam3.1-meta", "gwhs-temp", 7, {
+    prompt: "wheat head",
+    boxes: [[480, 290, 110, 360, 1]],
+  });
+  const url = new URL(calls[0].url);
+  assert.equal(url.searchParams.get("prompt"), "wheat head");
+  assert.equal(url.searchParams.get("boxes"), "[[480,290,110,360,1]]");
+  assert.equal(url.searchParams.getAll("boxes").length, 1, "one parameter, not five");
+});
+
+test("an upload encodes a geometry parameter the same way", async () => {
+  const {client: api, calls} = client([{status: 200, body: {model: "sam3.1-meta", objects: []}}]);
+  await api.predict_file("sam3.1-meta", new Uint8Array([0x89, 0x50]), {
+    points: [[256, 300, 1], [40, 40, 0]],
+  });
+  const url = new URL(calls[0].url);
+  assert.equal(url.searchParams.get("points"), "[[256,300,1],[40,40,0]]");
+});
+
+test("a boolean is true or false", async () => {
+  const {client: api, calls} = client([{status: 200, body: {model: "sam3.1-meta", objects: []}}]);
+  await api.predict("sam3.1-meta", "gwhs-temp", 7, {recursive: true});
+  assert.equal(new URL(calls[0].url).searchParams.get("recursive"), "true");
+});
+
+test("a dataset filter keeps its repeated names", async () => {
+  const {client: api, calls} = client([{status: 200, body: {images: [], next_cursor: null}}]);
+  await api.images("gwhd", {split: ["train", "val"]});
+  const url = new URL(calls[0].url);
+  assert.deepEqual(url.searchParams.getAll("split"), ["train", "val"]);
+});
+
 test("label_masks uses the dataset's palette and refuses an undeclared colour", async () => {
   const classes = [{id: 0, name: "head", color: "#32ff84"}];
   const {client: api, calls} = client([{status: 200, body: {dataset: "gwfss", classes}}]);

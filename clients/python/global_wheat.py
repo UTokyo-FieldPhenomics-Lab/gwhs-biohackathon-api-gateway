@@ -30,6 +30,7 @@ Dependencies are ``requests`` and ``numpy``, and nothing else.
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
@@ -404,7 +405,9 @@ class Client:
         **params
             The model's own control parameters — ``prompt="wheat head"``,
             ``confidence_threshold=0.5``. ``client.model(id)["parameters"]`` lists them with their
-            defaults and bounds; omitting one uses the model's default.
+            defaults and bounds; omitting one uses the model's default. A geometry parameter is one
+            value: ``boxes=[[480, 290, 110, 360, 1]]`` goes out as one JSON array in one parameter,
+            never as five repeated names.
 
         Returns
         -------
@@ -421,7 +424,7 @@ class Client:
         body: dict[str, Any] = self._call(
             "POST",
             f"/models/{_segment(model)}/predict",
-            params=params,
+            params=_model_params(params),
             json={"dataset": dataset, "row": row},
         )
         if decode:
@@ -448,7 +451,8 @@ class Client:
         decode : bool, optional
             Attach each object's ``mask``, decoded.
         **params
-            The model's own control parameters.
+            The model's own control parameters, encoded as in :meth:`predict` — a geometry value is
+            one JSON array in one parameter.
 
         Returns
         -------
@@ -465,7 +469,7 @@ class Client:
         body: dict[str, Any] = self._call(
             "POST",
             f"/models/{_segment(model)}/predict/upload",
-            params=params,
+            params=_model_params(params),
             files={"file": (name, payload, media_type)},
         )
         if decode:
@@ -548,6 +552,43 @@ class Client:
         if response.status_code >= 400:
             raise _error(response)
         return response.json()
+
+
+def _model_params(params: Mapping[str, Any]) -> dict[str, Any]:
+    """Encode a model's own parameters for the query string.
+
+    Parameters
+    ----------
+    params : mapping
+        The `**params` a caller passed to :meth:`Client.predict` or
+        :meth:`Client.predict_file`.
+
+    Returns
+    -------
+    dict
+        The same names with values ready for the transport. A scalar is passed through — the
+        transport knows how to write a number — while a list or a mapping becomes **one JSON value**
+        in **one** parameter, which is the shape a geometry parameter declares: ``boxes`` is
+        ``[[x, y, w, h, label], …]``, not five ``boxes`` parameters. A boolean becomes ``true`` or
+        ``false``, because ``True`` is not what the API reads.
+
+    Notes
+    -----
+    This is only for the model routes. The dataset filters keep the opposite convention on purpose:
+    ``?split=train&split=val`` narrows a listing, and that repetition is a different contract with a
+    different meaning, so it is not something a client may generalise.
+    """
+    encoded: dict[str, Any] = {}
+    for name, value in params.items():
+        if value is None:
+            continue
+        if isinstance(value, bool):
+            encoded[name] = "true" if value else "false"
+        elif isinstance(value, (list, tuple, dict)):
+            encoded[name] = json.dumps(value, separators=(",", ":"))
+        else:
+            encoded[name] = value
+    return encoded
 
 
 def rle_decode(counts: str, size: Sequence[int]) -> np.ndarray:

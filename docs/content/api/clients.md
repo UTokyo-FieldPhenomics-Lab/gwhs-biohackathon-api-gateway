@@ -100,8 +100,15 @@ only how a mask is handed to you — a NumPy array, a typed array, or a `Mask` �
 
 Filter pairs are ordinary keyword arguments — `images("gwhd", split="train")` — and repeating a key
 narrows the result rather than widening it, exactly as the API defines it. A model's parameters are
-passed the same way, by their own names, and are forwarded verbatim:
+passed the same way, by their own names, and are encoded for you:
 `predict("sam3.1-meta", "gwhd", 0, prompt="wheat head", confidence_threshold=0.5)`.
+
+One difference is worth knowing, because it is the only place the two conventions meet. A **geometry
+parameter is one value**: `predict("sam3.1-meta", "gwhd", 0, boxes=[[480, 290, 110, 360, 1]])` goes
+out as one JSON array in one parameter, not as five `boxes=` names. Every client you download does
+that encoding itself; if you are writing your own, [Raw HTTP § Model
+parameters](http.md#model-parameters) is the contract. A repeated name is a dataset filter and means
+something different there, which is why the second one is never generalised into the first.
 
 ## When it goes wrong
 

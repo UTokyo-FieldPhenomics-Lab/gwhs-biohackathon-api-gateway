@@ -176,12 +176,14 @@ class Client {
    * @param {string} dataset
    * @param {number} row The absolute row of the pinned revision; the gateway resolves the address.
    * @param {object} [options] `decode`, plus the model's own parameters —
-   *   `{prompt: "wheat head", confidence_threshold: 0.5}`. `model(id).parameters` lists them.
+   *   `{prompt: "wheat head", confidence_threshold: 0.5}`. `model(id).parameters` lists them. A
+   *   geometry parameter is one value: `{boxes: [[480, 290, 110, 360, 1]]}` goes out as one JSON
+   *   array in one parameter, never as five repeated names.
    * @returns {Promise<object>}
    */
   async predict(model, dataset, row, {decode = true, ...params} = {}) {
     const body = await this.#call("POST", `/models/${segment(model)}/predict`, {
-      params: defined(params),
+      params: modelParams(params),
       json: {dataset, row},
     });
     if (decode) decode_objects(body);
@@ -193,7 +195,7 @@ class Client {
    * @param {string} model The model id.
    * @param {Blob|File|Uint8Array|ArrayBuffer} image JPEG, PNG, WebP, TIFF or GIF, at most 15 MB;
    *   the API decides the type from the bytes rather than from a declared one.
-   * @param {object} [options] `decode`, plus the model's own parameters.
+   * @param {object} [options] `decode`, plus the model's own parameters, encoded as in `predict`.
    * @returns {Promise<object>}
    */
   async predict_file(model, image, {decode = true, ...params} = {}) {
@@ -201,7 +203,7 @@ class Client {
     const name = image.name ?? "upload.jpg";
     form.append("file", image instanceof Blob ? image : new Blob([image]), name);
     const body = await this.#call("POST", `/models/${segment(model)}/predict/upload`, {
-      params: defined(params),
+      params: modelParams(params),
       form,
     });
     if (decode) decode_objects(body);
@@ -346,6 +348,24 @@ function segment(value) {
 /** Drop the options a caller left unset, so no empty parameter is sent. */
 function defined(options) {
   return Object.fromEntries(Object.entries(options).filter(([, value]) => value != null));
+}
+
+/**
+ * Encode a model's own parameters for the query string.
+ *
+ * A scalar is written as it is; an array or object becomes **one JSON value in one parameter**, which
+ * is the shape a geometry parameter declares — `boxes` is `[[x, y, w, h, label], …]`, not five
+ * `boxes` parameters. This is the model routes only: on the dataset routes a repeated name is the
+ * contract (`?split=train&split=val` narrows a listing), and that is a different meaning.
+ * @param {object} params
+ * @returns {object} The same names, with values ready for the transport.
+ */
+function modelParams(params) {
+  const encoded = {};
+  for (const [name, value] of Object.entries(defined(params))) {
+    encoded[name] = typeof value === "object" ? JSON.stringify(value) : String(value);
+  }
+  return encoded;
 }
 
 /** Abort a request that outlives the client's budget. */
