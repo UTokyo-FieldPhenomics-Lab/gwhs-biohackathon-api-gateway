@@ -166,12 +166,14 @@ select. The fix is to name `imgsz` to find its `values`, and
 parameter is a page that will disagree with the next model. The sizes are the control's business, so
 the line keeps `resolution` and a comment says why.
 
-**One pre-existing fragility, found rather than caused:** the page's connect flow fans out (datasets,
-image detail, image bytes, models), and on a pool whose `max_in_flight` sums to 1 the per-token gate
-refuses one of them — observed as `GET /models refused: 1 in flight`, leaving the model dropdown
-empty until the key is re-entered. Production has three backends, so the gate is three and the page
-sits just under it. Whether the page should sequence its loads or retry a `429` is a decision for the
-deploy, not something to fix quietly inside this one.
+**One pre-existing fragility, found rather than caused — and now fixed by the lane rule.** The page's
+connect flow fans out (datasets, image detail, models), and under the old counting every one of those
+requests took a concurrency slot: on a pool whose `max_in_flight` summed to one, `GET /models` was
+refused with `429` and the model dropdown stayed empty until the key was re-entered. A slot is a GPU
+lane, so only the two predict routes take one now — `app.occupies_lane` decides, and
+`test_a_metadata_read_never_takes_an_inference_lane` holds a predict open while the directory, the
+dataset listing and a row's detail all answer `200` on a cap of one. The page's own load costs no
+lane at all.
 
 ## Left open
 

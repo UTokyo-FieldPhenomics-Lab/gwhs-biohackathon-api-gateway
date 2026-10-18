@@ -65,10 +65,13 @@ Rules state what must hold and why — never history, measurements, or anecdotes
 - **GPU backends are never publicly reachable.** The gateway reaches them over an authenticated,
   non-public link and each requires its own token; CloudFront never forwards to them. The transport —
   a VPN, a private network, or a provider tunnel — is an implementation detail, not a fixed route.
-- **Keys are revocable, and each one is capped at the pool's width.** A token may have as many
-  requests in flight as the pool is wide — three against three cards, never four: `ConcurrencyGate`
-  counts per team in the request middleware and refuses the next one with `429 quota_exceeded`
-  immediately rather than queueing it. The ceiling is the pool's declared `max_in_flight` summed, the
+- **Keys are revocable, and each one is capped at the pool's width — in inferences, not in
+  requests.** A token may have as many *inferences* in flight as the pool is wide — three against
+  three cards, never four: `ConcurrencyGate` counts per team in the request middleware and refuses the
+  next one with `429 quota_exceeded` immediately rather than queueing it. Only the two predict routes
+  take a slot, because a lane is GPU time and a metadata read queues behind no machine: counting the
+  dataset surface would let a page's own load be refused while every card was idle, which is the
+  complaint the cap exists to prevent. The ceiling is the pool's declared `max_in_flight` summed, the
   same number `GET /models` publishes, so a cap that disagreed with the published capacity would be a
   second source of truth about it; a fourth card raises it without a code change. Revocation removes
   the team from the token pool, and attribution comes from the

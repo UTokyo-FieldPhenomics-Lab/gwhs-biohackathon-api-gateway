@@ -13,9 +13,10 @@ here.
   exceptions are named in the code — `/health` and the two pages the documentation site frames —
   because they carry no data and could not be opened in a browser if the page itself needed a header.
   An absent pool is a closed gateway rather than an open one, and a pool that has never parsed answers
-  `503 unavailable` until it does. A token may have three requests in flight and no more — the pool's
-  own width — refused as `429 quota_exceeded` rather than queued; a per-key request *rate* is still
-  absent. [`project.md`](project.md) holds that decision and its triggers.
+  `503 unavailable` until it does. A token may have three *inferences* in flight and no more — the
+  pool's own width — refused as `429 quota_exceeded` rather than queued; `occupies_lane` is what
+  decides which routes are counted, and it counts only the two predict routes, because a metadata
+  read holds no GPU. A per-key request *rate* is still absent. [`project.md`](project.md) holds that decision and its triggers.
 - **Images reach clients through the public `data.*` plane**, so nothing has to be anonymous.
 - **Routing is a sequential retry over interchangeable backends.** Try backends in order, **idle ones
   first and then the shortest queue** — a backend is only known to be unhealthy *after* an attempt
