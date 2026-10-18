@@ -318,6 +318,15 @@ on the 3090 (`8.6`, Ampere) and 17 on the 5090 (`12.0`, Blackwell), with the sam
 torch on both — see
 [`../.agents/references/2026101711_two-backends-differ-on-the-same-call.md`](../.agents/references/2026101711_two-backends-differ-on-the-same-call.md).
 
+**A new image is three acts, and the third is the one forgotten.** Build it, **re-create** the
+container (`docker rm -f` then the run line — an image change is never a `restart`), and **restart the
+gateway after the containers**. A backend's declaration is read once, at the gateway's first contact,
+and is never re-read while the process lives: a container that now declares five parameters, behind a
+gateway that cached two, publishes two, validates against two, and refuses `boxes` as an unknown name.
+Measured 2026-10-18, during the parameter-surface deploy: all three backends were rebuilt and running,
+`GET /models` still showed the old declaration, and a `boxes` call answered `400` until the gateway was
+restarted.
+
 **Prove it from the gateway host, not from the machine.**
 `curl http://<private address>:12711/health` is the path a participant's request takes; from the
 machine itself, `127.0.0.1` proves only that the container listens — on Windows that is a different
