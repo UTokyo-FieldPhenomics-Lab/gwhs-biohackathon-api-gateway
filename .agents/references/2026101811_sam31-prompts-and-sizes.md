@@ -142,6 +142,37 @@ as `[[480,290,110,360,1]]`. That is the one place this was cheaper than expected
 Checked: Python 23 passed (1 skipped) and `ruff`/`mypy` clean, JavaScript 16 passed, Java `all checks
 passed`, gateway 198 passed, site builds `--strict`.
 
+## The live demo, checked against the rebuilt container (2026-10-18)
+
+Three things asked of `/play` with the new declaration, in a browser against a local gateway pointing
+at the rebuilt image:
+
+1. **It renders five parameters with no change to the page.** `prompt`, `boxes` and `points` are text
+   fields (the two geometry ones carry their shape as a placeholder), `confidence_threshold` is a
+   slider, and `imgsz` is a `<select>` of the four declared sizes — the `values`-as-a-select branch
+   added in P1 is what makes that possible.
+2. **It sends a geometry parameter correctly, and did before.** `play.js` builds its query with
+   `URLSearchParams.set(name, value)`, which never expanded a list — so `boxes` went out as one JSON
+   value while the three downloaded clients were splitting it. The page's own "equivalent curl" line
+   showed `...?prompt=wheat+head&boxes=%5B%5B0%2C+0%2C+211%2C+165%2C+1%5D%5D&confidence_threshold=0.25&imgsz=1008`.
+3. **The recorded known-good answer still reproduces exactly.** `gwfss` row 4, `prompt=wheat head`,
+   `confidence_threshold=0.25`: **18 objects, Σ mask = Σ area = 109,419 px**, `resolution_used` 1008,
+   `category` `wheat head`, `lab-3090`. That is the table on `examples/demo.md` — the container's
+   arithmetic did not move, so neither the page's numbers nor `known-good.jpg` need touching.
+
+One non-change worth recording: the model line says "runs at 1008 px" while four sizes sit in the
+select. The fix is to name `imgsz` to find its `values`, and
+`test_the_model_page_names_no_model_and_no_parameter` forbids exactly that — a page that names a
+parameter is a page that will disagree with the next model. The sizes are the control's business, so
+the line keeps `resolution` and a comment says why.
+
+**One pre-existing fragility, found rather than caused:** the page's connect flow fans out (datasets,
+image detail, image bytes, models), and on a pool whose `max_in_flight` sums to 1 the per-token gate
+refuses one of them — observed as `GET /models refused: 1 in flight`, leaving the model dropdown
+empty until the key is re-entered. Production has three backends, so the gate is three and the page
+sits just under it. Whether the page should sequence its loads or retry a `429` is a decision for the
+deploy, not something to fix quietly inside this one.
+
 ## Left open
 
 - **The submodule pointer is not bumped.** `rules/models.md` says push before recording, and the push is
