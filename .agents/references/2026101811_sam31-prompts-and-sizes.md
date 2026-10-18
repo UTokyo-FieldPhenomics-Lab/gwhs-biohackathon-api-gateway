@@ -115,6 +115,33 @@ Content changed: the model page gained **Prompting** (text/box/point, with the m
 parameter and why; and `api/http.md` carries the encoding once under **Model parameters**, which the
 model page links to instead of repeating.
 
+## The clients (P5)
+
+One paragraph of the contract had to reach three files: **a geometry parameter is one JSON value in
+one parameter**. All three clients expanded a list into repeated names — `global-wheat.js` with
+`Array.isArray(value) ? value : [value]`, Python through `requests`' own `params=` handling, Java in
+`queryString` — so `boxes=[[480,290,110,360,1]]` left as five names and came back a `400`. The
+gateway's refusal message would have been the only clue, and it would have looked like the caller's
+mistake.
+
+Each client gained one encoder applied to the model routes only:
+
+| language | function | list | boolean | `None` |
+|---|---|---|---|---|
+| Python | `_model_params` | `json.dumps(..., separators=(",", ":"))` | `true`/`false` | dropped |
+| JavaScript | `modelParams` | `JSON.stringify` | `String(true)` → `true` | dropped by `defined` |
+| Java | `modelQuery` | the file's own `Json.write` | `String.valueOf` → `true` | skipped |
+
+The dataset routes deliberately keep repetition: `?split=train&split=val` narrows a listing. A test in
+each language pins that half too, so a later "simplification" that routes filters through the new
+encoder fails rather than silently changing what a filter means.
+
+Java needed no new dependency: `Json.write` already existed for bodies and writes `List.of(List.of(...))`
+as `[[480,290,110,360,1]]`. That is the one place this was cheaper than expected.
+
+Checked: Python 23 passed (1 skipped) and `ruff`/`mypy` clean, JavaScript 16 passed, Java `all checks
+passed`, gateway 198 passed, site builds `--strict`.
+
 ## Left open
 
 - **The submodule pointer is not bumped.** `rules/models.md` says push before recording, and the push is

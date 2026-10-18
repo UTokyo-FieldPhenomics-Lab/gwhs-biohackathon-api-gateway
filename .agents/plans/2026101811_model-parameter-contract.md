@@ -321,15 +321,16 @@ forwards, and refuses `prompt` with a message listing what *it* accepts. No cont
 `models.json` entry and no page were added, as instructed — those are a configuration change and a
 new folder when there is a model to put in them.
 
-**P5 — clients.** The signature does not change: `predict(model, dataset, row, prompt="wheat head")`
-is still the call. What changes is the **value encoding**, and it is not cosmetic: both clients turn a
-list into a repeated parameter today — `global-wheat.js:229-235` loops
-`Array.isArray(value) ? value : [value]` and appends one entry per item, and Python's `requests` does
-the same with `params=`. So `boxes=[[480, 290, 110, 360, 1]]` would leave as five `boxes=` parameters
-or one comma-joined string, and arrive as a 400 nobody can explain. In `predict` and `predict_file`
-only, a non-scalar value is encoded once with `json.dumps` / `JSON.stringify` / a hand-rolled encoder
-in Java; in `images` the repetition stays, because dataset filters need it. Three small helpers, one
-test each, one docstring line each pointing at `GET /models/{model}`.
+**P5 — done (2026-10-18).** The signatures did not change; the encoding did. Each client now takes a
+non-scalar parameter value and writes it as **one JSON value in one parameter**, where all three used
+to expand a list into repeated names (`global-wheat.js` looped `Array.isArray(value) ? value : [value]`
+and `requests` did the same for `params=`): `_model_params` in Python, `modelParams` in JavaScript,
+`modelQuery` in Java — the last one reusing the file's existing `Json.write`, so no new dependency.
+A boolean becomes `true`/`false` (Python's `str(True)` is not what the API reads), and a `None` is
+dropped rather than sent as `None`. The dataset routes keep repetition, because
+`?split=train&split=val` narrows a listing and is a different contract; a test in each language pins
+both halves so the two conventions cannot be folded together later. `api/clients.md` says the
+difference in one paragraph and points at the encoding contract.
 
 ## Tests to write first (P1)
 
