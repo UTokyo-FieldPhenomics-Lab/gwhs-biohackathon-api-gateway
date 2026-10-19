@@ -1,0 +1,188 @@
+{
+ "row": {
+  "window_start_ms": 1792425955218,
+  "window_ms": 61009,
+  "requests_total": 923,
+  "machines": {
+   "lab-3090": {
+    "lines": 244,
+    "distinct_updates": 123,
+    "mean_util": 23.76,
+    "median_util": 16.0,
+    "share_above_50": 0.164,
+    "share_zero": 0.443,
+    "interval_median_ms": 250,
+    "interval_p95_ms": 251,
+    "interval_max_ms": 259,
+    "window_ms": 61009,
+    "coverage": 1.0,
+    "zero_runs": 34,
+    "longest_zero_run_ms": 1500,
+    "last_busy_in_window_ms": 60498,
+    "requests": 275,
+    "gpu_ms_per_request": 52.7
+   },
+   "homepc-4090": {
+    "lines": 244,
+    "distinct_updates": 122,
+    "mean_util": 29.42,
+    "median_util": 19.5,
+    "share_above_50": 0.279,
+    "share_zero": 0.287,
+    "interval_median_ms": 250,
+    "interval_p95_ms": 251,
+    "interval_max_ms": 251,
+    "window_ms": 61009,
+    "coverage": 1.0,
+    "zero_runs": 21,
+    "longest_zero_run_ms": 2000,
+    "last_busy_in_window_ms": 60661,
+    "requests": 339,
+    "gpu_ms_per_request": 52.9
+   },
+   "lab-5090": {
+    "lines": 239,
+    "distinct_updates": 122,
+    "mean_util": 24.23,
+    "median_util": 17,
+    "share_above_50": 0.234,
+    "share_zero": 0.339,
+    "interval_median_ms": 253.0,
+    "interval_p95_ms": 266,
+    "interval_max_ms": 280,
+    "window_ms": 61009,
+    "coverage": 0.991,
+    "zero_runs": 28,
+    "longest_zero_run_ms": 2024.0,
+    "last_busy_in_window_ms": 58964,
+    "requests": 309,
+    "gpu_ms_per_request": 47.8
+   }
+  },
+  "health": {
+   "homepc-4090:12711": {
+    "samples": 121,
+    "busy": 0.198,
+    "interval_median_ms": 525.0
+   },
+   "homepc-4090:12712": {
+    "samples": 119,
+    "busy": 0.05,
+    "interval_median_ms": 525.0
+   },
+   "lab-3090:12711": {
+    "samples": 116,
+    "busy": 0.241,
+    "interval_median_ms": 550
+   },
+   "lab-3090:12712": {
+    "samples": 116,
+    "busy": 0.069,
+    "interval_median_ms": 550
+   },
+   "lab-5090:12711": {
+    "samples": 111,
+    "busy": 0.288,
+    "interval_median_ms": 570.5
+   },
+   "lab-5090:12712": {
+    "samples": 111,
+    "busy": 0.036,
+    "interval_median_ms": 572.0
+   }
+  }
+ },
+ "upload": {
+  "window_start_ms": 1792426081904,
+  "window_ms": 61979,
+  "requests_total": 348,
+  "machines": {
+   "lab-3090": {
+    "lines": 248,
+    "distinct_updates": 122,
+    "mean_util": 10.62,
+    "median_util": 0.0,
+    "share_above_50": 0.056,
+    "share_zero": 0.694,
+    "interval_median_ms": 250,
+    "interval_p95_ms": 251,
+    "interval_max_ms": 252,
+    "window_ms": 61979,
+    "coverage": 1.0,
+    "zero_runs": 31,
+    "longest_zero_run_ms": 4500,
+    "last_busy_in_window_ms": 60907,
+    "requests": 126,
+    "gpu_ms_per_request": 52.2
+   },
+   "homepc-4090": {
+    "lines": 248,
+    "distinct_updates": 122,
+    "mean_util": 9.28,
+    "median_util": 0.0,
+    "share_above_50": 0.073,
+    "share_zero": 0.75,
+    "interval_median_ms": 250,
+    "interval_p95_ms": 251,
+    "interval_max_ms": 251,
+    "window_ms": 61979,
+    "coverage": 1.0,
+    "zero_runs": 24,
+    "longest_zero_run_ms": 9000,
+    "last_busy_in_window_ms": 59915,
+    "requests": 103,
+    "gpu_ms_per_request": 55.8
+   },
+   "lab-5090": {
+    "lines": 244,
+    "distinct_updates": 124,
+    "mean_util": 8.82,
+    "median_util": 0.0,
+    "share_above_50": 0.057,
+    "share_zero": 0.713,
+    "interval_median_ms": 253,
+    "interval_p95_ms": 265,
+    "interval_max_ms": 267,
+    "window_ms": 61979,
+    "coverage": 0.996,
+    "zero_runs": 27,
+    "longest_zero_run_ms": 5313,
+    "last_busy_in_window_ms": 59411,
+    "requests": 119,
+    "gpu_ms_per_request": 45.9
+   }
+  },
+  "health": {
+   "homepc-4090:12711": {
+    "samples": 118,
+    "busy": 0.102,
+    "interval_median_ms": 548
+   },
+   "homepc-4090:12712": {
+    "samples": 118,
+    "busy": 0.008,
+    "interval_median_ms": 548
+   },
+   "lab-3090:12711": {
+    "samples": 117,
+    "busy": 0.051,
+    "interval_median_ms": 550.0
+   },
+   "lab-3090:12712": {
+    "samples": 117,
+    "busy": 0.111,
+    "interval_median_ms": 550.0
+   },
+   "lab-5090:12711": {
+    "samples": 113,
+    "busy": 0.071,
+    "interval_median_ms": 571.0
+   },
+   "lab-5090:12712": {
+    "samples": 113,
+    "busy": 0.053,
+    "interval_median_ms": 571.5
+   }
+  }
+ }
+}

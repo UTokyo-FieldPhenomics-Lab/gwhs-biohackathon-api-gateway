@@ -1,0 +1,17 @@
+{
+ "lab-3090": {
+  "launched_epoch_ms": 1792425935388,
+  "returncode": 0,
+  "stderr": ""
+ },
+ "homepc-4090": {
+  "launched_epoch_ms": 1792425935388,
+  "returncode": 0,
+  "stderr": ""
+ },
+ "lab-5090": {
+  "launched_epoch_ms": 1792425935389,
+  "returncode": 1,
+  "stderr": "** WARNING: connection is not using a post-quantum key exchange algorithm.\n** This session may be vulnerable to \"store now, decrypt later\" attacks.\n** The server may need to be upgraded. See https://openssh.com/pq.html"
+ }
+}

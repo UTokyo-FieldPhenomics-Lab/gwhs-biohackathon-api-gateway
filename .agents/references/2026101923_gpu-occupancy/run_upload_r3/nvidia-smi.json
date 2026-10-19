@@ -1,0 +1,17 @@
+{
+ "lab-3090 (local)": {
+  "returncode": 0,
+  "stdout": "0 %, 10378 MiB",
+  "stderr": ""
+ },
+ "homepc-4090": {
+  "returncode": 0,
+  "stdout": "0 %, 9687 MiB",
+  "stderr": ""
+ },
+ "lab-5090": {
+  "returncode": 0,
+  "stdout": "50 %, 8601 MiB",
+  "stderr": "** WARNING: connection is not using a post-quantum key exchange algorithm.\n** This session may be vulnerable to \"store now, decrypt later\" attacks.\n** The server may need to be upgraded. See https://openssh.com/pq.html"
+ }
+}

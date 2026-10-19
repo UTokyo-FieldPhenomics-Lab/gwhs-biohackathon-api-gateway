@@ -1,0 +1,174 @@
+{
+ "row": {
+  "window_s_r2": 60.89,
+  "window_s_r3": 61.01,
+  "requests_r2": 891,
+  "requests_r3": 923,
+  "requests_delta": {
+   "abs": 32,
+   "rel": 0.036
+  },
+  "throughput_rps_r2": 14.63,
+  "throughput_rps_r3": 15.13,
+  "p50_r2": 687.0,
+  "p50_r3": 675.0,
+  "p50_delta": {
+   "abs": -12.0,
+   "rel": -0.017
+  },
+  "p95_r2": 1388.0,
+  "p95_r3": 1207.0,
+  "p95_delta": {
+   "abs": -181.0,
+   "rel": -0.13
+  },
+  "mean_util_mean_r2": 29.22,
+  "mean_util_mean_r3": 25.8,
+  "card_ms_total_r2": 53374,
+  "card_ms_total_r3": 47227,
+  "card_ms_per_request_r2": 59.9,
+  "card_ms_per_request_r3": 51.2,
+  "machines": {
+   "lab-3090": {
+    "mean_util_r2": 38.8,
+    "mean_util_r3": 23.76,
+    "mean_util_delta": {
+     "abs": -15.04,
+     "rel": -0.388
+    },
+    "gpu_ms_per_request_r2": 85.9,
+    "gpu_ms_per_request_r3": 52.7,
+    "gpu_ms_per_request_delta": {
+     "abs": -33.2,
+     "rel": -0.386
+    },
+    "requests_r2": 275,
+    "requests_r3": 275,
+    "health_in_flight_1_r2": 0.25,
+    "health_in_flight_1_r3": 0.241
+   },
+   "homepc-4090": {
+    "mean_util_r2": 30.89,
+    "mean_util_r3": 29.42,
+    "mean_util_delta": {
+     "abs": -1.47,
+     "rel": -0.048
+    },
+    "gpu_ms_per_request_r2": 57.0,
+    "gpu_ms_per_request_r3": 52.9,
+    "gpu_ms_per_request_delta": {
+     "abs": -4.1,
+     "rel": -0.072
+    },
+    "requests_r2": 330,
+    "requests_r3": 339,
+    "health_in_flight_1_r2": 0.185,
+    "health_in_flight_1_r3": 0.198
+   },
+   "lab-5090": {
+    "mean_util_r2": 17.96,
+    "mean_util_r3": 24.23,
+    "mean_util_delta": {
+     "abs": 6.27,
+     "rel": 0.349
+    },
+    "gpu_ms_per_request_r2": 38.2,
+    "gpu_ms_per_request_r3": 47.8,
+    "gpu_ms_per_request_delta": {
+     "abs": 9.6,
+     "rel": 0.251
+    },
+    "requests_r2": 286,
+    "requests_r3": 309,
+    "health_in_flight_1_r2": 0.191,
+    "health_in_flight_1_r3": 0.288
+   }
+  }
+ },
+ "upload": {
+  "window_s_r2": 62.95,
+  "window_s_r3": 61.98,
+  "requests_r2": 331,
+  "requests_r3": 348,
+  "requests_delta": {
+   "abs": 17,
+   "rel": 0.051
+  },
+  "throughput_rps_r2": 5.26,
+  "throughput_rps_r3": 5.61,
+  "p50_r2": 2135.0,
+  "p50_r3": 1969.0,
+  "p50_delta": {
+   "abs": -166.0,
+   "rel": -0.078
+  },
+  "p95_r2": 3826.0,
+  "p95_r3": 3548.0,
+  "p95_delta": {
+   "abs": -278.0,
+   "rel": -0.073
+  },
+  "mean_util_mean_r2": 11.99,
+  "mean_util_mean_r3": 9.57,
+  "card_ms_total_r2": 22636,
+  "card_ms_total_r3": 17800,
+  "card_ms_per_request_r2": 68.4,
+  "card_ms_per_request_r3": 51.2,
+  "machines": {
+   "lab-3090": {
+    "mean_util_r2": 14.87,
+    "mean_util_r3": 10.62,
+    "mean_util_delta": {
+     "abs": -4.25,
+     "rel": -0.286
+    },
+    "gpu_ms_per_request_r2": 83.6,
+    "gpu_ms_per_request_r3": 52.2,
+    "gpu_ms_per_request_delta": {
+     "abs": -31.4,
+     "rel": -0.376
+    },
+    "requests_r2": 112,
+    "requests_r3": 126,
+    "health_in_flight_1_r2": 0.0,
+    "health_in_flight_1_r3": 0.051
+   },
+   "homepc-4090": {
+    "mean_util_r2": 12.24,
+    "mean_util_r3": 9.28,
+    "mean_util_delta": {
+     "abs": -2.96,
+     "rel": -0.242
+    },
+    "gpu_ms_per_request_r2": 68.8,
+    "gpu_ms_per_request_r3": 55.8,
+    "gpu_ms_per_request_delta": {
+     "abs": -13.0,
+     "rel": -0.189
+    },
+    "requests_r2": 112,
+    "requests_r3": 103,
+    "health_in_flight_1_r2": 0.0,
+    "health_in_flight_1_r3": 0.102
+   },
+   "lab-5090": {
+    "mean_util_r2": 8.85,
+    "mean_util_r3": 8.82,
+    "mean_util_delta": {
+     "abs": -0.03,
+     "rel": -0.003
+    },
+    "gpu_ms_per_request_r2": 52.1,
+    "gpu_ms_per_request_r3": 45.9,
+    "gpu_ms_per_request_delta": {
+     "abs": -6.2,
+     "rel": -0.119
+    },
+    "requests_r2": 107,
+    "requests_r3": 119,
+    "health_in_flight_1_r2": 0.018,
+    "health_in_flight_1_r3": 0.071
+   }
+  }
+ }
+}
