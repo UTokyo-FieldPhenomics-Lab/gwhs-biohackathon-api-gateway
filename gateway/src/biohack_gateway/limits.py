@@ -11,10 +11,14 @@ them a lane would let a page's own load be refused while no machine was busy, wh
 opposite of what the cap is for. `app.occupies_lane` is the one place that decides; the middleware
 applies it.
 
-**The ceiling is the pool's declared width**, read from the same declarations `GET /models` sums,
-so a cap that disagreed with the published capacity would be a second source of truth about it. On
-three backends that is three. It follows the pool rather than being written down twice: a fourth
-card raises it, and a stopped backend lowers it.
+**The ceiling is a policy number, not the pool's width.** It used to be the sum of the backends'
+declared `max_in_flight`, on the argument that a cap which disagreed with the published capacity
+would be a second source of truth about it. That argument stops working the moment one machine
+carries several models: the published width counts *containers*, and a machine with three models has
+three of them on one card, so a derived cap would hand every team a wider allowance whenever a
+container was added — a capacity change dressed as a fairness change. The ceiling is now
+`DEFAULT_MAX_CONCURRENT_PER_TOKEN`, written down once and changed deliberately, and the two numbers
+are free to disagree: the width says what the pool can hold, the cap says what one team may hold.
 
 **The refusal is immediate, not a queue.** A `429` tells a client to slow down and it can act on
 that; a request parked behind an invisible queue cannot tell whether it will be served in one second
@@ -33,6 +37,17 @@ from collections.abc import Callable
 
 Limit = int | Callable[[], int]
 """A fixed ceiling, or one read at each request from whoever knows the pool's width."""
+
+DEFAULT_MAX_CONCURRENT_PER_TOKEN = 3
+"""How many inferences one key may have in flight when the host sets no override.
+
+Three, because the pool is three cards and one inference per card is what stops a single team's
+loop from occupying all of them. It is a fairness figure and it does not move when a machine gains
+another model: a card carrying three containers is still one card.
+
+A host overrides the ceiling with `BIOHACK_MAX_CONCURRENT_PER_TOKEN`, and `0` disables the cap
+entirely; both are read once at startup, so neither can be changed by a request.
+"""
 
 
 class ConcurrencyGate:

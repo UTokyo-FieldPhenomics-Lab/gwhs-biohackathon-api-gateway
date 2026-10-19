@@ -36,7 +36,7 @@ from biohack_gateway.auth import Authenticator
 from biohack_gateway.dataset_index import DEFAULT_INDEX_DIR, load_datasets
 from biohack_gateway.datasets import DEFAULT_DATA_BASE_URL, create_dataset_router
 from biohack_gateway.frames import frame_reporter
-from biohack_gateway.limits import ConcurrencyGate
+from biohack_gateway.limits import DEFAULT_MAX_CONCURRENT_PER_TOKEN, ConcurrencyGate
 from biohack_gateway.models import (
     DEFAULT_MODELS_FILE,
     ModelRegistry,
@@ -437,9 +437,10 @@ def create_app(
         How the gateway reaches a backend. Injectable so a test can answer for one without starting
         one, which is what lets the surface's tests exercise the real gate and error contract.
     max_concurrent_per_token : int or None, optional
-        The cap on one token's requests in flight. `None` follows the pool's declared width, `0`
-        disables the cap, and a number fixes it — the last two only for measuring the pool from one
-        key.
+        The cap on one token's requests in flight. `None` takes
+        :data:`biohack_gateway.limits.DEFAULT_MAX_CONCURRENT_PER_TOKEN`, `0` disables the cap, and a
+        number fixes it — the last two only for measuring the pool from one key. It is a policy
+        number and is deliberately not derived from the pool's published width.
 
     Returns
     -------
@@ -448,7 +449,9 @@ def create_app(
     """
     registry = ModelRegistry(load_models(models_path), backend_token, model_transport)
     slots = ConcurrencyGate(
-        registry.pool_width if max_concurrent_per_token is None else max_concurrent_per_token
+        DEFAULT_MAX_CONCURRENT_PER_TOKEN
+        if max_concurrent_per_token is None
+        else max_concurrent_per_token
     )
 
     @asynccontextmanager

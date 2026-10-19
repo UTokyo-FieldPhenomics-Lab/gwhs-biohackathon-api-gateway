@@ -1470,12 +1470,12 @@ def test_the_lane_is_only_the_two_predict_routes() -> None:
 def test_a_token_cannot_hold_more_than_three_requests_at_once(
     tmp_path: Path, index_dir: Path
 ) -> None:
-    """A key is capped at the pool's own width, and another team's key is untouched by it.
+    """A key may hold three inferences, and another team's key is untouched by it.
 
-    The cap is what stops one team's loop from occupying every lane while others wait: three is the
-    pool's declared `max_in_flight`, so a team may reach the pool's width and never exceed it. The
-    fourth request is refused at once rather than queued, because a wait nobody can see is worse
-    than an answer the client can act on.
+    The cap is what stops one team's loop from occupying every lane while others wait. Three is the
+    policy number, not the pool's width: a team reaches the ceiling and never exceeds it. The fourth
+    request is refused at once rather than queued, because a wait nobody can see is worse than an
+    answer the client can act on.
     """
     delay = 0.5
     other_team, other_token = "gw-02", "Qv7mNp2Rt5Wx8Zc3Bk6Hd9Lj4Fs1Gy0At"
@@ -1538,12 +1538,73 @@ def test_a_token_cannot_hold_more_than_three_requests_at_once(
         next(served, None)
 
 
+def test_the_cap_does_not_widen_when_a_backend_declares_more(
+    tmp_path: Path, index_dir: Path
+) -> None:
+    """Four declared lanes do not buy one key a fourth inference.
+
+    The published width counts containers; the cap is a fairness policy, so a machine that gains
+    another model must not widen every team's allowance with it. This is the whole point of the
+    decoupling, and the two numbers are asserted to disagree.
+    """
+    delay = 0.4
+    declaration = {**DECLARATION, "max_in_flight": 2}
+
+    def transport(
+        method: str, url: str, headers: Mapping[str, str], body: bytes | None, timeout: float
+    ) -> Reply:
+        if "/health" in url:
+            return Reply(status=200, body=json.dumps(declaration).encode())
+        time.sleep(delay)
+        return Reply(status=200, body=json.dumps(PREDICTION).encode())
+
+    app = create_app(
+        tokens_path=_pool_path(tmp_path),
+        index_dir=index_dir,
+        data_base_url=BASE,
+        models_path=_models_path(tmp_path, [FIRST, SECOND]),
+        backend_token=BACKEND_TOKEN,
+        model_transport=transport,
+    )
+    served = _served_by_uvicorn(app)
+    port = next(served)
+    base = f"http://127.0.0.1:{port}"
+    ask = {"dataset": "gwhd", "row": 0}
+    try:
+        published = httpx.get(f"{base}/models", headers=KEY, timeout=30).json()
+        ladder = threading.Barrier(4)
+        held: list[int] = []
+
+        def send() -> None:
+            ladder.wait()
+            held.append(
+                httpx.post(
+                    f"{base}/models/{MODEL}/predict", headers=KEY, json=ask, timeout=30
+                ).status_code
+            )
+
+        senders = [threading.Thread(target=send) for _ in range(3)]
+        for sender in senders:
+            sender.start()
+        ladder.wait()
+        time.sleep(0.1)
+        refused = httpx.post(f"{base}/models/{MODEL}/predict", headers=KEY, json=ask, timeout=30)
+        for sender in senders:
+            sender.join(30)
+
+        assert published["models"][0]["max_in_flight"] == 4, "the pool did not publish its width"
+        assert held == [200, 200, 200]
+        assert refused.status_code == 429, "the cap followed the declared width"
+    finally:
+        next(served, None)
+
+
 def test_the_cap_can_be_raised_for_one_measurement(tmp_path: Path, index_dir: Path) -> None:
     """A host may override the ceiling, which is how one key carries a load test.
 
     The alternative was a second class of credential that exists only for us and is the thing most
     likely to be forgotten before an event; an environment variable read once at startup leaves no
-    standing bypass, because the pool's width is the default again after the restart.
+    standing bypass, because the policy default is back after the restart.
     """
     _assert_admitted(tmp_path, index_dir, cap=5, concurrent=6, served=5)
 

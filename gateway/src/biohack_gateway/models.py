@@ -944,36 +944,6 @@ class ModelRegistry:
             checked_seconds_ago=None if not checked else max(0, round(now - checked)),
         )
 
-    def pool_width(self) -> int:
-        """Report the widest a model's pool declares it can hold at once.
-
-        Returns
-        -------
-        int
-            The largest per-model sum of `max_in_flight` over the backends that are answering, at
-            least `1`. It is the number `GET /models` publishes, read as a capacity rather than as a
-            description, so the per-token cap that uses it cannot disagree with what a client is
-            told. One is the floor because a gateway with no backend live still authenticates and
-            must not refuse every request while it has nothing to route to — those requests answer
-            `503` from the model surface, which is the honest refusal.
-
-        Notes
-        -----
-        Taken under the same lock as routing, so a pool that is being re-probed cannot report a
-        width that never existed.
-        """
-        now = time.monotonic()
-        with self._lock:
-            widths = [
-                sum(
-                    backend.max_in_flight
-                    for backend in backends
-                    if backend.alive and not backend.is_passed_over(now)
-                )
-                for backends in self._backends.values()
-            ]
-        return max(widths, default=1) or 1
-
     def _begin(self, model: str, mode: str) -> tuple[list[Backend], int, int]:
         """Order a model's live backends and reserve the one that will be tried first.
 
