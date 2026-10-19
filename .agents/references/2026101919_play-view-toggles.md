@@ -67,6 +67,17 @@ Verified live: `gwfss` row 3 gives the palette chips (`rgb(50,255,132)`, `rgb(50
 (`rgb(255,79,163)`, `rgb(0,194,255)`, `rgb(255,176,0)`), matching the masks drawn beside them; the
 eye hides and restores those three chips; `sam3.1-meta` still lists none.
 
+## The eye that changed an attribute and nothing else
+
+Reported minutes later: after a second run, the watermark eye no longer hid the watermark. The
+four-line chip became `display: flex` for its column layout, and an author `display` beats the user
+agent's `[hidden] { display: none }` — so `hidden = true` changed an attribute and nothing on screen.
+The legend already had its own `[hidden]` rule, which is why only the watermark broke.
+
+Any element whose CSS sets `display` and whose state is the `hidden` attribute needs the matching
+`[hidden] { display: none }` rule. Verified live: `display: flex` (69 px) → `none` (0) → `flex`
+(69 px) as the eye is clicked twice.
+
 ## Decode once, draw many
 
 `paint()` decodes the answer into **one** mask layer at display size (≤ 2600²), keeping the object
