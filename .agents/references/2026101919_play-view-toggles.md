@@ -6,7 +6,7 @@ Follow-up to [`2026101918_play-one-colour-for-every-class.md`](2026101918_play-o
 ## What the page shows now
 
 The figure's caption row is one line: the outcome on the left, then four eyes with the word each
-governs, then `full size ↗`.
+governs, then `raw image ↗`.
 
 | eye | default | what it hides |
 |---|---|---|
