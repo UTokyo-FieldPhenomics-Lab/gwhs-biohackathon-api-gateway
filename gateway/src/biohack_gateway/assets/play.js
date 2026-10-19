@@ -505,7 +505,7 @@
   // the bitmap would be a smudge on a tall strip and a billboard on a wide crop. As text it is the
   // same size in both, it is text a reader can select, and it carries the model's own number to two
   // decimals. The frame and the label take the object's own colour, so a box names what its mask is.
-  const markFor = (object, image, {colour, declared}, stack) => {
+  const markFor = (object, image, colour, label, stack) => {
     const [x, y, width, height] = object.bbox;
     const mark = document.createElement("div");
     mark.className = "mark";
@@ -516,11 +516,10 @@
     mark.style.height = (height / image.naturalHeight) * 100 + "%";
     if (typeof object.score === "number") {
       const score = document.createElement("span");
-      // A class the dataset declares is named on its own box; an instance of a category the dataset
-      // does not declare keeps the score alone, because one category repeated on eighteen neighbours
-      // is a label as long as the picture.
-      const name = declared ? String(object.category) : "";
-      score.textContent = (name ? name + " " : "") + object.score.toFixed(2);
+      // The class is named on its own box when the legend can name it too — the dataset declares it,
+      // or it has one object. Eighteen heads keep their scores alone: one category repeated that many
+      // times is a label as long as the picture.
+      score.textContent = (label ? label + " " : "") + object.score.toFixed(2);
       score.style.background = colour;
       score.style.color = inkOn(colour);
       mark.append(score);
@@ -536,24 +535,21 @@
     return mark;
   };
 
-  // The classes the answer carries, in the colours the dataset gave them: a mask is a colour, and a
-  // colour is only a name if the page says which. An instance answer declares nothing here, and the
-  // legend is then empty rather than naming a colour those objects do not share. A class with one
-  // object carries that object's score after its name: with the boxes hidden, this is where the
-  // number has to live.
-  const showLegend = (objects, colours) => {
+  // The classes the answer carries, in the colours the objects were drawn with: a mask is a colour,
+  // and a colour names a class only if the page says which. A category is listed when its colour is
+  // one the dataset declared — every object of it then shares that colour — or when it has exactly
+  // one object, whose own colour stands for it. A category repeated on eighteen neighbours is listed
+  // not at all, because no single chip could stand for its six colours. A class with one object
+  // carries that object's score after its name: with the boxes hidden, this is where the number
+  // has to live.
+  const showLegend = (objects, colours, counts) => {
     const legend = $("legend");
     legend.replaceChildren();
-    const counts = new Map();
-    for (const object of objects) {
-      const name = String(object.category || "");
-      if (name) counts.set(name, (counts.get(name) || 0) + 1);
-    }
     const named = new Set();
     objects.forEach((object, order) => {
-      if (!colours[order].declared) return;
-      const name = String(object.category);
-      if (named.has(name)) return;
+      const name = String(object.category || "");
+      if (!name || named.has(name)) return;
+      if (!colours[order].declared && counts.get(name) !== 1) return;
       named.add(name);
       const chip = document.createElement("span");
       chip.className = "chip";
@@ -594,6 +590,17 @@
     fit(image);
     fitted = image;
 
+    // One category with one object can be named by that object's own colour; a category with several
+    // objects can be named only when the dataset gave them all one colour.
+    const counts = new Map();
+    for (const object of objects) {
+      const name = String(object.category || "");
+      if (name) counts.set(name, (counts.get(name) || 0) + 1);
+    }
+    const label = (object, colour) =>
+      object.category && (colour.declared || counts.get(String(object.category)) === 1)
+        ? String(object.category) : "";
+
     marks.replaceChildren();
     if (view.boxes) {
       const anchors = new Map();        // how many labels already claim one point
@@ -603,11 +610,12 @@
         const anchor = Math.round(x) + ":" + Math.round(y);
         const stack = anchors.get(anchor) || 0;
         anchors.set(anchor, stack + 1);
-        marks.append(markFor(object, image, colours[order], stack));
+        marks.append(markFor(object, image, colours[order].colour,
+          label(object, colours[order]), stack));
       });
     }
 
-    showLegend(objects, colours);
+    showLegend(objects, colours, counts);
     $("legend").hidden = !view.legend || !$("legend").childElementCount;
     const machine = $("watermark");
     machine.hidden = !view.watermark || !machine.textContent;
