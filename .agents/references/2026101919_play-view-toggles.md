@@ -12,7 +12,7 @@ governs, then `raw image ↗`.
 |---|---|---|
 | masks | on | the decoded mask layer over the photograph |
 | boxes | on, except where a model's row says otherwise | the box, its class and its score |
-| legend | off, except where a model's row says otherwise | the class chips under the caption |
+| legend | off, except where a model's row says otherwise | the class chips in the viewer's top-left corner |
 | watermark | on | the `computed_by` chip in the corner |
 
 State lives in `VIEW_BASE` and `VIEW_BY_MODEL` at the top of `play.js`, merged when a declaration
@@ -27,6 +27,11 @@ const VIEW_BY_MODEL = {
 A semantic model's boxes are class extents and cover most of the frame, so they open hidden and the
 legend — which then carries the class name and, for a class with one object, its score — opens shown.
 An unknown id takes the base view, which is also what a renamed model gets.
+
+Both corner labels live on the pane rather than on the image: a portrait row leaves a band at each
+side, and the legend belongs in the band rather than over the photograph. It starts 8 px from the
+pane's top-left, so on a square row it clears the image entirely; the machine chip does the same at
+the bottom-right, four lines tall.
 
 This is the one place the page writes a model id. `test_the_model_page_names_no_model_and_no_parameter`
 was narrowed rather than dropped: `sam3.1` still appears nowhere, and the id above appears exactly
