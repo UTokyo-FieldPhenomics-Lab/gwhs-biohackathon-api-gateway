@@ -126,7 +126,11 @@ here.
   It joins `OPEN_PATHS` and carries `frame-ancestors {DOCS_PARENT_ORIGIN}` for the reference's reason:
   it carries no data of its own, and it is where a reader's key goes. Its controls are built from the
   model's own declaration in `GET /models` and nothing else — a model the page cannot render is an
-  incomplete declaration, not a page that is not clever enough — and it draws with the documentation
+  incomplete declaration, not a page that is not clever enough — with one exception: a table of view
+  defaults may key a model id to which layers are *shown* first (masks, boxes, legend, watermark),
+  because a first view is presentation rather than the contract. An id that table does not name takes
+  the base view — which is also what a renamed model gets — and nothing in it decides what is sent.
+  It draws with the documentation
   site's published `clients/global-wheat.js`, loaded by URL, since a copy here would be a second
   decoder to keep true. That file decodes row-major, so this page copies a pixel rather than mapping
   an index; a page that transposes a mask again is the bug, not the fix. It previews the image an address resolves to as soon as the address is

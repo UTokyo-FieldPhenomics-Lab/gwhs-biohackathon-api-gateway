@@ -11,6 +11,17 @@
   const canvas = $("canvas"), figure = document.querySelector("#play figure");
   const pane = $("pane"), stage = $("stage"), marks = $("marks");
 
+  // What the picture shows first, per model. This is the one model-specific thing the page carries,
+  // and it is presentation only: it decides nothing about what is sent, and an id the table does not
+  // name — a renamed model, or one added after this line — falls back to the base view. A semantic
+  // model answers with class extents that cover most of the frame, so its boxes open hidden and its
+  // legend, which is where the class names and scores then live, opens shown.
+  const VIEW_BASE = {masks: true, boxes: true, legend: false, watermark: true};
+  const VIEW_BY_MODEL = {
+    "gwfss-segformer-b4": {boxes: false, legend: true},
+  };
+  let view = {...VIEW_BASE};
+
   const say = (element, text, ok) => {
     element.textContent = text;
     element.classList.toggle("good", ok === true);
@@ -238,12 +249,24 @@
 
   const loadModel = async (id) => {
     const declaration = await call("/models/" + encodeURIComponent(id));
+    // Applied with the declaration, so the eye buttons describe the answer that is about to be asked
+    // for. Nothing on screen is redrawn here: the picture there belongs to the previous answer.
+    view = {...VIEW_BASE, ...(VIEW_BY_MODEL[id] || {})};
+    showView();
     showParameters(declaration);
     showFacts(declaration);
     $("run").disabled = !declaration.backends_up;
     // Refreshed after the declaration and not before: the command carries the parameters this model
     // declares, and until the answer arrives those are still the previous model's.
     refreshRequest();
+  };
+
+  // The eye buttons are the view's only controls: pressed while the layer they name is shown. Nothing
+  // here knows a model; the defaults arrived with the declaration, and a click is the reader's say.
+  const showView = () => {
+    for (const button of document.querySelectorAll("#display [data-view]")) {
+      button.setAttribute("aria-pressed", String(view[button.dataset.view]));
+    }
   };
 
   // The image choice: one dropdown decides it, and the controls for the choice that is not taken are
@@ -308,6 +331,8 @@
     // A palette was read with the key that just went; the next one may be a different team's, and a
     // failed read is cached as an empty map rather than retried.
     palettes.clear();
+    view = {...VIEW_BASE};
+    showView();
     if (held) {
       URL.revokeObjectURL(held);
       held = "";
@@ -355,6 +380,17 @@
     preview();
   });
   syncSource();
+
+  // A view toggle redraws from the answer already on screen: no request, and no decode — the mask
+  // layer was built when that answer arrived.
+  $("display").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-view]");
+    if (!button) return;
+    const key = button.dataset.view;
+    view[key] = !view[key];
+    button.setAttribute("aria-pressed", String(view[key]));
+    render();
+  });
 
   // No `crossorigin`: `data.global-wheat.com` sends no `access-control-allow-origin` header, and an
   // image that asks for CORS there does not load at all. The price is that this canvas can never be
@@ -502,10 +538,17 @@
 
   // The classes the answer carries, in the colours the dataset gave them: a mask is a colour, and a
   // colour is only a name if the page says which. An instance answer declares nothing here, and the
-  // legend is then empty rather than naming a colour those objects do not share.
+  // legend is then empty rather than naming a colour those objects do not share. A class with one
+  // object carries that object's score after its name: with the boxes hidden, this is where the
+  // number has to live.
   const showLegend = (objects, colours) => {
     const legend = $("legend");
     legend.replaceChildren();
+    const counts = new Map();
+    for (const object of objects) {
+      const name = String(object.category || "");
+      if (name) counts.set(name, (counts.get(name) || 0) + 1);
+    }
     const named = new Set();
     objects.forEach((object, order) => {
       if (!colours[order].declared) return;
@@ -520,27 +563,77 @@
       const label = document.createElement("span");
       label.textContent = name;
       chip.append(swatch, label);
+      if (counts.get(name) === 1 && typeof object.score === "number") {
+        const score = document.createElement("span");
+        score.className = "score";
+        score.textContent = object.score.toFixed(2);
+        chip.append(score);
+      }
       legend.append(chip);
     });
     legend.hidden = named.size === 0;
   };
 
-  /** Draw one image, with whatever objects belong on it, and say what was drawn. */
-  const paint = async (url, objects, palette = new Map()) => {
-    const image = await loadImage(url);
+  // The answer on screen, kept so a view toggle redraws it: the image, the decoded mask layer, the
+  // colours, and the address the picture came from. Nothing here is sent anywhere.
+  let last = null;
+
+  // Everything the eye buttons can change, drawn from what the answer already decoded — no request,
+  // no second decode. The mask layer was composited once, at display size, when the answer arrived.
+  const render = () => {
+    if (!last) return;
+    const {image, objects, colours, layer, url} = last;
     const scale = Math.min(1, MAX_SIDE / Math.max(image.naturalWidth, image.naturalHeight));
     canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
     canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
     const context = canvas.getContext("2d");
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    if (view.masks) context.drawImage(layer, 0, 0, canvas.width, canvas.height);
+
+    figure.hidden = false;
+    fit(image);
+    fitted = image;
+
+    marks.replaceChildren();
+    if (view.boxes) {
+      const anchors = new Map();        // how many labels already claim one point
+      objects.forEach((object, order) => {
+        if (!object.bbox) return;
+        const [x, y] = object.bbox;
+        const anchor = Math.round(x) + ":" + Math.round(y);
+        const stack = anchors.get(anchor) || 0;
+        anchors.set(anchor, stack + 1);
+        marks.append(markFor(object, image, colours[order], stack));
+      });
+    }
+
+    showLegend(objects, colours);
+    $("legend").hidden = !view.legend || !$("legend").childElementCount;
+    const machine = $("watermark");
+    machine.hidden = !view.watermark || !machine.textContent;
+    const full = $("full");
+    full.href = url;
+    full.hidden = false;
+  };
+
+  /** Decode one answer into a mask layer once, then let `render` draw it in whatever view is on. */
+  const paint = async (url, objects, palette = new Map()) => {
+    const image = await loadImage(url);
+    const scale = Math.min(1, MAX_SIDE / Math.max(image.naturalWidth, image.naturalHeight));
+    const width = Math.max(1, Math.round(image.naturalWidth * scale));
+    const height = Math.max(1, Math.round(image.naturalHeight * scale));
 
     const colours = objects.map((object, order) => colourOf(object, order, palette));
     const decoder = typeof GlobalWheat?.rle_decode === "function";
+    const layer = document.createElement("canvas");
+    layer.width = width;
+    layer.height = height;
+    const painting = layer.getContext("2d");
     let decoded = 0, declared = 0, checked = 0;
     objects.forEach((object, order) => {
       if (!object.rle || !decoder) return;
       const drawn = overlayFor(object, colours[order].colour);
-      context.drawImage(drawn.overlay, 0, 0, canvas.width, canvas.height);
+      painting.drawImage(drawn.overlay, 0, 0, width, height);
       decoded += drawn.painted;
       if (typeof object.area === "number") {
         declared += object.area;
@@ -548,23 +641,8 @@
       }
     });
 
-    figure.hidden = false;
-    fit(image);
-    fitted = image;
-    marks.replaceChildren();
-    const anchors = new Map();          // how many labels already claim one point
-    objects.forEach((object, order) => {
-      if (!object.bbox) return;
-      const [x, y] = object.bbox;
-      const anchor = Math.round(x) + ":" + Math.round(y);
-      const stack = anchors.get(anchor) || 0;
-      anchors.set(anchor, stack + 1);
-      marks.append(markFor(object, image, colours[order], stack));
-    });
-    showLegend(objects, colours);
-    const full = $("full");
-    full.href = url;
-    full.hidden = false;
+    last = {image: image, objects: objects, colours: colours, layer: layer, url: url};
+    render();
     return {
       decoder: decoder,
       decoded: decoded,
@@ -578,29 +656,26 @@
 
   const draw = async (url, answer, palette) => {
     const objects = answer.objects || [];
-    const painted = await paint(url, objects, palette);
+    // Written before the picture, so the watermark is there when `paint` renders it.
     showMachine(answer);
+    const painted = await paint(url, objects, palette);
     $("response-body").textContent = JSON.stringify(answer, null, 2);
     $("response").hidden = false;
 
+    // The caption is one line beside four view buttons, so it says the one thing worth checking —
+    // that the decoded mask covers exactly the area the answer declared — in as few words as it can.
     const tally = objects.length + (objects.length === 1 ? " object" : " objects");
     if (!painted.decoder) {
       // Said rather than left blank: an empty canvas would read as a model that found nothing.
-      say($("check"),
-        "the decoder did not load from the documentation site, so no mask is drawn here — " +
-        "the response body below is complete", false);
+      say($("check"), tally + " · decoder did not load — the response body is complete", false);
     } else if (!painted.checked) {
-      say($("check"), tally + " · none carrying an area and an RLE to check", null);
+      say($("check"), tally + " · no area or RLE to check", null);
+    } else if (painted.decoded === Math.round(painted.declared)) {
+      say($("check"), tally + " · Σ mask area = " + painted.decoded.toLocaleString() + " px", true);
     } else {
-      // The cheapest check that a decoder is right, and the one the documentation makes in prose:
-      // the decoded pixel count equals the published area. It reads the decoded array, never the
-      // canvas, which is the only thing the tainted canvas allows.
-      const equal = painted.decoded === Math.round(painted.declared);
       say($("check"),
-        tally + " · Σ decoded mask = " + painted.decoded.toLocaleString() + " px, Σ area = " +
-        Math.round(painted.declared).toLocaleString() + " px" +
-        (equal ? " — equal" : " — they differ"),
-        equal);
+        tally + " · Σ mask area " + painted.decoded.toLocaleString() + " ≠ Σ area " +
+        Math.round(painted.declared).toLocaleString() + " px", false);
     }
   };
 
@@ -612,6 +687,7 @@
     $("legend").hidden = true;
     $("full").hidden = true;
     fitted = null;
+    last = null;
     $("check").textContent = "";
     $("check").className = "";
     showMachine(null);
@@ -637,7 +713,7 @@
     const text = describeMachine(answer && answer.computed_by);
     const chip = $("watermark");
     chip.textContent = text;
-    chip.hidden = !text;
+    chip.hidden = !text || !view.watermark;
   };
 
   // The image the reader has chosen, drawn as soon as the choice is a picture — an address is two
@@ -689,9 +765,7 @@
       showMachine(null);
       // The size comes from the image itself in both cases, so the caption describes what is drawn
       // rather than what an index or a file system claimed.
-      say($("check"),
-        caption + " — " + painted.width + "×" + painted.height +
-        " px, press Run to segment it", null);
+      say($("check"), caption + " · " + painted.width + "×" + painted.height, null);
     } catch (error) {
       if (token !== previewToken) return;
       say($("check"), error.message, false);

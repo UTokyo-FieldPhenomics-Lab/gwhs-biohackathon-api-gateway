@@ -204,9 +204,10 @@ body {
 }
 #play figcaption {
   display: flex;
-  align-items: baseline;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 0.35rem 0.75rem;
   padding: 0.4rem 0.6rem;
   background: var(--surface);
   border-bottom: 1px solid var(--line);
@@ -217,6 +218,52 @@ body {
    is the `#check` line inside that is green or red, not the bar it sits in. */
 #play figcaption #check.good { color: var(--good); }
 #play figcaption #check.bad { color: var(--bad); }
+/* The four view toggles and the full-size link are one unit, so a narrow frame drops all of them to
+   the next line together rather than splitting a control from its label. */
+#play #display {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  white-space: nowrap;
+}
+/* An eye governs what the picture shows: pressed means shown, and the slash is the off state. Each
+   is a real button with an accessible name — the word beside it — rather than a clickable glyph. */
+#play .eye {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.95em;
+  line-height: 1;
+  cursor: pointer;
+}
+#play .eye svg {
+  width: 1.1em;
+  height: 1.1em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+#play .eye[aria-pressed="true"] {
+  color: var(--ink);
+}
+#play .eye[aria-pressed="true"] .slash {
+  display: none;
+}
+#play .eye:hover {
+  color: var(--accent);
+}
+#play .eye:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
 #play #full {
   color: var(--accent);
   white-space: nowrap;
@@ -244,6 +291,12 @@ body {
   height: 0.7rem;
   border-radius: 2px;
   border: 1px solid var(--line);
+}
+/* The score the class's box would have carried, kept beside the name: with the boxes hidden this is
+   the only place the number appears. */
+#play #legend .score {
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 #play #pane {
   position: relative;

@@ -52,7 +52,41 @@ __PLAY_CSS__
   <figure hidden>
     <figcaption>
       <span id="check"></span>
-      <a id="full" href="" target="_blank" rel="noopener" hidden>full size ↗</a>
+      <span id="display">
+        <button type="button" class="eye" data-view="masks" aria-pressed="true">
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M2 10c2.2-3.2 4.9-5 8-5s5.8 1.8 8 5c-2.2 3.2-4.9 5-8 5s-5.8-1.8-8-5Z"/>
+            <circle cx="10" cy="10" r="2.5"/>
+            <path class="slash" d="M3.2 16.8 16.8 3.2"/>
+          </svg>
+          <span>masks</span>
+        </button>
+        <button type="button" class="eye" data-view="boxes" aria-pressed="true">
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M2 10c2.2-3.2 4.9-5 8-5s5.8 1.8 8 5c-2.2 3.2-4.9 5-8 5s-5.8-1.8-8-5Z"/>
+            <circle cx="10" cy="10" r="2.5"/>
+            <path class="slash" d="M3.2 16.8 16.8 3.2"/>
+          </svg>
+          <span>boxes</span>
+        </button>
+        <button type="button" class="eye" data-view="legend" aria-pressed="false">
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M2 10c2.2-3.2 4.9-5 8-5s5.8 1.8 8 5c-2.2 3.2-4.9 5-8 5s-5.8-1.8-8-5Z"/>
+            <circle cx="10" cy="10" r="2.5"/>
+            <path class="slash" d="M3.2 16.8 16.8 3.2"/>
+          </svg>
+          <span>legend</span>
+        </button>
+        <button type="button" class="eye" data-view="watermark" aria-pressed="true">
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M2 10c2.2-3.2 4.9-5 8-5s5.8 1.8 8 5c-2.2 3.2-4.9 5-8 5s-5.8-1.8-8-5Z"/>
+            <circle cx="10" cy="10" r="2.5"/>
+            <path class="slash" d="M3.2 16.8 16.8 3.2"/>
+          </svg>
+          <span>watermark</span>
+        </button>
+        <a id="full" href="" target="_blank" rel="noopener" hidden>full size ↗</a>
+      </span>
     </figcaption>
     <div id="legend" hidden></div>
     <div id="pane">

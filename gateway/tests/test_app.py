@@ -362,13 +362,32 @@ def test_the_model_page_names_no_model_and_no_parameter(client: TestClient) -> N
     This is the invariant the page exists to hold: a model it cannot render is an incomplete
     declaration rather than a page that is not clever enough. A model id or one of today's parameter
     names appearing in the page is that invariant broken, and it would be broken quietly.
+
+    One exception is deliberate: the view-defaults table names a model to choose what is *shown*
+    first — never what is sent — and an id it does not name falls back to the base view, which is
+    also what a renamed model gets.
     """
     page = client.get(PLAY_PATH).text
 
-    assert "sam3.1" not in page
+    assert "sam3.1" not in page                     # the base view is all it needs
+    assert page.count('"gwfss-segformer-b4"') == 1  # the view-defaults table, and nowhere else
     for parameter in ("prompt", "confidence_threshold", "imgsz"):
         assert parameter not in page
     assert "/models/" in page and "/datasets/" in page  # it asks the surface instead
+
+
+def test_the_model_page_has_one_view_toggle_per_layer(client: TestClient) -> None:
+    """Masks, boxes, legend, and the machine watermark are each shown or hidden by their own eye.
+
+    The state is `aria-pressed` on the button, and the defaults are the table at the top of the
+    script — the one place the page names a model, and only to choose what is shown first.
+    """
+    page = client.get(PLAY_PATH).text
+
+    for layer in ("masks", "boxes", "legend", "watermark"):
+        assert f'data-view="{layer}"' in page
+    assert "const VIEW_BASE = {masks: true, boxes: true, legend: false, watermark: true};" in page
+    assert '"gwfss-segformer-b4": {boxes: false, legend: true},' in page
 
 
 def test_the_model_page_takes_a_class_colour_from_the_dataset(client: TestClient) -> None:
@@ -588,7 +607,7 @@ def test_the_model_page_says_what_came_back_once(client: TestClient) -> None:
     """
     page = client.get(PLAY_PATH).text
 
-    assert 'tally + " · Σ decoded mask = "' in page
+    assert 'tally + " · Σ mask area = "' in page
     assert 'say(state, "")' in page  # nothing is left beside the button once the run has answered
 
 
