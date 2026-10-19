@@ -100,7 +100,11 @@ the score instead of "idle ones first".
 
 The harness, the five levels' client records and the gateway's own log lines per level are archived
 beside this note in [`202610192300_load-test/`](202610192300_load-test): `run.py` drives the load,
-`analyze.py` reads what the two sides recorded, `run.out` is what the run printed.
+`analyze.py` reads what the two sides recorded, `run.out` is what the run printed. `gateway-full.log`
+is the test instance's whole journal, unsliced — startup, declarations, the smoke calls and every
+level — so the slices can be checked against what they were cut from. The code that wrote it is commit
+`f8f414f`: the copy at `$HOME/gw-test/gateway/src` hashes identically to that commit's
+`models.py`, and the source itself is not archived a second time.
 
 1. Start a second gateway on the host from the checkout's code, with the per-key cap off and its log
    where `run.py` looks for it (`$HOME/gw-test/gateway.log` on `gwhs-host`): copy

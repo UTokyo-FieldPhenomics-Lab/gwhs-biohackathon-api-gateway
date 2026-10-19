@@ -58,6 +58,10 @@ cover/
 
 # Django stuff:
 *.log
+# ... except a measurement kept as evidence rather than as a byproduct: the
+# reference archives hold the logs a decision was read from, and a rule meant
+# for uvicorn's output must not quietly drop them.
+!.agents/references/**/*.log
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
