@@ -268,10 +268,12 @@ body {
   color: var(--accent);
   white-space: nowrap;
 }
-/* The classes the answer carries, in the colours the dataset gave them, as a label on the picture
-   itself: one class per line, in the image's top-left corner. A tinted mask is a colour, and a colour
-   names a class only if the page says which. The chip is dark because the photograph underneath is
-   whatever the dataset holds, and white-on-straw is not a label. */
+/* The classes the answer carries, in the colours the dataset gave them, as a label in the viewer's
+   top-left corner: one class per line. It sits on the pane rather than on the image, for the
+   watermark's reason — a portrait row leaves a band at each side, and the legend belongs in it
+   rather than over the photograph. A tinted mask is a colour, and a colour names a class only if the
+   page says which. The chip is dark because the photograph underneath is whatever the dataset
+   holds, and white-on-straw is not a label. */
 #play #legend {
   position: absolute;
   top: 0.5rem;
