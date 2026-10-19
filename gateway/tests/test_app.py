@@ -369,7 +369,7 @@ def test_the_model_page_names_no_model_and_no_parameter(client: TestClient) -> N
     """
     page = client.get(PLAY_PATH).text
 
-    assert "sam3.1" not in page                     # the base view is all it needs
+    assert "sam3.1" not in page  # the base view is all it needs
     assert page.count('"gwfss-segformer-b4"') == 1  # the view-defaults table, and nowhere else
     for parameter in ("prompt", "confidence_threshold", "imgsz"):
         assert parameter not in page
