@@ -371,6 +371,21 @@ def test_the_model_page_names_no_model_and_no_parameter(client: TestClient) -> N
     assert "/models/" in page and "/datasets/" in page  # it asks the surface instead
 
 
+def test_the_model_page_takes_a_class_colour_from_the_dataset(client: TestClient) -> None:
+    """A class's colour is the dataset's to declare, and the page asks it rather than knowing it.
+
+    `GET /datasets/<id>` publishes the palette the dataset's own mask images use, and the page tints
+    a class with that colour so the demo and the dataset page agree. A class name or a colour
+    written into the page would be a second answer to what a class looks like, and the two would go
+    stale apart — the same invariant that keeps model ids out of the page.
+    """
+    page = client.get(PLAY_PATH).text
+
+    assert "description.classes" in page
+    for name in ("background", "head", "stem", "leaf"):
+        assert f'"{name}"' not in page
+
+
 def test_the_model_page_reads_the_image_without_cors(client: TestClient) -> None:
     """`data.global-wheat.com` sends no `access-control-allow-origin`, so the image must not ask.
 

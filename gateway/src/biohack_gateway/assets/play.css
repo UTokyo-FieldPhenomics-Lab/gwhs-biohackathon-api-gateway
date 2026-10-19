@@ -221,6 +221,30 @@ body {
   color: var(--accent);
   white-space: nowrap;
 }
+/* The classes the answer carries, in the colours the dataset gave them: a tinted mask is a colour, and
+   a colour names a class only if the page says which. One row that wraps in a narrow frame. */
+#play #legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.9rem;
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.9em;
+}
+#play #legend[hidden] {
+  display: none;
+}
+#play #legend .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+#play #legend .swatch {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 2px;
+  border: 1px solid var(--line);
+}
 #play #pane {
   position: relative;
   height: 32rem;

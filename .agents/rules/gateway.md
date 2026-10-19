@@ -131,6 +131,12 @@ here.
   decoder to keep true. That file decodes row-major, so this page copies a pixel rather than mapping
   an index; a page that transposes a mask again is the bug, not the fix. It previews the image an address resolves to as soon as the address is
   complete, because a row that does not exist should say so before a model is asked to fetch it.
+- **A mask's colour is the dataset's to declare.** A category the picture's dataset publishes in
+  `GET /datasets/<id>` is tinted with that palette, so the demo and the dataset's own page show one
+  class in one colour; a category the dataset does not declare is an instance of something rather
+  than a class of the picture — the words a detector was given — and those are coloured per object,
+  because two neighbours of one category still have to differ. A class list or a colour literal here
+  would be a second answer, and the two would go stale apart.
 - **The result is shown whole, and what is drawn on it is text over the raster.** The pane holding
   the photograph has a fixed height and fits the image inside it; nothing inside a picture is ever
   scrolled. A box and its score are placed as elements in the image's own fractions rather than

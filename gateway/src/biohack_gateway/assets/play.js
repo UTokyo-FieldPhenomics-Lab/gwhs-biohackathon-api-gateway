@@ -305,6 +305,9 @@
     fields = [];
     $("run").disabled = true;
     clearViewer();
+    // A palette was read with the key that just went; the next one may be a different team's, and a
+    // failed read is cached as an empty map rather than retried.
+    palettes.clear();
     if (held) {
       URL.revokeObjectURL(held);
       held = "";
@@ -369,7 +372,51 @@
   // any published row, which is what the cap is for: a 5184×3456 photograph would otherwise be 72 MB
   // of canvas.
   const MAX_SIDE = 2600;
-  const MASK = [255, 105, 180, 110];
+  // One alpha for every mask: a class differs from another by hue, never by opacity, because a
+  // fainter tint would read as a less certain one.
+  const TINT = 110;
+
+  // A category the picture's dataset declares is painted in the dataset's own colour: `GET
+  // /datasets/<id>` publishes the palette its mask images and its own page use, and a colour invented
+  // here would be a second answer to what a class looks like. A category it does not declare is an
+  // instance label rather than a class of the picture — the words a detector was given, say — and two
+  // neighbours of one category still have to differ, so those cycle this list by object instead.
+  // Nothing here names a class or a model; both lists arrive from the surface.
+  const FALLBACK = ["#ff4fa3", "#00c2ff", "#ffb000", "#8b5cf6", "#00d68f", "#ff5a36"];
+
+  const palettes = new Map();     // dataset id -> Promise of Map(lowercased class name -> #rrggbb)
+
+  const paletteFor = (id) => {
+    if (!id) return Promise.resolve(new Map());
+    if (!palettes.has(id)) {
+      // A palette that cannot be read is not a reason to fail the run it decorates: the answer's own
+      // colours fall back rather than the picture not being drawn at all.
+      palettes.set(id, call("/datasets/" + encodeURIComponent(id)).then((description) =>
+        new Map((description.classes || []).map((entry) =>
+          [String(entry.name).toLowerCase(), String(entry.color)]))).catch(() => new Map()));
+    }
+    return palettes.get(id);
+  };
+
+  const rgbOf = (colour) => {
+    const hex = String(colour).replace("#", "");
+    return [0, 2, 4].map((at) => parseInt(hex.slice(at, at + 2), 16) || 0);
+  };
+
+  // Black ink on the pale half of a palette and white on the dark half: a class the dataset paints
+  // yellow must not carry white-on-yellow.
+  const inkOn = (colour) => {
+    const [red, green, blue] = rgbOf(colour);
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue > 150 ? "#14181f" : "#ffffff";
+  };
+
+  // One object's colour, and whether its category is a class the dataset declares — the flag the
+  // legend and the label both hang on.
+  const colourOf = (object, order, palette) => {
+    const name = String(object.category || "").trim().toLowerCase();
+    if (name && palette.has(name)) return {colour: palette.get(name), declared: true};
+    return {colour: FALLBACK[order % FALLBACK.length], declared: false};
+  };
 
   // One object's geometry as something drawable, without a single pixel being read back: the
   // mask goes into an offscreen canvas of its own size, which is then drawn onto the visible
@@ -378,18 +425,19 @@
   //
   // The client decodes to a row-major array, which is `ImageData`'s own order, so a mask drawn
   // transposed is not a thing this page can do: the pixels are copied straight across.
-  const overlayFor = (object) => {
+  const overlayFor = (object, colour) => {
     const [height, width] = object.rle.size;
     const {data} = GlobalWheat.rle_decode(object.rle.counts, height, width);
     const pixels = new ImageData(width, height);
+    const [red, green, blue] = rgbOf(colour);
     let painted = 0;
     for (let index = 0; index < data.length; index++) {
       if (!data[index]) continue;
       const at = index * 4;
-      pixels.data[at] = MASK[0];
-      pixels.data[at + 1] = MASK[1];
-      pixels.data[at + 2] = MASK[2];
-      pixels.data[at + 3] = MASK[3];
+      pixels.data[at] = red;
+      pixels.data[at + 1] = green;
+      pixels.data[at + 2] = blue;
+      pixels.data[at + 3] = TINT;
       painted += 1;
     }
     const offscreen = document.createElement("canvas");
@@ -416,31 +464,69 @@
   };
   new ResizeObserver(() => { if (fitted) fit(fitted); }).observe(pane);
 
-  // One object's box, and the score that goes with it, as elements over the raster rather than pixels
-  // inside it: the pane draws a photograph at whatever size fits, so a score burned into the bitmap
-  // would be a smudge on a tall strip and a billboard on a wide crop. As text it is the same size in
-  // both, it is text a reader can select, and it carries the model's own number to two decimals.
-  const markFor = (object, image) => {
+  // One object's box, its class and the score that goes with it, as elements over the raster rather
+  // than pixels inside it: the pane draws a photograph at whatever size fits, so a score burned into
+  // the bitmap would be a smudge on a tall strip and a billboard on a wide crop. As text it is the
+  // same size in both, it is text a reader can select, and it carries the model's own number to two
+  // decimals. The frame and the label take the object's own colour, so a box names what its mask is.
+  const markFor = (object, image, {colour, declared}, stack) => {
     const [x, y, width, height] = object.bbox;
     const mark = document.createElement("div");
     mark.className = "mark";
+    mark.style.borderColor = colour;
     mark.style.left = (x / image.naturalWidth) * 100 + "%";
     mark.style.top = (y / image.naturalHeight) * 100 + "%";
     mark.style.width = (width / image.naturalWidth) * 100 + "%";
     mark.style.height = (height / image.naturalHeight) * 100 + "%";
     if (typeof object.score === "number") {
       const score = document.createElement("span");
-      score.textContent = object.score.toFixed(2);
+      // A class the dataset declares is named on its own box; an instance of a category the dataset
+      // does not declare keeps the score alone, because one category repeated on eighteen neighbours
+      // is a label as long as the picture.
+      const name = declared ? String(object.category) : "";
+      score.textContent = (name ? name + " " : "") + object.score.toFixed(2);
+      score.style.background = colour;
+      score.style.color = inkOn(colour);
       mark.append(score);
       // A box against the top edge of the image has no room above it, so its score goes inside the
       // box — at the object's own top, which is where the label would have pointed.
-      if (y / image.naturalHeight < 0.06) mark.classList.add("inside");
+      if (y / image.naturalHeight < 0.06) {
+        mark.classList.add("inside");
+        // Two classes can share an extent and then share a label point. Stacked rather than drawn
+        // one over the other, which would hide one of them — half of what this page exists to show.
+        if (stack) score.style.top = (-1.5 + stack * 18) + "px";
+      }
     }
     return mark;
   };
 
+  // The classes the answer carries, in the colours the dataset gave them: a mask is a colour, and a
+  // colour is only a name if the page says which. An instance answer declares nothing here, and the
+  // legend is then empty rather than naming a colour those objects do not share.
+  const showLegend = (objects, colours) => {
+    const legend = $("legend");
+    legend.replaceChildren();
+    const named = new Set();
+    objects.forEach((object, order) => {
+      if (!colours[order].declared) return;
+      const name = String(object.category);
+      if (named.has(name)) return;
+      named.add(name);
+      const chip = document.createElement("span");
+      chip.className = "chip";
+      const swatch = document.createElement("span");
+      swatch.className = "swatch";
+      swatch.style.background = colours[order].colour;
+      const label = document.createElement("span");
+      label.textContent = name;
+      chip.append(swatch, label);
+      legend.append(chip);
+    });
+    legend.hidden = named.size === 0;
+  };
+
   /** Draw one image, with whatever objects belong on it, and say what was drawn. */
-  const paint = async (url, objects) => {
+  const paint = async (url, objects, palette = new Map()) => {
     const image = await loadImage(url);
     const scale = Math.min(1, MAX_SIDE / Math.max(image.naturalWidth, image.naturalHeight));
     canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
@@ -448,26 +534,34 @@
     const context = canvas.getContext("2d");
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
 
+    const colours = objects.map((object, order) => colourOf(object, order, palette));
     const decoder = typeof GlobalWheat?.rle_decode === "function";
     let decoded = 0, declared = 0, checked = 0;
-    for (const object of objects) {
-      if (!object.rle || !decoder) continue;
-      const drawn = overlayFor(object);
+    objects.forEach((object, order) => {
+      if (!object.rle || !decoder) return;
+      const drawn = overlayFor(object, colours[order].colour);
       context.drawImage(drawn.overlay, 0, 0, canvas.width, canvas.height);
       decoded += drawn.painted;
       if (typeof object.area === "number") {
         declared += object.area;
         checked += 1;
       }
-    }
+    });
 
     figure.hidden = false;
     fit(image);
     fitted = image;
     marks.replaceChildren();
-    for (const object of objects) {
-      if (object.bbox) marks.append(markFor(object, image));
-    }
+    const anchors = new Map();          // how many labels already claim one point
+    objects.forEach((object, order) => {
+      if (!object.bbox) return;
+      const [x, y] = object.bbox;
+      const anchor = Math.round(x) + ":" + Math.round(y);
+      const stack = anchors.get(anchor) || 0;
+      anchors.set(anchor, stack + 1);
+      marks.append(markFor(object, image, colours[order], stack));
+    });
+    showLegend(objects, colours);
     const full = $("full");
     full.href = url;
     full.hidden = false;
@@ -482,9 +576,9 @@
     };
   };
 
-  const draw = async (url, answer) => {
+  const draw = async (url, answer, palette) => {
     const objects = answer.objects || [];
-    const painted = await paint(url, objects);
+    const painted = await paint(url, objects, palette);
     showMachine(answer);
     $("response-body").textContent = JSON.stringify(answer, null, 2);
     $("response").hidden = false;
@@ -514,6 +608,8 @@
   const clearViewer = () => {
     figure.hidden = true;
     marks.replaceChildren();
+    $("legend").replaceChildren();
+    $("legend").hidden = true;
     $("full").hidden = true;
     fitted = null;
     $("check").textContent = "";
@@ -619,7 +715,10 @@
     try {
       const chosen = encodeURIComponent(model.value);
       const search = query();
-      let imageUrl, answer;
+      // Read once: a run outlives the control it started from, and the image, the body and the
+      // palette must all describe the same dataset.
+      const source = dataset.value;
+      let imageUrl, answer, palette;
       if (upload) {
         // The container takes raw bytes, and the public route takes them as the multipart
         // field this contract declares; the gateway decodes that once and forwards the bytes.
@@ -630,6 +729,9 @@
         if (held) URL.revokeObjectURL(held);
         held = URL.createObjectURL(file);
         imageUrl = held;
+        // A photograph of the reader's is not a row of any dataset, so there is no palette it could
+        // have been painted in: every object falls back to a colour of its own.
+        palette = new Map();
         answer = await call("/models/" + chosen + "/predict/upload?" + search,
           {method: "POST", body: form});
       } else {
@@ -637,15 +739,20 @@
         // The mask's boxes sit on the image, and the address resolves the same way a preview's did,
         // so it is read again here rather than remembered from one.
         const row = await call(
-          "/datasets/" + encodeURIComponent(dataset.value) + "/images/" + index);
+          "/datasets/" + encodeURIComponent(source) + "/images/" + index);
         imageUrl = row.image_url;
+        // Asked for beside the prediction rather than after it: the palette is a metadata read and
+        // the answer is the slow call, so waiting for the picture to come back first would add a
+        // round trip to a page that can least afford one.
+        const paletteLoaded = paletteFor(source);
         answer = await call("/models/" + chosen + "/predict?" + search, {
           method: "POST",
           headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({dataset: dataset.value, row: index}),
+          body: JSON.stringify({dataset: source, row: index}),
         });
+        palette = await paletteLoaded;
       }
-      await draw(imageUrl, answer);
+      await draw(imageUrl, answer, palette);
       // What came back is in the figure's own caption, beside the picture it describes, and the
       // resolution was said once beside the model: this line is for what is still happening, so it
       // goes back to empty now that nothing is.
