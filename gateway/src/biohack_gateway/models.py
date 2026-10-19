@@ -904,7 +904,7 @@ class ModelRegistry:
             ]
         return max(widths, default=1) or 1
 
-    def _begin(self, model: str) -> list[Backend]:
+    def _begin(self, model: str) -> tuple[list[Backend], int]:
         """Order a model's live backends and reserve the one that will be tried first.
 
         Parameters
@@ -914,12 +914,15 @@ class ModelRegistry:
 
         Returns
         -------
-        list of Backend
+        backends : list of Backend
             The backends that are answering and not currently passed over, with those that have
             nothing in flight first, and the first of them already counted as in flight. Empty
             means the caller should be told the model is unavailable rather than made to wait for
             a machine that is off — and it is the same set the published count is taken from, so
             `0` means the same thing in both places.
+        ahead : int
+            How many requests were already counted against the first backend *before* this one
+            reserved it — the queue depth this attempt joins, and `0` when there are no backends.
 
         Raises
         ------
@@ -934,14 +937,21 @@ class ModelRegistry:
         unhealthy *after* an attempt against it fails, so a burst arriving during the failure would
         all pick it. Measured on 2026-10-16 with the laboratory 5090 stopped and three requests sent
         at once: two of the three still queued behind the failure until this was made atomic.
+
+        The depth is returned rather than stored on the `Backend`, because it describes *this*
+        attempt: a field there would be overwritten by the next request before this one logged it.
+        Reading it inside the lock is what makes it the true depth at dispatch rather than a number
+        another request may have moved in between.
         """
         if model not in self._backends:
             raise HTTPException(status_code=404, detail="no such model")
+        ahead = 0
         with self._lock:
             backends = self._order(self._backends[model])
             if backends:
+                ahead = backends[0].in_flight
                 backends[0].in_flight += 1
-        return backends
+        return backends, ahead
 
     def _order(self, backends: Sequence[Backend]) -> list[Backend]:
         """Return the live backends with those that have nothing in flight first, then the rest.
@@ -974,10 +984,25 @@ class ModelRegistry:
         busy = sorted((backend for backend in live if backend.in_flight), key=lambda b: b.in_flight)
         return idle + busy
 
-    def _reserve(self, backend: Backend) -> None:
-        """Count one attempt against a backend, a fallback reached later in the same request."""
+    def _reserve(self, backend: Backend) -> int:
+        """Count one attempt against a backend, a fallback reached later in the same request.
+
+        Parameters
+        ----------
+        backend : Backend
+            The backend about to be tried.
+
+        Returns
+        -------
+        int
+            How many requests were already counted against it before this reservation, so the
+            attempt's log line can say what it queued behind. Read under the same lock that
+            increments it, for the reason :meth:`_begin` gives.
+        """
         with self._lock:
+            ahead = backend.in_flight
             backend.in_flight += 1
+        return ahead
 
     def _release(self, backend: Backend) -> None:
         """Stop counting one attempt.
@@ -1025,7 +1050,7 @@ class ModelRegistry:
             configured none for this model; or when every backend that was tried failed, reported as
             an upstream failure with the status the last one gave.
         """
-        backends = self._begin(model)
+        backends, ahead = self._begin(model)
         if not self._token:
             # Fail closed and say whose fault it is. Without a token every backend would answer 401,
             # which the surface maps to a client error — a misconfigured gateway reported as a bad
@@ -1050,12 +1075,33 @@ class ModelRegistry:
         for index, backend in enumerate(backends):
             if index:
                 # A fallback was not reserved with the list, because it was not being tried yet.
-                self._reserve(backend)
+                # Its own pre-increment depth is what this attempt queued behind.
+                ahead = self._reserve(backend)
             url = f"{backend.url}/models/{model}/{path}{suffix}"
+            started = time.monotonic()
             try:
                 reply = self._transport("POST", url, headers, body, RESPONSE_TIMEOUT_SECONDS)
             finally:
+                # Stopped before the release so the figure measures the transport call and nothing
+                # around it: the lock the release takes is the gateway's time, not the backend's.
+                elapsed_ms = (time.monotonic() - started) * 1000.0
                 self._release(backend)
+            # One line per attempt, immediately after the transport returned, for the operator
+            # reading a slow or failing request. Counts and addresses only: the query and both
+            # bodies are the participant's content and never appear here.
+            logger.info(
+                "inference model=%s backend=%s mode=%s attempt=%d ahead=%d status=%d ms=%.1f "
+                "bytes_in=%d bytes_out=%d",
+                model,
+                backend.url,
+                path,
+                index,
+                ahead,
+                reply.status,
+                elapsed_ms,
+                len(body) if body is not None else 0,
+                len(reply.body),
+            )
             if 200 <= reply.status < 300:
                 backend.unhealthy_until = 0.0
                 return reply

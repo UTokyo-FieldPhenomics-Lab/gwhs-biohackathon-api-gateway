@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import socket
 import threading
 import time
@@ -343,6 +344,120 @@ def test_a_failed_backend_is_passed_over_and_the_next_one_answers(
         f"{SECOND}/models/{MODEL}/predict",
         f"{SECOND}/models/{MODEL}/predict",
     ]
+
+
+def _inference_lines(caplog: pytest.LogCaptureFixture) -> list[str]:
+    """Return the per-attempt inference lines a test captured, in emission order.
+
+    Parameters
+    ----------
+    caplog : pytest.LogCaptureFixture
+        The capturing fixture, already raised to `INFO` on the models logger.
+
+    Returns
+    -------
+    list of str
+        The records' formatted messages, with the startup and probe lines left out.
+    """
+    return [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "biohack_gateway.models" and record.getMessage().startswith("inference ")
+    ]
+
+
+def _fields(line: str) -> dict[str, str]:
+    """Parse one `key=value` log line into a mapping, for assertions on named fields."""
+    return dict(item.split("=", 1) for item in line.split()[1:])
+
+
+def test_an_attempt_is_logged_with_its_backend_and_size(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """One line per attempt, carrying counts and addresses but never the request's content."""
+    backends = FakeBackends()
+    registry = ModelRegistry({MODEL: [FIRST]}, BACKEND_TOKEN, backends)
+    body = b'{"input": {"url": "https://data.example/gwhd/images/00000000.jpg"}}'
+
+    with caplog.at_level(logging.INFO, logger="biohack_gateway.models"):
+        reply = registry.forward(MODEL, "predict", "prompt=wheat", body, "application/json")
+
+    assert reply.status == 200
+    lines = _inference_lines(caplog)
+    assert len(lines) == 1
+    fields = _fields(lines[0])
+    assert fields["model"] == MODEL
+    assert fields["backend"] == FIRST
+    assert fields["mode"] == "predict"
+    assert fields["attempt"] == "0"
+    assert fields["ahead"] == "0"
+    assert fields["status"] == "200"
+    assert float(fields["ms"]) >= 0.0
+    assert fields["bytes_in"] == str(len(body))
+    assert fields["bytes_out"] == str(len(reply.body))
+    assert "prompt=wheat" not in lines[0], "the query is the participant's content"
+
+
+def test_a_fallback_attempt_says_which_backend_it_reached(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A second machine tried in the same request logs `attempt=1` against that machine."""
+    backends = FakeBackends(replies={FIRST: [Reply(status=500, body=b"boom")]})
+    registry = ModelRegistry({MODEL: [FIRST, SECOND]}, BACKEND_TOKEN, backends)
+
+    with caplog.at_level(logging.INFO, logger="biohack_gateway.models"):
+        reply = registry.forward(MODEL, "predict/upload", "", b"\x89PNG\r\n\x1a\n", "image/png")
+
+    assert reply.status == 200
+    fields = [_fields(line) for line in _inference_lines(caplog)]
+    assert [(entry["attempt"], entry["backend"], entry["status"]) for entry in fields] == [
+        ("0", FIRST, "500"),
+        ("1", SECOND, "200"),
+    ]
+    assert [entry["mode"] for entry in fields] == ["predict/upload", "predict/upload"]
+
+
+def test_an_attempt_counts_the_requests_already_ahead_of_it(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """`ahead` is the queue depth this attempt joined, read in the same step that counted it."""
+    started = threading.Event()
+    released = threading.Event()
+    predictions = 0
+
+    def transport(
+        method: str, url: str, headers: Mapping[str, str], body: bytes | None, timeout: float
+    ) -> Reply:
+        """Block the first inference until the test says so; answer the rest at once."""
+        nonlocal predictions
+        if "/health" in url:
+            return Reply(status=200, body=json.dumps(DECLARATION).encode())
+        predictions += 1
+        if predictions == 1:
+            started.set()
+            released.wait(5)
+        return Reply(status=200, body=json.dumps(PREDICTION).encode())
+
+    registry = ModelRegistry({MODEL: [FIRST]}, BACKEND_TOKEN, transport)  # type: ignore[arg-type]
+    body = b"{}"
+    answered: list[Reply] = []
+    with caplog.at_level(logging.INFO, logger="biohack_gateway.models"):
+        first = threading.Thread(
+            target=lambda: answered.append(
+                registry.forward(MODEL, "predict", "", body, "application/json")
+            )
+        )
+        first.start()
+        assert started.wait(5), "the first request never reached the backend"
+        second = registry.forward(MODEL, "predict", "", body, "application/json")
+        released.set()
+        first.join(5)
+
+    assert second.status == 200
+    assert len(answered) == 1
+    depths = [(entry["ahead"], entry["status"]) for entry in map(_fields, _inference_lines(caplog))]
+    assert ("1", "200") in depths, "the second attempt did not say it queued behind the first"
+    assert ("0", "200") in depths, "the first attempt did not report an empty queue"
 
 
 def test_a_backend_fault_is_reported_as_an_upstream_fault(tmp_path: Path, index_dir: Path) -> None:
@@ -799,7 +914,7 @@ def test_choosing_a_backend_and_reserving_it_are_one_step() -> None:
     """
     registry = ModelRegistry({MODEL: [FIRST, SECOND]}, BACKEND_TOKEN, FakeBackends())
 
-    chosen = [registry._begin(MODEL)[0].url for _ in range(2)]  # noqa: SLF001 — see the docstring
+    chosen = [registry._begin(MODEL)[0][0].url for _ in range(2)]  # noqa: SLF001 — see the docstring
 
     assert chosen == [FIRST, SECOND]
 
@@ -869,7 +984,7 @@ def test_the_least_busy_backend_is_chosen_when_every_one_is_busy() -> None:
     registry._begin(MODEL)  # noqa: SLF001 — SECOND now holds one
     registry._reserve(registry._backends[MODEL][0])  # noqa: SLF001 — FIRST holds two, SECOND one
 
-    chosen = registry._begin(MODEL)[0].url  # noqa: SLF001
+    chosen = registry._begin(MODEL)[0][0].url  # noqa: SLF001
 
     assert chosen == SECOND, "the request joined the longer queue"
 
