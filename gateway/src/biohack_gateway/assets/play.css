@@ -341,6 +341,11 @@ body {
   pointer-events: none;
   backdrop-filter: blur(2px);
 }
+/* `display: flex` above would otherwise beat the user agent's `[hidden] { display: none }`, and the
+   eye would set an attribute that changes nothing. */
+#play #watermark[hidden] {
+  display: none;
+}
 /* The stage is the image's own box, and the script sizes it to what fits: the marks below are placed
    in the image's fractions, and a percentage of the pane would be a percentage of the empty band
    around the image as well as of the image. */
