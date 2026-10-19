@@ -45,6 +45,28 @@ on the same pixel. With the boxes hidden by default, the score would have left t
 A chip now reads `head 0.92` when that class has exactly one object; a class with several instances
 keeps the name alone, because one number would misrepresent the rest.
 
+## A legend that vanished on another dataset
+
+Reported the same evening: run once on `gwfss` and the legend appears; change the image and run
+again, and it is gone — and the legend eye cannot bring it back.
+
+The chips were built only for categories whose colour came from the dataset's palette, so a run of
+`gwfss-segformer-b4` on `gwhd` (whose palette is spikelet classes) or on an uploaded photograph
+(which has no palette at all) drew its three classes in the fallback colours and then named none of
+them. The eye was pressed, `showLegend` produced no children, and `render` hid the empty panel: a
+toggle over nothing.
+
+A category is now listed when **either** the dataset gave it one colour (every object of it shares
+that colour) **or** it has exactly one object, whose own colour then stands for the category. The
+box label follows the same predicate, so `head 0.65` appears on the box as well. An instance answer
+with seventeen heads still lists nothing — no single chip can stand for six colours — and its eye
+therefore still shows an empty legend.
+
+Verified live: `gwfss` row 3 gives the palette chips (`rgb(50,255,132)`, `rgb(50,132,255)`,
+`rgb(214,255,50)`); `gwhd` row 0 gives `head 0.65`, `stem 0.67`, `leaf 0.67` in the fallback colours
+(`rgb(255,79,163)`, `rgb(0,194,255)`, `rgb(255,176,0)`), matching the masks drawn beside them; the
+eye hides and restores those three chips; `sam3.1-meta` still lists none.
+
 ## Decode once, draw many
 
 `paint()` decodes the answer into **one** mask layer at display size (≤ 2600²), keeping the object
