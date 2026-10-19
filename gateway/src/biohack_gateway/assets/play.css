@@ -268,34 +268,44 @@ body {
   color: var(--accent);
   white-space: nowrap;
 }
-/* The classes the answer carries, in the colours the dataset gave them: a tinted mask is a colour, and
-   a colour names a class only if the page says which. One row that wraps in a narrow frame. */
+/* The classes the answer carries, in the colours the dataset gave them, as a label on the picture
+   itself: one class per line, in the image's top-left corner. A tinted mask is a colour, and a colour
+   names a class only if the page says which. The chip is dark because the photograph underneath is
+   whatever the dataset holds, and white-on-straw is not a label. */
 #play #legend {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem 0.9rem;
-  padding: 0.35rem 0.6rem;
-  border-bottom: 1px solid var(--line);
-  font-size: 0.9em;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.25rem 0.5rem 0.25rem 0.45rem;
+  border-radius: 4px;
+  background: rgba(12, 16, 22, 0.55);
+  color: #fff;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  backdrop-filter: blur(2px);
 }
 #play #legend[hidden] {
   display: none;
 }
 #play #legend .chip {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.4rem;
+  white-space: nowrap;
 }
 #play #legend .swatch {
-  width: 0.7rem;
-  height: 0.7rem;
+  width: 0.65rem;
+  height: 0.65rem;
   border-radius: 2px;
-  border: 1px solid var(--line);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35);
 }
 /* The score the class's box would have carried, kept beside the name: with the boxes hidden this is
    the only place the number appears. */
 #play #legend .score {
-  color: var(--muted);
+  color: rgba(255, 255, 255, 0.75);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 #play #pane {
@@ -309,19 +319,22 @@ body {
    corner, so a reader comparing two runs can see which machine made which. It sits on the pane rather
    than on the image because a portrait row is a narrow strip and a label on it would either be
    unreadable or hang outside the picture. Text, never a control: it takes no click, and it is the
-   machine's own words — name, card, CUDA build, torch — not a summary of them. */
+   machine's own words — name, card, CUDA build, torch — one per line, right-aligned, not a summary. */
 #play #watermark {
   position: absolute;
   right: 0.5rem;
   bottom: 0.5rem;
   max-width: calc(100% - 1rem);
-  padding: 0.15rem 0.45rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  padding: 0.2rem 0.45rem;
   border-radius: 4px;
   background: rgba(12, 16, 22, 0.55);
   color: #fff;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.72rem;
-  line-height: 1.5;
+  line-height: 1.35;
   text-align: right;
   pointer-events: none;
   backdrop-filter: blur(2px);

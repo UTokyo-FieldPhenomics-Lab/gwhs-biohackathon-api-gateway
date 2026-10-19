@@ -699,21 +699,27 @@
   // check. Every field is optional, because a container that has not been rebuilt still answers: the
   // line carries what arrived, and a record with nothing in it shows no chip at all rather than an
   // empty one.
+  // The machine's own words, one per line: name, card, CUDA build, torch. Joined with separators it
+  // was one long strip across the picture; four right-aligned lines fit the corner it sits in.
   const describeMachine = (computed) => {
-    if (!computed) return "";
-    const parts = [];
-    if (computed.machine) parts.push(computed.machine);
-    if (computed.gpu) parts.push(computed.gpu);
-    if (computed.cuda) parts.push("CUDA " + computed.cuda);
-    if (computed.torch) parts.push("torch " + computed.torch);
-    return parts.join(" · ");
+    if (!computed) return [];
+    const lines = [];
+    if (computed.machine) lines.push(computed.machine);
+    if (computed.gpu) lines.push(computed.gpu);
+    if (computed.cuda) lines.push("CUDA " + computed.cuda);
+    if (computed.torch) lines.push("torch " + computed.torch);
+    return lines;
   };
 
   const showMachine = (answer) => {
-    const text = describeMachine(answer && answer.computed_by);
+    const lines = describeMachine(answer && answer.computed_by);
     const chip = $("watermark");
-    chip.textContent = text;
-    chip.hidden = !text || !view.watermark;
+    chip.replaceChildren(...lines.map((line) => {
+      const span = document.createElement("span");
+      span.textContent = line;
+      return span;
+    }));
+    chip.hidden = !lines.length || !view.watermark;
   };
 
   // The image the reader has chosen, drawn as soon as the choice is a picture — an address is two

@@ -12,7 +12,7 @@ Paste your team's key, pick a row or a photograph, and press Run. The image is d
 address is complete — whole, at whatever size the page can show it in — with each box labelled by the
 score the model gave it, and the mask decoded in your browser by the same decoder this site hands you.
 A class the dataset declares is tinted in the colour that dataset publishes — the same palette its
-mask images use — and the legend above the picture names them. An instance model answers with objects
+mask images use — and the legend in the picture's corner names them. An instance model answers with objects
 rather than classes, so each of those is given a colour of its own instead. The model line says how
 many machines are answering and how long ago the gateway last asked them, and keeps that age climbing
 rather than letting a stale count pass for a live one.
