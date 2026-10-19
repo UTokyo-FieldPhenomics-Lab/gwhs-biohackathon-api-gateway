@@ -11,7 +11,7 @@ Nothing here encodes geometry, holds a weight, or knows what a mask is. :class:`
 definition of the same body is the one thing this surface must not grow, and `gateway.md` asks for
 exactly one object shape across the two surfaces so a participant writes one decoder.
 
-Routing is the whole algorithm — try a model's backends in order, idle ones first, mark a failed one
+Routing is the whole algorithm — try a model's backends in order of expected wait, mark a failed one
 unhealthy for at least as long as the failure cost, move on. There is no circuit breaker and no
 weighted choice, which are for a pool larger than this one, and no health loop, which is what
 `gateway.md` forbids: the gateway learns a backend is gone from a real request's failure, and
@@ -67,6 +67,21 @@ It is also the floor of an invariant, not a free number: it must be **at least**
 :data:`RESPONSE_TIMEOUT_SECONDS`, or a failure is retried before the wait it cost has
 passed, and the same minute is paid again. The assertion below is the invariant; the
 measurements behind it are in `deploy/gpu-backends.md`.
+"""
+
+DELAY_PER_QUEUED_REQUEST = {"predict": 0.25, "predict/upload": 0.5}
+"""Seconds a request already in flight adds to the expected wait of the next one, per mode.
+
+Each figure is a service time divided by the number of requests one container answers at once:
+0.95 s for a published row and 2.0 s for an upload, over about 4 at a time (measured 2026-10-19).
+That is why one request queued ahead costs roughly a quarter of a service time rather than a whole
+one, and why the round trip belongs in the same sum — the 0.26 s link to the laboratory is now the
+same order as a queue of one, so neither term can decide the order alone.
+
+Uploads cost more than twice as much as row mode because the body crosses the ocean with the
+request, so the upload service time is the longer of the two. This is a measured calibration, not a
+property of the hardware: re-take it if the models or the machines change. What it is for, and the
+load test behind it, is `.agents/references/202610192300_lane-width-and-the-score.md`.
 """
 
 DECLARATION_TIMEOUT_SECONDS = 3.0
@@ -400,9 +415,9 @@ _CONNECTIONS: dict[str, type[http.client.HTTPConnection]] = {
 POOL_IDLE_PER_BACKEND = 4
 """Idle connections kept per backend, which is the concurrency one machine is asked for anyway.
 
-More than a handful would sit unused: the pool is one backend per machine, each with a serial lane,
-and the gateway's own thread pool is what bounds simultaneous calls. Four is enough that a burst
-finds a warm socket without holding a descriptor open per thread.
+More than a handful would sit unused: one machine answers about four requests at once (measured
+2026-10-19), and the gateway's own thread pool is what bounds simultaneous calls. Four is enough
+that a burst finds a warm socket without holding a descriptor open per thread.
 """
 
 _IDLE: dict[tuple[str, str, int], list[http.client.HTTPConnection]] = {}
@@ -609,6 +624,12 @@ class Backend:
     probed_at : float
         When it was last asked, as a monotonic stamp, so the published count can carry its age. Zero
         means it has never been asked.
+    rtt_seconds : float
+        Exponential moving average of the round trip to this backend, from the probe that answers
+        `/health`. Zero means not yet measured: a backend only gets a figure from a `200`, so a
+        container that is still loading is not credited with the speed of its refusal. Five samples
+        of weight 0.2 each are what make it follow a route that changed without one slow probe
+        reordering the pool.
     in_flight : int
         Attempts this gateway currently has running against this backend. Read when choosing which
         backend to try, so that a request arriving while another is in flight to one that is in fact
@@ -624,6 +645,7 @@ class Backend:
     unhealthy_until: float = 0.0
     alive: bool = False
     probed_at: float = 0.0
+    rtt_seconds: float = 0.0
     in_flight: int = 0
     declared: bool = False
     """Whether this backend has answered what it serves, ever. Once true it is never asked again."""
@@ -699,7 +721,8 @@ class ModelRegistry:
         Parameters
         ----------
         backend : Backend
-            The backend to ask. `alive`, `answered` and `probed_at` are updated from the answer.
+            The backend to ask. `alive`, `answered`, `probed_at` and `rtt_seconds` are updated from
+            the answer.
 
         Returns
         -------
@@ -710,13 +733,27 @@ class ModelRegistry:
         -----
         A `200` is the only answer that counts as alive: a container still loading its weights
         answers `503`, and publishing it as up would promise a call it would refuse.
+
+        The same call is the round-trip measurement, because it is the only request the gateway
+        makes to a backend that carries no work: its duration is the link plus the answer, nothing
+        else. Only a `200` is folded in — a refusal from a container that is still starting measures
+        the container, not the route — and the first one is *assigned* rather than blended with the
+        `0.0` seed, which stands for "never measured" and not for an observation.
         """
+        started = time.monotonic()
         reply = self._transport(
             "GET", f"{backend.url}/health", {}, None, DECLARATION_TIMEOUT_SECONDS
         )
+        elapsed = time.monotonic() - started
         backend.alive = reply.status == 200
         backend.answered = reply.status != 0
         backend.probed_at = time.monotonic()
+        if backend.alive:
+            backend.rtt_seconds = (
+                elapsed
+                if backend.rtt_seconds == 0.0
+                else backend.rtt_seconds + 0.2 * (elapsed - backend.rtt_seconds)
+            )
         return reply
 
     def _declare(self, model: str, backend: Backend) -> None:
@@ -904,22 +941,25 @@ class ModelRegistry:
             ]
         return max(widths, default=1) or 1
 
-    def _begin(self, model: str) -> tuple[list[Backend], int]:
+    def _begin(self, model: str, mode: str) -> tuple[list[Backend], int]:
         """Order a model's live backends and reserve the one that will be tried first.
 
         Parameters
         ----------
         model : str
             The model id.
+        mode : str
+            ``predict`` or ``predict/upload``, which decides what one request already in flight on a
+            backend costs this one — the figure the order is scored with.
 
         Returns
         -------
         backends : list of Backend
-            The backends that are answering and not currently passed over, with those that have
-            nothing in flight first, and the first of them already counted as in flight. Empty
-            means the caller should be told the model is unavailable rather than made to wait for
-            a machine that is off — and it is the same set the published count is taken from, so
-            `0` means the same thing in both places.
+            The backends that are answering and not currently passed over, ordered by the wait this
+            request would expect (see :meth:`_order`), and the first of them already counted as in
+            flight. Empty means the caller should be told the model is unavailable rather than made
+            to wait for a machine that is off — and it is the same set the published count is taken
+            from, so `0` means the same thing in both places.
         ahead : int
             How many requests were already counted against the first backend *before* this one
             reserved it — the queue depth this attempt joins, and `0` when there are no backends.
@@ -947,42 +987,52 @@ class ModelRegistry:
             raise HTTPException(status_code=404, detail="no such model")
         ahead = 0
         with self._lock:
-            backends = self._order(self._backends[model])
+            backends = self._order(self._backends[model], mode)
             if backends:
                 ahead = backends[0].in_flight
                 backends[0].in_flight += 1
         return backends, ahead
 
-    def _order(self, backends: Sequence[Backend]) -> list[Backend]:
-        """Return the live backends with those that have nothing in flight first, then the rest.
+    def _order(self, backends: Sequence[Backend], mode: str) -> list[Backend]:
+        """Order the live backends by the wait the next request would expect, cheapest first.
 
         Parameters
         ----------
         backends : sequence of Backend
             One model's backends, in the order the host listed them.
+        mode : str
+            ``predict`` or ``predict/upload``, which decides what one request already in flight
+            costs — see :data:`DELAY_PER_QUEUED_REQUEST`. An unknown mode pays the row figure.
 
         Returns
         -------
         list of Backend
-            The same backends, with an idle one first and the busy ones in ascending order of what
-            they already hold, so a burst deeper than the pool joins the shortest queue. Sorting is
-            stable, so backends holding the same number of requests keep list order.
+            The same backends, sorted ascending by
+            ``rtt_seconds + in_flight * DELAY_PER_QUEUED_REQUEST[mode]``. Sorting is stable, so
+            backends scoring the same keep the host's list order — which is what reproduces the
+            idle-first order exactly when every round trip and every service time are equal.
 
         Notes
         -----
-        The busy group used to keep list order, which made the first entry the pool's only lane:
-        measured against three cards on 2026-10-17, 160 simultaneous calls put 140 on the first
-        listed backend and 20 on the other two, and the pool answered at one card's rate. Idle-first
-        alone does not cover that case, because a backend is only known to be busy after a request
-        has already been counted against it.
+        The two terms are the same unit, seconds of waiting this request pays: the round trip to
+        reach the machine, and the part of a service time the requests already counted against it
+        will use before this one is served. Neither can decide alone. A nearer machine wins while
+        both are idle, and the 0.26 s link to the laboratory is the same order as a queue of one —
+        about a quarter of a service time, because one container answers about four requests at
+        once — so a backend one request deep is not necessarily the slower choice.
+
+        The in-flight term exists because a busy group that kept list order made the first entry the
+        pool's only lane: measured against three cards on 2026-10-17, 160 simultaneous calls put 140
+        on the first listed backend and 20 on the other two, and the pool answered at one card's
+        rate. Idle-first alone did not cover it, because a backend is only known to be busy after a
+        request has already been counted against it; the scalar subsumes it.
         """
         now = time.monotonic()
         live = [
             backend for backend in backends if backend.alive and not backend.is_passed_over(now)
         ]
-        idle = [backend for backend in live if not backend.in_flight]
-        busy = sorted((backend for backend in live if backend.in_flight), key=lambda b: b.in_flight)
-        return idle + busy
+        delay = DELAY_PER_QUEUED_REQUEST.get(mode, 0.25)
+        return sorted(live, key=lambda backend: backend.rtt_seconds + backend.in_flight * delay)
 
     def _reserve(self, backend: Backend) -> int:
         """Count one attempt against a backend, a fallback reached later in the same request.
@@ -1050,7 +1100,7 @@ class ModelRegistry:
             configured none for this model; or when every backend that was tried failed, reported as
             an upstream failure with the status the last one gave.
         """
-        backends, ahead = self._begin(model)
+        backends, ahead = self._begin(model, path)
         if not self._token:
             # Fail closed and say whose fault it is. Without a token every backend would answer 401,
             # which the surface maps to a client error — a misconfigured gateway reported as a bad

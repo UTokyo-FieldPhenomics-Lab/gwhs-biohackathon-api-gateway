@@ -15,9 +15,11 @@ import socket
 import threading
 import time
 from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 import httpx
 import pytest
@@ -172,6 +174,39 @@ def backends() -> FakeBackends:
     return FakeBackends()
 
 
+class _FrozenClock:
+    """A stand-in for the `time` module whose clock does not advance.
+
+    Attributes
+    ----------
+    now : float
+        The stamp every call answers with.
+    """
+
+    def __init__(self, now: float) -> None:
+        self.now = now
+
+    def monotonic(self) -> float:
+        """Return the frozen stamp."""
+        return self.now
+
+
+@contextmanager
+def _no_round_trip() -> Iterator[None]:
+    """Build a registry, or the app holding one, with every backend the same distance away.
+
+    The fake transport answers in microseconds, so almost all of what `_ask` times is the fake's own
+    execution, and the first call in the process is measurably slower than the last. Read as a round
+    trip, that noise makes the last-listed backend the nearest one, and every test naming `FIRST`
+    would be asserting the clock rather than the routing. A frozen clock makes each measurement
+    zero — the "not yet measured" seed — so the scores are equal and the host's list order decides,
+    which is the order these tests were written against. A test that is about distance assigns
+    `Backend.rtt_seconds` itself.
+    """
+    with mock.patch("biohack_gateway.models.time", _FrozenClock(time.monotonic())):
+        yield
+
+
 def build_client(
     tmp_path: Path,
     index_dir: Path,
@@ -210,15 +245,16 @@ def build_client(
     models_path.write_text(
         document if isinstance(document, str) else json.dumps(document), encoding="utf-8"
     )
-    app = create_app(
-        tokens_path=pool,
-        index_dir=index_dir,
-        data_base_url=BASE,
-        models_path=models_path,
-        backend_token=backend_token,
-        model_transport=backends,
-        max_concurrent_per_token=max_concurrent_per_token,
-    )
+    with _no_round_trip():
+        app = create_app(
+            tokens_path=pool,
+            index_dir=index_dir,
+            data_base_url=BASE,
+            models_path=models_path,
+            backend_token=backend_token,
+            model_transport=backends,
+            max_concurrent_per_token=max_concurrent_per_token,
+        )
     with TestClient(app, raise_server_exceptions=False) as client:
         yield client
 
@@ -403,7 +439,8 @@ def test_a_fallback_attempt_says_which_backend_it_reached(
 ) -> None:
     """A second machine tried in the same request logs `attempt=1` against that machine."""
     backends = FakeBackends(replies={FIRST: [Reply(status=500, body=b"boom")]})
-    registry = ModelRegistry({MODEL: [FIRST, SECOND]}, BACKEND_TOKEN, backends)
+    with _no_round_trip():
+        registry = ModelRegistry({MODEL: [FIRST, SECOND]}, BACKEND_TOKEN, backends)
 
     with caplog.at_level(logging.INFO, logger="biohack_gateway.models"):
         reply = registry.forward(MODEL, "predict/upload", "", b"\x89PNG\r\n\x1a\n", "image/png")
@@ -912,9 +949,13 @@ def test_choosing_a_backend_and_reserving_it_are_one_step() -> None:
     2026-10-16: with the two steps apart, two of three simultaneous requests still queued behind a
     stopped backend.
     """
-    registry = ModelRegistry({MODEL: [FIRST, SECOND]}, BACKEND_TOKEN, FakeBackends())
+    with _no_round_trip():
+        registry = ModelRegistry({MODEL: [FIRST, SECOND]}, BACKEND_TOKEN, FakeBackends())
 
-    chosen = [registry._begin(MODEL)[0][0].url for _ in range(2)]  # noqa: SLF001 — see the docstring
+    chosen = [
+        registry._begin(MODEL, "predict")[0][0].url
+        for _ in range(2)  # noqa: SLF001 — see the docstring
+    ]
 
     assert chosen == [FIRST, SECOND]
 
@@ -979,14 +1020,128 @@ def test_the_least_busy_backend_is_chosen_when_every_one_is_busy() -> None:
     gateway on 2026-10-17 with three cards and 160 simultaneous calls: 140 went to the first entry
     and the other two cards saw 20 between them, so the pool answered at one card's rate.
     """
-    registry = ModelRegistry({MODEL: [FIRST, SECOND]}, BACKEND_TOKEN, FakeBackends())
-    registry._begin(MODEL)  # noqa: SLF001 — FIRST now holds one request
-    registry._begin(MODEL)  # noqa: SLF001 — SECOND now holds one
+    with _no_round_trip():
+        registry = ModelRegistry({MODEL: [FIRST, SECOND]}, BACKEND_TOKEN, FakeBackends())
+    registry._begin(MODEL, "predict")  # noqa: SLF001 — FIRST now holds one request
+    registry._begin(MODEL, "predict")  # noqa: SLF001 — SECOND now holds one
     registry._reserve(registry._backends[MODEL][0])  # noqa: SLF001 — FIRST holds two, SECOND one
 
-    chosen = registry._begin(MODEL)[0][0].url  # noqa: SLF001
+    chosen = registry._begin(MODEL, "predict")[0][0].url  # noqa: SLF001
 
     assert chosen == SECOND, "the request joined the longer queue"
+
+
+def _registry_with_round_trips(*seconds: float) -> ModelRegistry:
+    """Build a registry over the fixture's backends, each with a known round trip.
+
+    Parameters
+    ----------
+    seconds : float
+        One round trip per backend, in the order the host listed them — :data:`FIRST`, then
+        :data:`SECOND`, then :data:`THIRD`.
+
+    Returns
+    -------
+    ModelRegistry
+        The registry. The figures are assigned rather than probed, so a test costs no sleep; the
+        ordering never writes them, so they stay what the test said.
+
+    Notes
+    -----
+    A test that probes afterwards would overwrite these with what the fake transport takes, which is
+    why the tests below reach for `_order` and `_begin` instead.
+    """
+    urls = [FIRST, SECOND, THIRD][: len(seconds)]
+    registry = ModelRegistry({MODEL: urls}, BACKEND_TOKEN, FakeBackends())
+    for backend, rtt in zip(registry._backends[MODEL], seconds, strict=True):  # noqa: SLF001
+        backend.rtt_seconds = rtt
+    return registry
+
+
+def test_a_nearer_backend_is_chosen_while_both_are_idle() -> None:
+    """With nothing in flight the score is all round trip, and it outranks the host's list order."""
+    registry = _registry_with_round_trips(0.26, 0.005)
+
+    chosen = registry._begin(MODEL, "predict")[0][0].url  # noqa: SLF001
+
+    assert chosen == SECOND, "the request took the first-listed machine over the nearer one"
+
+
+def test_one_request_in_flight_on_the_nearer_backend_does_not_send_the_next_one_away() -> None:
+    """A queue of one costs a quarter of a service time, which 5 ms against 260 ms does not buy.
+
+    0.005 + 0.25 < 0.26, so the next request waits behind one rather than crossing the ocean to an
+    idle machine. This is the change's regression guard: ordering by "idle first" sent it away,
+    because it priced one in-flight request as a whole service time.
+    """
+    registry = _registry_with_round_trips(0.005, 0.26)
+    registry._begin(MODEL, "predict")  # noqa: SLF001 — FIRST now holds one request
+
+    chosen = registry._begin(MODEL, "predict")[0][0].url  # noqa: SLF001
+
+    assert chosen == FIRST
+
+
+def test_two_requests_in_flight_on_the_nearer_backend_send_the_next_one_to_the_far_one() -> None:
+    """0.005 + 0.5 > 0.26: the second queued request costs more than the ocean does."""
+    registry = _registry_with_round_trips(0.005, 0.26)
+    near = registry._backends[MODEL][0]  # noqa: SLF001
+    registry._reserve(near)  # noqa: SLF001 — FIRST now holds two requests
+    registry._reserve(near)  # noqa: SLF001
+
+    chosen = registry._begin(MODEL, "predict")[0][0].url  # noqa: SLF001
+
+    assert chosen == SECOND
+
+
+def test_an_upload_pays_the_upload_queue_cost_and_a_row_does_not() -> None:
+    """The threshold moves with the mode: one queued upload is already more than the ocean.
+
+    One request in flight gives the near backend 0.005 + 0.25 = 0.255 in row mode — still nearer
+    than 0.26 — and 0.005 + 0.5 = 0.505 in upload mode. The same queue, two answers, because an
+    upload's service time is the longer one.
+    """
+    registry = _registry_with_round_trips(0.005, 0.26)
+    registry._begin(MODEL, "predict/upload")  # noqa: SLF001 — FIRST now holds one upload
+
+    order = registry._backends[MODEL]  # noqa: SLF001
+    assert registry._order(order, "predict")[0].url == FIRST  # noqa: SLF001
+    assert registry._order(order, "predict/upload")[0].url == SECOND  # noqa: SLF001
+
+
+def test_a_burst_with_equal_round_trips_still_spreads_over_three_backends() -> None:
+    """Equal scores keep list order, so a burst takes one backend each rather than the first's."""
+    registry = _registry_with_round_trips(0.01, 0.01, 0.01)
+
+    chosen = [registry._begin(MODEL, "predict")[0][0].url for _ in range(3)]  # noqa: SLF001
+
+    assert chosen == [FIRST, SECOND, THIRD]
+
+
+def test_a_probe_records_the_round_trip_and_a_503_leaves_it_alone() -> None:
+    """Only an answer from a serving container measures the link.
+
+    A `503` is a container still loading its weights: its duration says nothing about the route, so
+    it must not move the figure the ordering is scored with.
+    """
+    replies = [
+        Reply(status=200, body=json.dumps(DECLARATION).encode()),
+        Reply(status=503, body=b'{"ready": false}'),
+    ]
+
+    def transport(
+        method: str, url: str, headers: Mapping[str, str], body: bytes | None, timeout: float
+    ) -> Reply:
+        time.sleep(0.01)
+        return replies.pop(0) if len(replies) > 1 else replies[0]
+
+    registry = ModelRegistry({MODEL: [FIRST]}, BACKEND_TOKEN, transport)  # type: ignore[arg-type]
+    backend = registry._backends[MODEL][0]  # noqa: SLF001
+    measured = backend.rtt_seconds
+
+    assert measured >= 0.005, "the first probe did not become the round trip"
+    registry.probe()
+    assert backend.rtt_seconds == measured, "a refusal rewrote the measurement"
 
 
 def _served_by_uvicorn(app: Any) -> Iterator[int]:

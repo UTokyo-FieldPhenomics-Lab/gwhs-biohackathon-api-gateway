@@ -18,13 +18,19 @@ here.
   decides which routes are counted, and it counts only the two predict routes, because a metadata
   read holds no GPU. A per-key request *rate* is still absent. [`project.md`](project.md) holds that decision and its triggers.
 - **Images reach clients through the public `data.*` plane**, so nothing has to be anonymous.
-- **Routing is a sequential retry over interchangeable backends.** Try backends in order, **idle ones
-  first and then the shortest queue** — a backend is only known to be unhealthy *after* an attempt
-  fails, so without the first a burst arriving during the failure queues behind it, and without the
-  second a burst deeper than the pool is answered by whichever backend the host listed first: three
-  cards and 160 simultaneous calls put 140 on one of them, so the pool ran at one card's rate
-  ([measurements](../references/2026101714_what-a-burst-does-to-the-pool.md)). Mark a failed one
-  unhealthy, and move on. The window a failed backend is passed over for must be **at least the
+- **Routing is a sequential retry over interchangeable backends, cheapest expected wait first.** Score
+  each live backend by its **measured round trip plus what the requests already in flight are likely
+  to cost**, and try the cheapest — a backend is only known to be unhealthy *after* an attempt fails,
+  so a burst arriving during the failure must not queue behind it, and a burst deeper than the pool
+  must not be answered by whichever backend the host listed first: three cards and 160 simultaneous
+  calls put 140 on one of them, so the pool ran at one card's rate
+  ([measurements](../references/2026101714_what-a-burst-does-to-the-pool.md)). **Both terms belong in
+  the sum and each is the same order as the other**: the link to the laboratory is ~0.26 s, and one
+  request queued ahead costs ~0.25 s in row mode because a container answers about four at once
+  ([measurements](../references/202610192300_lane-width-and-the-score.md)). Ordering by "idle first"
+  alone prices one queued request as a whole service time and sends a burst across the ocean for a
+  wait it would never have paid; ordering by round trip alone piles the burst on the nearest machine.
+  Mark a failed one unhealthy, and move on. The window a failed backend is passed over for must be **at least the
   response budget the failed attempt had**, and `models.py` asserts the invariant, because a window
   shorter than the failure it remembers charges the same wait again for every window. A backend is
   any Docker-capable GPU resource behind one uniform protocol; the gateway never special-cases a

@@ -1,6 +1,6 @@
 """How many inferences one participant key may have in flight at once.
 
-The gateway is a fixed number of serial GPU lanes — one per backend, each declaring
+The gateway is a fixed number of declared GPU lanes — one per backend, each declaring
 `max_in_flight` 1 — so the only thing a client can consume is a lane, and the only fair unit to hold
 is one *inference* per lane. Without a cap, one team's loop takes every lane and every other team
 waits behind it, which is the fairness complaint this cap exists to prevent rather than to measure.
