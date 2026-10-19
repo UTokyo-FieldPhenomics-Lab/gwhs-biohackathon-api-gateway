@@ -1,0 +1,7 @@
+start_ms,end_ms,status,model,mode,bytes_sent,payload,row,detail
+1792418120016,1792418121740,200,gwfss-segformer-b4,predict,30,gwfss,9,application/json
+1792418120016,1792418121804,200,gwfss-segformer-b4,predict,30,gwfss,2,application/json
+1792418120016,1792418122949,200,gwfss-segformer-b4,predict,34,gwhs-temp,7,application/json
+1792418120016,1792418124009,200,sam3.1-meta,predict/upload,268780,gwhs-temp_0004.png,,application/json
+1792418120017,1792418121854,200,gwfss-segformer-b4,predict,29,gwhd,2,application/json
+1792418120017,1792418124832,200,sam3.1-meta,predict/upload,664029,gwhs-temp_0009.jpg,,application/json

@@ -1,0 +1,10 @@
+draining 60s before the first level
+level 3: 3 requests, wall 4.8s, p50 3176.0 ms, p95 4796.0 ms, statuses {'200': 3}
+pausing 60s
+level 6: 6 requests, wall 4.8s, p50 1837.0 ms, p95 4815.0 ms, statuses {'200': 6}
+pausing 60s
+level 12: 12 requests, wall 4.6s, p50 2266.0 ms, p95 4609.0 ms, statuses {'200': 12}
+pausing 60s
+level 25: 25 requests, wall 5.0s, p50 2969.0 ms, p95 4669.0 ms, statuses {'200': 25}
+pausing 60s
+level 50: 50 requests, wall 11.5s, p50 2864.0 ms, p95 9836.0 ms, statuses {'200': 50}

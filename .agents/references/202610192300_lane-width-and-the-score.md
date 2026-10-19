@@ -96,6 +96,25 @@ of this measurable is `feat(gateway): log one line per inference attempt`. `limi
 a lane "serial" (it is the *declared* width that the cap follows), and `rules/gateway.md` now states
 the score instead of "idle ones first".
 
+## Reproducing it
+
+The harness, the five levels' client records and the gateway's own log lines per level are archived
+beside this note in [`202610192300_load-test/`](202610192300_load-test): `run.py` drives the load,
+`analyze.py` reads what the two sides recorded, `run.out` is what the run printed.
+
+1. Start a second gateway on the host from the checkout's code, with the per-key cap off and its log
+   where `run.py` looks for it (`$HOME/gw-test/gateway.log` on `gwhs-host`): copy
+   `gateway/src/biohack_gateway` to `$HOME/gw-test/gateway/src/`, then run uvicorn with
+   `BIOHACK_MAX_CONCURRENT_PER_TOKEN=0` and the backend token from `~/.config/biohack-gateway/env`,
+   bound to `0.0.0.0:8001`. The security group does not open that port; the tailnet is the only way in.
+2. Put four images in `images/` beside `run.py` — `gwfss_0007.png`, `gwhd_0003.jpg`,
+   `gwhs-temp_0004.png`, `gwhs-temp_0009.jpg`, 178–664 KB — taken from the `data.*` URLs of the rows
+   they are named after. They are dataset content and are not archived here.
+3. `GW_KEY=<a participant token> python3 run.py --levels 3,6,12,25,50 --gap 60 --warm 60`. The key
+   comes from the environment and never from the file.
+4. `python3 analyze.py` prints the summary. `run.py` needs `ssh gwhs-host` to slice the log by line
+   number, which is what makes each level's server-side record exact rather than approximately timed.
+
 ## Next time
 
 - Run the generator somewhere that is not also a backend; a third of the requests were client and

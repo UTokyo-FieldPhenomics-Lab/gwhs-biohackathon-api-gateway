@@ -1,0 +1,4 @@
+start_ms,end_ms,status,model,mode,bytes_sent,payload,row,detail
+1792418049174,1792418050577,200,sam3.1-meta,predict,29,gwhd,7,application/json
+1792418049175,1792418052351,200,sam3.1-meta,predict/upload,178438,gwhd_0003.jpg,,application/json
+1792418049175,1792418053971,200,gwfss-segformer-b4,predict/upload,405139,gwfss_0007.png,,application/json

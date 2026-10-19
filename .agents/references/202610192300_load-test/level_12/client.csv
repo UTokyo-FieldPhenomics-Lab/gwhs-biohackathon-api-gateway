@@ -1,0 +1,13 @@
+start_ms,end_ms,status,model,mode,bytes_sent,payload,row,detail
+1792418190868,1792418192203,200,gwfss-segformer-b4,predict,34,gwhs-temp,4,application/json
+1792418190868,1792418192242,200,sam3.1-meta,predict,30,gwfss,3,application/json
+1792418190868,1792418192257,200,sam3.1-meta,predict,30,gwfss,6,application/json
+1792418190868,1792418192301,200,sam3.1-meta,predict,34,gwhs-temp,6,application/json
+1792418190868,1792418192571,200,gwfss-segformer-b4,predict,29,gwhd,1,application/json
+1792418190868,1792418193134,200,gwfss-segformer-b4,predict,29,gwhd,5,application/json
+1792418190868,1792418194806,200,gwfss-segformer-b4,predict,34,gwhs-temp,5,application/json
+1792418190869,1792418194009,200,sam3.1-meta,predict/upload,268780,gwhs-temp_0004.png,,application/json
+1792418190869,1792418195145,200,gwfss-segformer-b4,predict/upload,405139,gwfss_0007.png,,application/json
+1792418190869,1792418195478,200,gwfss-segformer-b4,predict/upload,405139,gwfss_0007.png,,application/json
+1792418190870,1792418194172,200,sam3.1-meta,predict/upload,178438,gwhd_0003.jpg,,application/json
+1792418190870,1792418195007,200,sam3.1-meta,predict/upload,664029,gwhs-temp_0009.jpg,,application/json

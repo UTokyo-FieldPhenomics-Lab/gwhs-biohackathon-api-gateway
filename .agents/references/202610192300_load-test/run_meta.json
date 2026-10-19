@@ -1,0 +1,15 @@
+{
+ "label": "run1",
+ "levels": [
+  3,
+  6,
+  12,
+  25,
+  50
+ ],
+ "gap_seconds": 60.0,
+ "seed": 20261019,
+ "client_timeout_seconds": 60.0,
+ "started": "2026-10-19T22:53:03+0900",
+ "host": "gwhs-host"
+}
