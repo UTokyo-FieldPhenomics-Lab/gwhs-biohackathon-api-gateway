@@ -1,0 +1,20 @@
+{
+ "mode": "row",
+ "workers": 12,
+ "requested_seconds": 60.0,
+ "wall_seconds": 60.74,
+ "requests": 865,
+ "statuses": {
+  "200": 865
+ },
+ "per_model": {
+  "sam3.1-meta": 484,
+  "gwfss-segformer-b4": 381
+ },
+ "p50_ms": 716.0,
+ "p95_ms": 1399.0,
+ "max_ms": 2954,
+ "gateway_inference_lines": 865,
+ "gateway_status_0_or_504": 0,
+ "log_first_line": 289
+}

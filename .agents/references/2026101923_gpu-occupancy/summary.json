@@ -1,0 +1,144 @@
+{
+ "row": {
+  "machines": {
+   "homepc-4090": {
+    "samples": 232,
+    "busy": 0.1379,
+    "mean_free_mib": 14387
+   },
+   "lab-3090": {
+    "samples": 230,
+    "busy": 0.2087,
+    "mean_free_mib": 13744
+   },
+   "lab-5090": {
+    "samples": 219,
+    "busy": 0.1735,
+    "mean_free_mib": 23561
+   }
+  },
+  "backends": {
+   "homepc-4090:12711": {
+    "samples": 116,
+    "busy": 0.2328,
+    "mean_free_mib": 14387
+   },
+   "homepc-4090:12712": {
+    "samples": 116,
+    "busy": 0.0431,
+    "mean_free_mib": 14387
+   },
+   "lab-3090:12711": {
+    "samples": 116,
+    "busy": 0.3276,
+    "mean_free_mib": 13744
+   },
+   "lab-3090:12712": {
+    "samples": 114,
+    "busy": 0.0877,
+    "mean_free_mib": 13744
+   },
+   "lab-5090:12711": {
+    "samples": 109,
+    "busy": 0.2936,
+    "mean_free_mib": 23561
+   },
+   "lab-5090:12712": {
+    "samples": 110,
+    "busy": 0.0545,
+    "mean_free_mib": 23561
+   }
+  },
+  "run": {
+   "mode": "row",
+   "workers": 12,
+   "requested_seconds": 60.0,
+   "wall_seconds": 60.74,
+   "requests": 865,
+   "statuses": {
+    "200": 865
+   },
+   "per_model": {
+    "sam3.1-meta": 484,
+    "gwfss-segformer-b4": 381
+   },
+   "p50_ms": 716.0,
+   "p95_ms": 1399.0,
+   "max_ms": 2954,
+   "gateway_inference_lines": 865,
+   "gateway_status_0_or_504": 0,
+   "log_first_line": 289
+  }
+ },
+ "upload": {
+  "machines": {
+   "homepc-4090": {
+    "samples": 243,
+    "busy": 0.0,
+    "mean_free_mib": 14387
+   },
+   "lab-3090": {
+    "samples": 232,
+    "busy": 0.0,
+    "mean_free_mib": 13744
+   },
+   "lab-5090": {
+    "samples": 228,
+    "busy": 0.0088,
+    "mean_free_mib": 23561.9
+   }
+  },
+  "backends": {
+   "homepc-4090:12711": {
+    "samples": 121,
+    "busy": 0.0,
+    "mean_free_mib": 14387
+   },
+   "homepc-4090:12712": {
+    "samples": 122,
+    "busy": 0.0,
+    "mean_free_mib": 14387
+   },
+   "lab-3090:12711": {
+    "samples": 113,
+    "busy": 0.0,
+    "mean_free_mib": 13744
+   },
+   "lab-3090:12712": {
+    "samples": 119,
+    "busy": 0.0,
+    "mean_free_mib": 13744
+   },
+   "lab-5090:12711": {
+    "samples": 114,
+    "busy": 0.0088,
+    "mean_free_mib": 23561.9
+   },
+   "lab-5090:12712": {
+    "samples": 114,
+    "busy": 0.0088,
+    "mean_free_mib": 23561.9
+   }
+  },
+  "run": {
+   "mode": "upload",
+   "workers": 12,
+   "requested_seconds": 60.0,
+   "wall_seconds": 63.11,
+   "requests": 309,
+   "statuses": {
+    "200": 309
+   },
+   "per_model": {
+    "sam3.1-meta": 142,
+    "gwfss-segformer-b4": 167
+   },
+   "p50_ms": 2183.0,
+   "p95_ms": 4148.0,
+   "max_ms": 5784,
+   "gateway_inference_lines": 309,
+   "gateway_status_0_or_504": 0,
+   "log_first_line": 2933
+  }
+ }
+}
