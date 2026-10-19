@@ -30,6 +30,7 @@ from biohack_gateway.app import create_app, occupies_lane
 from biohack_gateway.models import (
     RESPONSE_TIMEOUT_SECONDS,
     UNHEALTHY_SECONDS,
+    ComputedBy,
     ModelRegistry,
     Reply,
     _BoundedHTTPConnection,
@@ -99,6 +100,35 @@ PREDICTION: dict[str, Any] = {
 """One answer in the shape the two surfaces share, including the `score` only a model produces."""
 
 
+def _named_after_its_address(declaration: dict[str, Any], url: str) -> dict[str, Any]:
+    """Copy the fixture's declaration with the backend named after its own address.
+
+    Parameters
+    ----------
+    declaration : dict
+        The declaration the fake was programmed with.
+    url : str
+        The `/health` address the backend was asked on.
+
+    Returns
+    -------
+    dict
+        A copy whose ``computed_by.machine`` is that address's host — the fixture's way of saying
+        "two addresses are two machines". A test that wants several containers on one card passes a
+        declaration with a fixed machine name instead.
+
+    Notes
+    -----
+    The name matters to the router now: requests are counted per machine, so a fixture whose
+    backends all claim one card would have them share a queue, which is the opposite of what the
+    ordering tests are about.
+    """
+    record = declaration.get("computed_by")
+    if not isinstance(record, dict):
+        return declaration
+    return {**declaration, "computed_by": {**record, "machine": httpx.URL(url).host}}
+
+
 class FakeBackends:
     """Answer for a pool of backends, and remember every request made to them.
 
@@ -123,7 +153,10 @@ class FakeBackends:
             Per-backend queues, consumed in order; the last is repeated. A backend with no queue
             answers a successful prediction.
         declaration : dict, optional
-            What a backend answers when asked what it serves. `None` answers the fixture's.
+            What a backend answers when asked what it serves. `None` answers the fixture's, with
+            each backend named as its own machine after its address — a pool of separate machines,
+            which is what most tests mean. Pass one whose ``computed_by.machine`` is fixed to model
+            several containers sharing one card.
         health : list of Reply, optional
             A queue for the declaration reads alone, consumed across all backends and repeated at
             the end. It is how a test models a container that is still loading when the gateway
@@ -131,6 +164,7 @@ class FakeBackends:
         """
         self.replies = {url: list(queue) for url, queue in (replies or {}).items()}
         self.declaration = DECLARATION if declaration is None else declaration
+        self.names_machines = declaration is None
         self.health = list(health or [])
         self.asked: list[tuple[str, str, Mapping[str, str], bytes | None]] = []
 
@@ -149,7 +183,10 @@ class FakeBackends:
                 return self.health.pop(0) if len(self.health) > 1 else self.health[0]
             if self.declaration is None:
                 return Reply(status=0, body=b"")
-            return Reply(status=200, body=json.dumps(self.declaration).encode())
+            declaration = self.declaration
+            if self.names_machines:
+                declaration = _named_after_its_address(declaration, url)
+            return Reply(status=200, body=json.dumps(declaration).encode())
         for base, queue in self.replies.items():
             if url.startswith(base):
                 if len(queue) > 1:
@@ -284,10 +321,13 @@ def test_the_directory_lists_what_the_model_declares(client: TestClient) -> None
                 "max_in_flight": 2,
                 "declared": True,
                 "parameters": DECLARATION["parameters"],
-                # Two backends, two records — one per machine that answered, not one per model. Two
-                # identical entries mean an operator named two machines the same, which is theirs to
-                # fix and not the gateway's to hide.
-                "machines": [DECLARATION["computed_by"], DECLARATION["computed_by"]],
+                # Two backends, two records — one per machine that answered, not one per model. The
+                # fixture names each address as its own machine, which is what the pool is: two
+                # cards answering, and a reader told which.
+                "machines": [
+                    {**DECLARATION["computed_by"], "machine": "192.0.2.10"},
+                    {**DECLARATION["computed_by"], "machine": "192.0.2.11"},
+                ],
             }
         ]
     }
@@ -427,6 +467,7 @@ def test_an_attempt_is_logged_with_its_backend_and_size(
     assert fields["mode"] == "predict"
     assert fields["attempt"] == "0"
     assert fields["ahead"] == "0"
+    assert fields["machine_ahead"] == "0"
     assert fields["status"] == "200"
     assert float(fields["ms"]) >= 0.0
     assert fields["bytes_in"] == str(len(body))
@@ -1116,6 +1157,86 @@ def test_a_burst_with_equal_round_trips_still_spreads_over_three_backends() -> N
     chosen = [registry._begin(MODEL, "predict")[0][0].url for _ in range(3)]  # noqa: SLF001
 
     assert chosen == [FIRST, SECOND, THIRD]
+
+
+def _one_card(models: dict[str, list[str]]) -> ModelRegistry:
+    """Build a registry in which every backend listed sits on one card named ``card-1``.
+
+    Parameters
+    ----------
+    models : dict
+        The model-to-backend list.
+
+    Returns
+    -------
+    ModelRegistry
+        The registry, with every backend declaring ``card-1`` and an equal round trip, so the only
+        thing that can order them is the card's queue.
+
+    Notes
+    -----
+    This is the shape a machine carrying several containers publishes: the same
+    ``computed_by.machine`` from each, which is what makes their queues one queue.
+    """
+    registry = ModelRegistry(models, BACKEND_TOKEN, FakeBackends())
+    for backends in registry._backends.values():  # noqa: SLF001
+        for backend in backends:
+            backend.machine = ComputedBy(machine="card-1")
+            backend.rtt_seconds = 0.0
+    return registry
+
+
+def test_a_card_with_two_containers_prefers_the_one_whose_lock_is_free() -> None:
+    """One card, two containers: the next request goes to the container doing nothing.
+
+    Both score alike — the card is the queue — so the tie is broken by the container's own depth.
+    Without that, list order would keep feeding the first container while the second sat idle.
+    """
+    registry = _one_card({MODEL: [FIRST, SECOND]})
+
+    registry._begin(MODEL, "predict")  # noqa: SLF001 — FIRST holds one
+    order = registry._order(registry._backends[MODEL], "predict")  # noqa: SLF001
+
+    assert [backend.url for backend in order] == [SECOND, FIRST]
+
+
+def test_two_models_on_one_card_share_one_queue() -> None:
+    """A request for the second model is not told that the card is free.
+
+    THIRD would be chosen either way: the point is that SECOND, on the busy card, loses. Without a
+    per-machine count both cards look idle and the host's list order decides instead.
+    """
+    registry = _one_card({MODEL: [FIRST], "other": [SECOND, THIRD]})
+    registry._backends["other"][1].machine = ComputedBy(machine="card-2")  # noqa: SLF001
+    registry._begin(MODEL, "predict")  # noqa: SLF001 — one inference on card-1, through the other model
+
+    order = registry._order(registry._backends["other"], "predict")  # noqa: SLF001
+
+    assert [backend.url for backend in order] == [THIRD, SECOND]
+
+
+def test_a_release_gives_the_card_its_slot_back() -> None:
+    """The count falls when the attempt ends, and the key is dropped at zero."""
+    registry = _one_card({MODEL: [FIRST, SECOND]})
+
+    registry._begin(MODEL, "predict")  # noqa: SLF001
+    assert registry._machine_in_flight == {"card-1": 1}  # noqa: SLF001
+
+    registry._release(registry._backends[MODEL][0])  # noqa: SLF001
+
+    assert registry._machine_in_flight == {}  # noqa: SLF001
+
+
+def test_a_container_that_names_no_machine_is_counted_alone() -> None:
+    """An undeclared machine falls back to the backend's own address, not to one shared bucket."""
+    registry = ModelRegistry({MODEL: [FIRST, SECOND]}, BACKEND_TOKEN, FakeBackends())
+    for backend in registry._backends[MODEL]:  # noqa: SLF001
+        backend.machine = None
+        backend.rtt_seconds = 0.0
+
+    registry._begin(MODEL, "predict")  # noqa: SLF001
+
+    assert registry._machine_in_flight == {FIRST: 1}  # noqa: SLF001
 
 
 def test_a_probe_records_the_round_trip_and_a_503_leaves_it_alone() -> None:

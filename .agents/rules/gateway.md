@@ -26,16 +26,22 @@ here.
   calls put 140 on one of them, so the pool ran at one card's rate
   ([measurements](../references/2026101714_what-a-burst-does-to-the-pool.md)). **Both terms belong in
   the sum and each is the same order as the other**: the link to the laboratory is ~0.26 s, and one
-  request queued ahead costs ~0.25 s in row mode because a container answers about four at once
+  request queued ahead costs ~0.25 s in row mode
   ([measurements](../references/202610192300_lane-width-and-the-score.md)). Ordering by "idle first"
   alone prices one queued request as a whole service time and sends a burst across the ocean for a
   wait it would never have paid; ordering by round trip alone piles the burst on the nearest machine.
-  Mark a failed one unhealthy, and move on. The window a failed backend is passed over for must be **at least the
-  response budget the failed attempt had**, and `models.py` asserts the invariant, because a window
-  shorter than the failure it remembers charges the same wait again for every window. A backend is
-  any Docker-capable GPU resource behind one uniform protocol; the gateway never special-cases a
-  provider. No circuit-breaker and no weighted routing: the answers are interchangeable and a queue
-  is not this layer's job.
+  Mark a failed one unhealthy, and move on. The window a failed backend is passed over for must be
+  **at least the response budget the failed attempt had**, and `models.py` asserts the invariant,
+  because a window shorter than the failure it remembers charges the same wait again for every
+  window. A backend is any Docker-capable GPU resource behind one uniform protocol; the gateway never
+  special-cases a provider. No circuit-breaker and no weighted routing: the answers are
+  interchangeable and a queue is not this layer's job.
+- **The queue is the machine's, not the container's.** A card carrying three models has three
+  containers and one GPU, so the depth the score multiplies is the requests in flight on that
+  machine, summed across every model it serves, keyed by the `computed_by.machine` each container
+  declares. Counting per container would tell a request for the third model that the card is free
+  while two inferences run on it. A container that declares no machine is counted alone, and ties
+  within one machine go to the container whose own lock is free.
 - **A handler that reaches a backend is a plain `def`, never `async def`.** The transport is a
   blocking socket call, so an async handler runs it on the event loop and holds every other route
   for the round trip — an upload did exactly that, and `/health` answered in 11 s under six of them

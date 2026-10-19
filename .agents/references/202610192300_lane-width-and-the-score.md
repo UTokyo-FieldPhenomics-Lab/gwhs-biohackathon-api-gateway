@@ -130,3 +130,29 @@ level — so the slices can be checked against what they were cut from. The code
 - `sam3.1-meta` answered in 195 bytes on every backend, against 7–26 KB for segformer: for that model
   the ocean is paid on the request and the first byte only, and the scheduler's upload premium does
   not apply to it.
+
+## Correction, added the same evening
+
+Reading the containers afterwards changed one reading above. Both hold a global `threading.Lock`
+around their GPU work (`sam31_official/serve.py:892`, `gwfss_segformer/serve.py:579`), and the sam31
+README says why: the processor keeps the current image on itself, so concurrent inference in one
+container is not correct, only slower. **The card runs one inference at a time.** The flat latency at
+depth 5 was therefore not four inferences interleaving — it was the image fetch and the body's
+transfer overlapping with the lock, which is I/O. "Four wide" is an *admission* figure, not a
+parallelism figure, and the two rows above that read it as parallelism are wrong.
+
+What that changed in the code, afterwards:
+
+- The queue is counted per **machine**, not per backend. `computed_by.machine` groups the containers
+  of one card, and the depth the score multiplies is the sum across every model that machine serves —
+  otherwise a request for the third model of a card already running two would be told it is free.
+- Within one machine, ties go to the container whose own lock is free, so a second container still
+  gets the next request while the first is busy.
+- `DELAY_PER_QUEUED_REQUEST` keeps its measured values and loses its stated reason: 0.25 s is the
+  measured marginal, and the margin exists because non-GPU work overlaps the inference, not because
+  the card answers four at once.
+- The `inference` line gained `machine_ahead`.
+
+Whether admission can be widened at all is still open, and it is a question about **occupancy** rather
+than width: each container publishes `in_flight` = 1 while its lock is held, which is the number to
+sample under load before changing any declaration.

@@ -70,18 +70,20 @@ measurements behind it are in `deploy/gpu-backends.md`.
 """
 
 DELAY_PER_QUEUED_REQUEST = {"predict": 0.25, "predict/upload": 0.5}
-"""Seconds a request already in flight adds to the expected wait of the next one, per mode.
+"""Seconds a request already in flight on a machine adds to the expected wait of the next one.
 
-Each figure is a service time divided by the number of requests one container answers at once:
-0.95 s for a published row and 2.0 s for an upload, over about 4 at a time (measured 2026-10-19).
-That is why one request queued ahead costs roughly a quarter of a service time rather than a whole
-one, and why the round trip belongs in the same sum — the 0.26 s link to the laboratory is now the
-same order as a queue of one, so neither term can decide the order alone.
+Measured 2026-10-19 by holding 50 requests against the pool and reading each attempt's duration
+against its depth at dispatch: one request ahead cost a fraction of a service time rather than a
+whole one. The reason is not parallel inference — each container holds a lock around its GPU work
+and runs one inference at a time — it is that the part of a request which is *not* GPU work, the
+image fetch and the body's transfer, overlaps with the inference the card is already doing.
 
-Uploads cost more than twice as much as row mode because the body crosses the ocean with the
-request, so the upload service time is the longer of the two. This is a measured calibration, not a
-property of the hardware: re-take it if the models or the machines change. What it is for, and the
-load test behind it, is `.agents/references/202610192300_lane-width-and-the-score.md`.
+That is why the row figure is the smaller of the two: a published row's image is fetched by the
+backend while the lock is free, whereas an upload's body arrives on the request itself.
+
+The depth these figures multiply is the machine's, not the container's, because a card carrying
+several models is still one GPU. What it is for, and the load test behind it, is
+`.agents/references/202610192300_lane-width-and-the-score.md`.
 """
 
 DECLARATION_TIMEOUT_SECONDS = 3.0
@@ -415,9 +417,10 @@ _CONNECTIONS: dict[str, type[http.client.HTTPConnection]] = {
 POOL_IDLE_PER_BACKEND = 4
 """Idle connections kept per backend, which is the concurrency one machine is asked for anyway.
 
-More than a handful would sit unused: one machine answers about four requests at once (measured
-2026-10-19), and the gateway's own thread pool is what bounds simultaneous calls. Four is enough
-that a burst finds a warm socket without holding a descriptor open per thread.
+More than a handful would sit unused: a machine carried up to five simultaneous requests in the
+2026-10-19 run, and that overlap is image fetch and transfer rather than inference, so four idle
+connections are enough to keep a burst from paying a handshake. The gateway's own thread pool is
+what bounds simultaneous calls.
 """
 
 _IDLE: dict[tuple[str, str, int], list[http.client.HTTPConnection]] = {}
@@ -669,6 +672,29 @@ class Backend:
         """
         return now < self.unhealthy_until
 
+    @property
+    def machine_key(self) -> str:
+        """The machine whose queue this container's requests belong to.
+
+        Returns
+        -------
+        str
+            The name the container declared in ``computed_by.machine``, or its own URL when it
+            declared none — a machine that cannot be named is counted alone rather than merged with
+            every other unnamed one.
+
+        Notes
+        -----
+        Two containers on one machine declare the same name, and that is the point: a card serving
+        three models has one GPU, so a request for the third must see the work the other two are
+        already doing. The name comes from the run line (`SAM31_MACHINE` and its siblings), which is
+        also why the same machine named two different ways splits its own queue in two — the one
+        mistake this key cannot detect.
+        """
+        if self.machine is not None and self.machine.machine:
+            return self.machine.machine
+        return self.url
+
 
 class ModelRegistry:
     """The configured models, what their backends declared, and which ones are answering.
@@ -704,10 +730,17 @@ class ModelRegistry:
         """
         self._token = backend_token
         self._transport = transport
-        # Guards `Backend.in_flight` only, and is held for an increment and a decrement. The sync
-        # predict routes run in FastAPI's thread pool, so two requests really do touch one backend's
-        # counter at the same time.
+        # Guards `Backend.in_flight` and the per-machine counts, and is held for an increment and a
+        # decrement. The sync predict routes run in FastAPI's thread pool, so two requests really do
+        # touch one backend's counter at the same time.
         self._lock = threading.Lock()
+        self._machine_in_flight: dict[str, int] = {}
+        """Requests in flight per machine, summed across every model it serves.
+
+        The unit a caller waits on is a card, not a container: one GPU answering three models has
+        three containers and one queue, and a request for the third model that saw only its own
+        container's depth would be told the machine is free while two inferences run on it.
+        """
         self._backends: dict[str, list[Backend]] = {
             model: [Backend(url=url) for url in urls] for model, urls in models.items()
         }
@@ -941,7 +974,7 @@ class ModelRegistry:
             ]
         return max(widths, default=1) or 1
 
-    def _begin(self, model: str, mode: str) -> tuple[list[Backend], int]:
+    def _begin(self, model: str, mode: str) -> tuple[list[Backend], int, int]:
         """Order a model's live backends and reserve the one that will be tried first.
 
         Parameters
@@ -963,6 +996,10 @@ class ModelRegistry:
         ahead : int
             How many requests were already counted against the first backend *before* this one
             reserved it — the queue depth this attempt joins, and `0` when there are no backends.
+        machine_ahead : int
+            How many requests were already in flight on the **machine** that backend runs on,
+            across every model it serves. This is the queue the order was scored with, and it can be
+            larger than `ahead` when one card carries several containers.
 
         Raises
         ------
@@ -986,12 +1023,17 @@ class ModelRegistry:
         if model not in self._backends:
             raise HTTPException(status_code=404, detail="no such model")
         ahead = 0
+        machine_ahead = 0
         with self._lock:
             backends = self._order(self._backends[model], mode)
             if backends:
-                ahead = backends[0].in_flight
-                backends[0].in_flight += 1
-        return backends, ahead
+                chosen = backends[0]
+                key = chosen.machine_key
+                ahead = chosen.in_flight
+                machine_ahead = self._machine_in_flight.get(key, 0)
+                chosen.in_flight += 1
+                self._machine_in_flight[key] = machine_ahead + 1
+        return backends, ahead, machine_ahead
 
     def _order(self, backends: Sequence[Backend], mode: str) -> list[Backend]:
         """Order the live backends by the wait the next request would expect, cheapest first.
@@ -1008,18 +1050,35 @@ class ModelRegistry:
         -------
         list of Backend
             The same backends, sorted ascending by
-            ``rtt_seconds + in_flight * DELAY_PER_QUEUED_REQUEST[mode]``. Sorting is stable, so
-            backends scoring the same keep the host's list order — which is what reproduces the
-            idle-first order exactly when every round trip and every service time are equal.
+            ``rtt_seconds + machine_depth * DELAY_PER_QUEUED_REQUEST[mode]``, where the depth is the
+            number of requests in flight on the **machine** the backend runs on, across every model
+            it serves. Sorting is stable, so backends scoring the same keep the host's list order —
+            which is what reproduces the idle-first order exactly when every round trip and every
+            service time are equal.
 
         Notes
         -----
         The two terms are the same unit, seconds of waiting this request pays: the round trip to
-        reach the machine, and the part of a service time the requests already counted against it
-        will use before this one is served. Neither can decide alone. A nearer machine wins while
-        both are idle, and the 0.26 s link to the laboratory is the same order as a queue of one —
-        about a quarter of a service time, because one container answers about four requests at
-        once — so a backend one request deep is not necessarily the slower choice.
+        reach the machine, and the part of a service time the requests already running there will
+        use before this one is served. Neither can decide alone. A nearer machine wins while both
+        are idle, and the 0.26 s link to the laboratory is the same order as a queue of one — about
+        a quarter of a service time, because one container overlaps an image fetch with its GPU
+        work — so a backend one request deep is not necessarily the slower choice.
+
+        **The depth is the machine's, not the container's**, and that is the difference a card
+        carrying several models makes. A request for the third model of a machine whose other two
+        containers are already inferring sees its own container empty and would call the machine
+        free; counting per machine is what stops the router stacking a third inference on one card
+        while another card is idle. Two containers that declare different machine names are two
+        machines for this purpose, which is why every container names the machine it runs on.
+
+        The caller holds :attr:`_lock`: the counts and the order must be read together, or a burst
+        would all see the same empty machine.
+
+        Ties on the score are broken by the **container's** own depth rather than by list order,
+        because a card carrying two containers should send the next request to the one whose lock is
+        free: on the same machine the two score alike, and picking by list order would keep feeding
+        the first container while the second sat idle.
 
         The in-flight term exists because a busy group that kept list order made the first entry the
         pool's only lane: measured against three cards on 2026-10-17, 160 simultaneous calls put 140
@@ -1032,9 +1091,16 @@ class ModelRegistry:
             backend for backend in backends if backend.alive and not backend.is_passed_over(now)
         ]
         delay = DELAY_PER_QUEUED_REQUEST.get(mode, 0.25)
-        return sorted(live, key=lambda backend: backend.rtt_seconds + backend.in_flight * delay)
+        depth = self._machine_in_flight
+        return sorted(
+            live,
+            key=lambda backend: (
+                backend.rtt_seconds + depth.get(backend.machine_key, 0) * delay,
+                backend.in_flight,
+            ),
+        )
 
-    def _reserve(self, backend: Backend) -> int:
+    def _reserve(self, backend: Backend) -> tuple[int, int]:
         """Count one attempt against a backend, a fallback reached later in the same request.
 
         Parameters
@@ -1044,24 +1110,45 @@ class ModelRegistry:
 
         Returns
         -------
-        int
-            How many requests were already counted against it before this reservation, so the
-            attempt's log line can say what it queued behind. Read under the same lock that
-            increments it, for the reason :meth:`_begin` gives.
+        ahead : int
+            How many requests were already counted against this backend before this reservation.
+        machine_ahead : int
+            How many were already in flight on its machine, across every model, before it.
+
+        Notes
+        -----
+        Both figures are read under the same lock that increments them, for the reason
+        :meth:`_begin` gives, and both are returned rather than stored on the `Backend`.
         """
         with self._lock:
+            key = backend.machine_key
             ahead = backend.in_flight
+            machine_ahead = self._machine_in_flight.get(key, 0)
             backend.in_flight += 1
-        return ahead
+            self._machine_in_flight[key] = machine_ahead + 1
+        return ahead, machine_ahead
 
     def _release(self, backend: Backend) -> None:
         """Stop counting one attempt.
 
         Always called from a `finally`: an exception on this path must not leave a backend looking
         permanently busy, which would take it out of the pool for the life of the process.
+
+        Notes
+        -----
+        The machine's count falls with it, and the key is dropped at zero so the dictionary stays as
+        large as the machines currently working rather than every machine ever seen. The key is read
+        again here rather than carried from the reservation: a machine does not rename itself while
+        a request is in flight, and one that did has restarted, which fails the request anyway.
         """
         with self._lock:
             backend.in_flight -= 1
+            key = backend.machine_key
+            remaining = self._machine_in_flight.get(key, 0) - 1
+            if remaining > 0:
+                self._machine_in_flight[key] = remaining
+            else:
+                self._machine_in_flight.pop(key, None)
 
     def forward(
         self,
@@ -1100,7 +1187,7 @@ class ModelRegistry:
             configured none for this model; or when every backend that was tried failed, reported as
             an upstream failure with the status the last one gave.
         """
-        backends, ahead = self._begin(model, path)
+        backends, ahead, machine_ahead = self._begin(model, path)
         if not self._token:
             # Fail closed and say whose fault it is. Without a token every backend would answer 401,
             # which the surface maps to a client error — a misconfigured gateway reported as a bad
@@ -1126,7 +1213,7 @@ class ModelRegistry:
             if index:
                 # A fallback was not reserved with the list, because it was not being tried yet.
                 # Its own pre-increment depth is what this attempt queued behind.
-                ahead = self._reserve(backend)
+                ahead, machine_ahead = self._reserve(backend)
             url = f"{backend.url}/models/{model}/{path}{suffix}"
             started = time.monotonic()
             try:
@@ -1140,13 +1227,14 @@ class ModelRegistry:
             # reading a slow or failing request. Counts and addresses only: the query and both
             # bodies are the participant's content and never appear here.
             logger.info(
-                "inference model=%s backend=%s mode=%s attempt=%d ahead=%d status=%d ms=%.1f "
-                "bytes_in=%d bytes_out=%d",
+                "inference model=%s backend=%s mode=%s attempt=%d ahead=%d machine_ahead=%d "
+                "status=%d ms=%.1f bytes_in=%d bytes_out=%d",
                 model,
                 backend.url,
                 path,
                 index,
                 ahead,
+                machine_ahead,
                 reply.status,
                 elapsed_ms,
                 len(body) if body is not None else 0,
