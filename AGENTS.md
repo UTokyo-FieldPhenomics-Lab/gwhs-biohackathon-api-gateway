@@ -153,7 +153,9 @@ of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-layout.md
   that keep it inert for this repository's own build and tests.
 - The machines that serve a model, and who may reach them:
   [`.agents/rules/backend-pool.md`](.agents/rules/backend-pool.md) — the pool itself, kept current,
-  and the reason an address there means nothing outside the lab's tailnet.
+  and the reason an address there means nothing outside the lab's tailnet. A machine is named there
+  by the alias its answers carry, and the alias-to-address map is `.agents/local/pool.md`: untracked,
+  and a clone without it resolves no machine.
 - Execution records and lessons: [`.agents/references/`](.agents/references)
 - A host that answers from elsewhere but not from one network:
   [`references/2026101513_host-unreachable-from-the-utokyo-network.md`](.agents/references/2026101513_host-unreachable-from-the-utokyo-network.md)
