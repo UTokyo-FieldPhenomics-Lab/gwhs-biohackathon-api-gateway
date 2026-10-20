@@ -176,6 +176,11 @@
     const address = location.origin + "/models/" + encodeURIComponent(model.value);
     const lines = ["curl -s -X POST \\", '  -H "X-API-Key: $KEY" \\'];
     if (upload) {
+      if ($("resize").checked) {
+        lines.unshift(
+          "# the page resizes to " + RESIZE_SIDE + " px before sending; this command sends the file as it is",
+        );
+      }
       const chosen = $("file").files[0];
       lines.push("  -F " + shell("file=@" + (chosen ? chosen.name : "photo.jpg")) + " \\");
       lines.push("  " + shell(address + "/predict/upload" + (search ? "?" + search : "")));
@@ -275,6 +280,7 @@
     const upload = $("source").value === "upload";
     $("row-choice").hidden = upload;
     $("file").hidden = !upload;
+    $("resize-choice").hidden = !upload;
     dataset.disabled = upload || !dataset.options.length;
     $("row").disabled = upload;
   };
@@ -742,6 +748,34 @@
   let previewToken = 0;
   let held = "";
 
+  // The model runs at 1008 px on a side and the container resizes every input to it anyway, so a
+  // photograph sent whole costs seconds of transfer for pixels nothing reads. The box beside the
+  // file is the way out: untick it and the file goes exactly as it is.
+  const RESIZE_SIDE = 1008;
+
+  /** The same picture at the side the model would use, as the bytes a request carries. */
+  const forUpload = async (file) => {
+    if (!$("resize").checked || typeof createImageBitmap !== "function") return file;
+    try {
+      const bitmap = await createImageBitmap(file);
+      const scale = Math.min(1, RESIZE_SIDE / Math.max(bitmap.width, bitmap.height));
+      if (scale === 1) {
+        bitmap.close();
+        return file;
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      bitmap.close();
+      const blob = await new Promise((done) => canvas.toBlob(done, "image/jpeg", 0.9));
+      return blob || file;
+    } catch {
+      // A format this browser cannot decode is still a file the API may accept; send it whole.
+      return file;
+    }
+  };
+
   const preview = async () => {
     if (!key) return;
     const upload = $("source").value === "upload";
@@ -810,12 +844,14 @@
       if (upload) {
         // The container takes raw bytes, and the public route takes them as the multipart
         // field this contract declares; the gateway decodes that once and forwards the bytes.
+        const payload = await forUpload(file);
         const form = new FormData();
-        form.append("file", file);
-        // The run shows the same file the preview did, so the preview's object URL is released and
-        // this one takes its place as the picture on screen.
+        form.append("file", payload, file.name);
+        // The run shows the bytes it sent, because the answer's boxes are in their pixels: showing
+        // the original would place every mark a quarter of the way in. The preview's object URL is
+        // released and this one takes its place as the picture on screen.
         if (held) URL.revokeObjectURL(held);
-        held = URL.createObjectURL(file);
+        held = URL.createObjectURL(payload);
         imageUrl = held;
         // A photograph of the reader's is not a row of any dataset, so there is no palette it could
         // have been painted in: every object falls back to a colour of its own.

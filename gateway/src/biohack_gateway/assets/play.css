@@ -112,6 +112,15 @@ body {
 #play #row-choice[hidden] {
   display: none;
 }
+#play #resize-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 400;
+}
+#play #resize-choice[hidden] {
+  display: none;
+}
 #play #row-choice #dataset {
   flex: 0 1 18rem;
 }
