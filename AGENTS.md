@@ -104,7 +104,7 @@ of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-layout.md
   this rule. Both of these must come back empty:
 
   ```sh
-  # 1. any IPv4 that is a host address. A CIDR is not one (`the laboratory LAN` names a subnet, not a
+  # 1. any IPv4 that is a host address. A CIDR is not one (`198.51.100.0/24` names a subnet, not a
   #    machine) and `OpenSSH.Server~~~~0.0.1.0` is a feature name, so the lookarounds skip both and
   #    no exception has to be listed for them. `-P` is GNU grep.
   git diff --cached -U0 | grep -E '^\+' \
