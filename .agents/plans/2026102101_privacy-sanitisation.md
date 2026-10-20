@@ -10,15 +10,24 @@ Two rules came out of it and are already written: the constraint in
 [`../rules/project.md`](../rules/project.md) §Security, and the pre-commit check in
 [`../../AGENTS.md`](../../AGENTS.md) §Commits.
 
+## Where this stands
+
+Steps 1 to 3 are done and committed on `main` (`9debd15`, `bd45e2e`, `17e8ede`, `4c51308`,
+`9ca65a2`): the token is rotated and the old one answers 401, the twelve raw logs are out of the
+index, `.agents/local/pool.md` holds the mapping, and the tree passes both checks in `AGENTS.md`.
+The history rewrite and the push have not started — they are the destructive half, and they still
+need the bundle that the first step now lists on its own line.
+
 ## Steps
 
-- [ ] Commit the pending plan file and the `models/` pointer; back up before anything is rewritten
-- [ ] Rotate the leaked team's token; update `.env`; confirm the old one in the host's journal
-- [ ] Write `.agents/local/pool.md`: every address, router name, ssh user and host path
-- [ ] Ignore `.agents/local/` and the raw `gateway.log` files
-- [ ] `git rm --cached` the seven logs; `run_meta.json`'s `host` becomes `gwhs-host`
-- [ ] Rewrite the 25 files (121 occurrences) to aliases; the five scripts read `GW_HOST` / `GW_POOL`
-- [ ] Point `rules/backend-pool.md` and `AGENTS.md` at `.agents/local/pool.md`
+- [x] Commit the pending plan file and the `models/` pointer
+- [ ] Take a bundle of the history before the rewrite pass
+- [x] Rotate the leaked team's token; update `.env`; confirm the old one in the host's journal
+- [x] Write `.agents/local/pool.md`: every address, router name, ssh user and host path
+- [x] Ignore `.agents/local/` and the raw `gateway.log` files
+- [x] `git rm --cached` the twelve logs; `run_meta.json`'s `host` becomes `gwhs-host`
+- [x] Rewrite the 22 documents and five scripts to aliases; the scripts read `GW_HOST` / `GW_POOL`
+- [x] Point `rules/backend-pool.md` and `AGENTS.md` at `.agents/local/pool.md`
 - [ ] Rewrite history: `--replace-text`, `--replace-message`, `--invert-paths` for the logs
 - [ ] Verify: zero literals in history, the three test suites, `zensical build --strict`
 - [ ] Force-push; re-clone the host and this checkout; confirm Pages rebuilt
