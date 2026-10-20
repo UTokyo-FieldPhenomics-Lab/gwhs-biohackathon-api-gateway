@@ -45,6 +45,18 @@ Rules state what must hold and why — never history, measurements, or anecdotes
 
 - **No secrets, ever, including git history.** Bucket names, account IDs, and keys arrive via SSM or
   environment variables, never in the repository.
+- **A private *network* address is a secret of the same class, and the repository keeps the alias
+  instead.** A tailnet or LAN address, a router's node name, an ssh user, and a host path each name a
+  machine or a way into it; committed, they are permanent, because rewriting `main` reaches no clone,
+  fork, or archive that already has them. So a tracked file names a machine the way `computed_by`
+  already does — `lab-3090`, `lab-5090`, `homepc-4090` — and `.agents/local/pool.md` holds alias →
+  network address, ignored exactly as `.env` is. An agent that needs to reach a backend reads that
+  file; a reader of the repository gets a name that resolves nowhere, which is the point. **An alias
+  never stands where an address stood**: no `http://<alias>:port`, no alias in a cell a reader would
+  dial, and a script that needs the real address stops with the path to that file rather than
+  guessing one — a wrong guess routes work to the wrong card, a stopped run costs a minute. Raw log
+  output is not committed at all: it carries the addresses by the thousand and nothing a `.csv` does
+  not already say. (A row's address, below, is the other meaning of the word and is unrelated.)
 - **Resolve addresses, never concatenate them.** A row is a lookup key in the closed in-memory index,
   so reaching an object key or a filesystem path is impossible by construction. This is the most
   likely real vulnerability, and the boundary is on us.

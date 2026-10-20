@@ -95,6 +95,31 @@ of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-layout.md
 - Keep the main path visible with guard clauses; treat deep nesting as a design signal.
 - Design each function around one coherent responsibility and reason to change.
 
+## Commits
+
+- **Check for a token or a private network address before every commit, not before every publish.**
+  A commit is the irreversible step; a publish can be changed, and a history cannot be taken back
+  from a clone. Test the *shape*, not a list of addresses we happen to know: a list of ours catches
+  only yesterday's leak — the gateway host's own Elastic IP was missing from the first version of
+  this rule. Both of these must come back empty:
+
+  ```sh
+  # 1. any IPv4 that is not a documentation address, a loopback, the IMDS endpoint, the
+  #    tailnet's own 100.64.0.0/10 base, or Windows' OpenSSH.Server~~~~0.0.1.0 feature name
+  git diff --cached -U0 | grep -E '^\+' \
+    | grep -oE '\b([0-9]{1,3}\.){3}[0-9]{1,3}\b' \
+    | grep -vE '^(127\.0\.0\.1|0\.0\.0\.0|0\.0\.1\.0|169\.254\.169\.254|100\.64\.0\.0|192\.0\.2|198\.51\.100|203\.0\.113)'
+
+  # 2. a literal handed to a credential-shaped name (tests hold constants, so they are skipped)
+  git diff --cached -U0 | grep -E '^\+' | grep -v '/tests/' \
+    | grep -iE "(key|token|secret|password)[[:space:]]*[=:][[:space:]]*[\"'][A-Za-z0-9_/+-]{16,}"
+  ```
+
+  A real address belongs in the untracked `.agents/local/`, per
+  [`rules/project.md`](.agents/rules/project.md) §Security; the ranges to *write* in a document are
+  `192.0.2.0/24`, `198.51.100.0/24` and `203.0.113.0/24`. Rotating a token is a minute, and
+  rewriting a public history is not.
+
 ## Working Notes
 
 `.agents/` holds durable project knowledge, split strictly by kind:
