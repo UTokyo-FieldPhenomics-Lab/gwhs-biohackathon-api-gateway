@@ -28,6 +28,7 @@ from pathlib import Path
 
 from fastapi.responses import HTMLResponse
 
+from biohack_gateway.csp import new_nonce, origin_of, policy, with_nonce
 from biohack_gateway.frames import frame_reporter
 
 PLAY_PATH = "/play"
@@ -57,7 +58,7 @@ height reporter.
 """
 
 
-def play_page(parent_origin: str) -> HTMLResponse:
+def play_page(parent_origin: str, data_base_url: str = "") -> HTMLResponse:
     """Build the page a participant runs one model from.
 
     Parameters
@@ -66,17 +67,36 @@ def play_page(parent_origin: str) -> HTMLResponse:
         The one site allowed to frame the page, which is also the site this page loads the decoder
         from: the documentation site publishes that file, and a copy here would be a second decoder
         to keep true. The frame's height reporter addresses the same origin.
+    data_base_url : str, optional
+        The public distribution a published row's picture is addressed from. Its origin is admitted
+        as an image source, because the page draws that picture on a canvas. Empty adds no origin,
+        and a page that previews only uploads has nothing to admit.
 
     Returns
     -------
     HTMLResponse
-        The page, carrying the `frame-ancestors` that names that one site and nothing else. The
-        page is where a reader types their key, and a field for a secret in a page that
-        anything may embed is a field that anything may overlay.
+        The page, carrying a policy that names the one site allowed to frame it, the one site whose
+        decoder it may run, and this host — rather than whichever script happens to be in the
+        document. The page is where a reader types their key, and a field for a secret in a page
+        that anything may embed is a field that anything may overlay.
     """
     page = PLAY_PAGE.replace("__DECODER__", f"{parent_origin}/clients/global-wheat.js").replace(
         "__REPORTER__", frame_reporter(parent_origin, "#play")
     )
+    nonce = new_nonce()
+    image_origins = tuple(origin for origin in (origin_of(data_base_url),) if origin)
     return HTMLResponse(
-        page, headers={"Content-Security-Policy": f"frame-ancestors {parent_origin}"}
+        with_nonce(page, nonce),
+        headers={
+            "Content-Security-Policy": policy(
+                nonce=nonce,
+                frame_ancestors=parent_origin,
+                # The decoder is the documentation site's file, loaded from there rather than
+                # copied, so that site is the one other origin this page may execute.
+                script_origins=(parent_origin,),
+                image_origins=image_origins,
+                # A chosen file is previewed from a `blob:` URL the page makes for itself.
+                blob_images=True,
+            )
+        },
     )

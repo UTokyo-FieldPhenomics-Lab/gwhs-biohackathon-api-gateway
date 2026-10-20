@@ -22,6 +22,9 @@ from biohack_gateway.app import (
     API_KEY_HEADER,
     API_KEY_SCHEME,
     DOCS_PARENT_ORIGIN,
+    SWAGGER_UI_BUNDLE_PATH,
+    SWAGGER_UI_CSS_PATH,
+    SWAGGER_UI_LICENSE_PATH,
     create_app,
 )
 from biohack_gateway.play import PLAY_PATH
@@ -86,10 +89,29 @@ def test_health_answers_without_a_key(client: TestClient) -> None:
     assert response.json() == {"status": "ok", "version": installed_version("biohack-gateway")}
 
 
-@pytest.mark.parametrize("path", ["/docs", "/redoc", "/openapi.json"])
+@pytest.mark.parametrize("path", ["/docs", "/play", "/openapi.json"])
 def test_the_contract_pages_answer_without_a_key(client: TestClient, path: str) -> None:
     """The page that lists the endpoints cannot send itself a header, and the contract is public."""
     assert client.get(path).status_code == 200
+
+
+def test_the_reference_page_answers_with_its_own_files_without_a_key(client: TestClient) -> None:
+    """A page cannot send a header for the files it loads, and they are public source anyway."""
+    for path in (SWAGGER_UI_BUNDLE_PATH, SWAGGER_UI_CSS_PATH, SWAGGER_UI_LICENSE_PATH):
+        response = client.get(path)
+
+        assert response.status_code == 200, path
+        assert response.content, path
+
+
+def test_the_second_reference_ui_is_not_served(client: TestClient) -> None:
+    """`/redoc` duplicated `/docs` and loaded its bundle from a floating CDN tag.
+
+    Both pages would sit on the origin a participant's key is stored under, so the one nobody uses
+    is one fewer way for a third party's script to reach it. A path that does not exist is refused
+    like any other, rather than being a page that answers.
+    """
+    assert client.get("/redoc").status_code == 401
 
 
 def test_anything_else_without_a_key_is_refused(client: TestClient) -> None:
@@ -309,8 +331,47 @@ def test_the_reference_page_may_only_be_framed_by_the_site(client: TestClient) -
     """A field for a secret belongs in a page that only one site may frame."""
     response = client.get("/docs")
 
-    assert response.headers["content-security-policy"] == f"frame-ancestors {DOCS_PARENT_ORIGIN}"
+    assert f"frame-ancestors {DOCS_PARENT_ORIGIN}" in response.headers["content-security-policy"]
     assert f'"{DOCS_PARENT_ORIGIN}"' in response.text
+
+
+def test_the_reference_page_runs_only_scripts_from_this_host(client: TestClient) -> None:
+    """The page a key is typed into must not execute a file somebody else can change.
+
+    It loaded Swagger UI from a floating `@5` on jsdelivr and its icon from the framework's own
+    site; both are this host's files now, and the policy says so.
+    """
+    response = client.get("/docs")
+    control = response.headers["content-security-policy"]
+    script_src = control.split("script-src ", 1)[1].split(";", 1)[0]
+
+    assert "cdn.jsdelivr.net" not in response.text
+    assert "fastapi.tiangolo.com" not in response.text
+    assert "'self'" in script_src
+    assert "'unsafe-inline'" not in script_src
+    assert "'unsafe-eval'" not in script_src
+    assert "http" not in script_src
+
+
+def test_every_inline_script_carries_the_nonce_the_policy_names(client: TestClient) -> None:
+    """`'unsafe-inline'` would admit an injected block as readily as ours; a nonce admits one."""
+    response = client.get("/docs")
+    nonce = re.search(r'<script nonce="([^"]+)"', response.text)
+
+    assert nonce is not None
+    assert f"'nonce-{nonce.group(1)}'" in response.headers["content-security-policy"]
+    for tag in re.findall(r"<script[^>]*>", response.text):
+        assert "nonce=" in tag or " src=" in tag, tag
+
+
+def test_the_reference_assets_are_served_as_what_they_are(client: TestClient) -> None:
+    """A browser decides from the content type before it runs or applies a file."""
+    bundle = client.get(SWAGGER_UI_BUNDLE_PATH)
+    stylesheet = client.get(SWAGGER_UI_CSS_PATH)
+
+    assert "javascript" in bundle.headers["content-type"]
+    assert "css" in stylesheet.headers["content-type"]
+    assert "max-age" in bundle.headers["cache-control"]
 
 
 def test_the_parent_origin_is_a_setting(tmp_path: Path) -> None:
@@ -325,7 +386,7 @@ def test_the_parent_origin_is_a_setting(tmp_path: Path) -> None:
     ) as client:
         response = client.get("/docs")
 
-    assert response.headers["content-security-policy"] == f"frame-ancestors {parent}"
+    assert f"frame-ancestors {parent}" in response.headers["content-security-policy"]
     assert f'"{parent}"' in response.text
 
 
@@ -423,8 +484,23 @@ def test_the_model_page_may_only_be_framed_by_the_site(client: TestClient) -> No
     """The key is typed into this page, so only the documentation site may embed it."""
     response = client.get(PLAY_PATH)
 
-    assert response.headers["content-security-policy"] == f"frame-ancestors {DOCS_PARENT_ORIGIN}"
+    assert f"frame-ancestors {DOCS_PARENT_ORIGIN}" in response.headers["content-security-policy"]
     assert f'"{DOCS_PARENT_ORIGIN}"' in response.text
+
+
+def test_the_model_page_may_run_its_decoder_and_draw_a_published_image(client: TestClient) -> None:
+    """Two origins beyond this host, each for one named thing, and no wildcard anywhere.
+
+    The decoder is the documentation site's, loaded from there so one file stays one file; a
+    published row's picture comes from the public distribution; an upload's preview is a `blob:`
+    URL the page makes itself.
+    """
+    control = client.get(PLAY_PATH).headers["content-security-policy"]
+    script_src = control.split("script-src ", 1)[1].split(";", 1)[0]
+
+    assert f" {DOCS_PARENT_ORIGIN}" in script_src
+    assert "img-src 'self' data: blob: https://data.global-wheat.com" in control
+    assert "*" not in control
 
 
 def test_the_model_page_reports_its_height_to_the_same_site(tmp_path: Path) -> None:
@@ -439,7 +515,7 @@ def test_the_model_page_reports_its_height_to_the_same_site(tmp_path: Path) -> N
     ) as client:
         page = client.get(PLAY_PATH)
 
-    assert page.headers["content-security-policy"] == f"frame-ancestors {parent}"
+    assert f"frame-ancestors {parent}" in page.headers["content-security-policy"]
     assert f'"{parent}"' in page.text
     assert 'type="module" src="' + parent + '/clients/global-wheat.js"' in page.text
     assert 'SITE_ORIGIN = "' + parent + '"' in page.text

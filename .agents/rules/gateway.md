@@ -10,8 +10,9 @@ here.
 - **Every request is key-authenticated, and the gate is closed by default.** One middleware checks
   `X-API-Key` against the token pool before routing, so an endpoint added later is protected by
   existing rather than by remembering a decorator, and a path that does not exist is refused too. The
-  exceptions are named in the code — `/health` and the two pages the documentation site frames —
-  because they carry no data and could not be opened in a browser if the page itself needed a header.
+  exceptions are named in the code — `/health`, the two pages the documentation site frames, and the
+  three files those pages load — because they carry no data and could not be opened in a browser if
+  the page itself needed a header.
   An absent pool is a closed gateway rather than an open one, and a pool that has never parsed answers
   `503 unavailable` until it does. A token may have three *inferences* in flight and no more — a
   fairness number, not the pool's width — refused as `429 quota_exceeded` rather than queued;

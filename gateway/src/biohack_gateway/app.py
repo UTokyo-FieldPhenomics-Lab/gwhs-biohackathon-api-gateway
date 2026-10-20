@@ -35,6 +35,7 @@ from starlette.middleware.base import RequestResponseEndpoint
 from biohack_gateway.admission import UploadQueue
 from biohack_gateway.auth import Authenticator
 from biohack_gateway.cache import CacheStats, ResultCache
+from biohack_gateway.csp import new_nonce, policy, with_nonce
 from biohack_gateway.dataset_index import DEFAULT_INDEX_DIR, load_datasets
 from biohack_gateway.datasets import DEFAULT_DATA_BASE_URL, create_dataset_router
 from biohack_gateway.frames import frame_reporter
@@ -129,15 +130,38 @@ One origin rather than two settings: the page tells the browser who may frame it
 the height it reports to the same site. A harness that frames a local app passes its own.
 """
 
-OPEN_PATHS = frozenset({"/health", "/docs", PLAY_PATH, "/redoc", "/openapi.json"})
+# The page a participant types a key into must not run, or load, a file somebody else can change.
+# These three are fetched by the browser, so the reference cannot be closed behind the gate and
+# still work; they are named one by one rather than mounted as a directory, so no fourth file
+# becomes reachable by being put in `assets/`.
+SWAGGER_UI_BUNDLE_PATH = "/docs/swagger-ui-bundle.js"
+"""Swagger UI's bundle, from the release pinned by the file in `assets/`."""
+
+SWAGGER_UI_CSS_PATH = "/docs/swagger-ui.css"
+"""Swagger UI's stylesheet, from the same release — the two are a pair."""
+
+SWAGGER_UI_LICENSE_PATH = "/docs/swagger-ui-bundle.js.LICENSE.txt"
+"""The notices the bundle's first line points at, so a served file carries its licence with it."""
+
+OPEN_PATHS = frozenset(
+    {
+        "/health",
+        "/docs",
+        PLAY_PATH,
+        "/openapi.json",
+        SWAGGER_UI_BUNDLE_PATH,
+        SWAGGER_UI_CSS_PATH,
+        SWAGGER_UI_LICENSE_PATH,
+    }
+)
 """The paths that answer without a key.
 
 Every entry earns the exception the same way: it says nothing about the data and exists for someone
 who has no key yet, and a page cannot be opened in a browser at all if the page itself needs a
-header. Two of them are also where a reader puts a key — the reference and the model page — and a
-field for a secret in a page that anything may embed is a field that anything may overlay, which is
-why each names the one site allowed to frame it. Every other path, including ones that do not exist,
-is behind the gate.
+header — nor can the two files that page loads. Two of them are also where a reader puts a key —
+the reference and the model page — and a field for a secret in a page that anything may embed is a
+field that anything may overlay, which is why each names the one site allowed to frame it. Every
+other path, including ones that do not exist, is behind the gate.
 """
 
 LANE_SUFFIXES = ("/predict/upload",)
@@ -188,11 +212,36 @@ _ASSETS = Path(__file__).parent / "assets"
 """The page material this application serves, one language to a file.
 
 Markup, script and styling live here rather than as strings in the modules that inject them, so a
-page is edited as a page and every Python module in this package is Python. They are read at
-import and inlined into the answer, never mounted: what this host serves at ``/docs`` is a
-document the application carries, not a directory whose contents anything may fetch by
-guessing a name, and nothing here depends on the working directory. `gateway.md` says so.
+page is edited as a page and every Python module in this package is Python. Almost all of it is
+read at import and inlined into the answer; the exception is the two Swagger UI files, which are
+1.9 MB together and are fetched by the browser under their own names, so inlining them would put a
+megabyte and a half on every reference load. Nothing here depends on the working directory, and
+nothing is mounted as a directory: the three names below are the only ones that can be fetched.
+`gateway.md` says so.
 """
+
+SWAGGER_UI_BUNDLE = (_ASSETS / "swagger-ui-bundle.js").read_bytes()
+"""Swagger UI 5.34.0's bundle, vendored so the key-entry page runs code this repository pinned.
+
+It was fetched once from ``swagger-ui-dist@5.34.0`` on jsdelivr; the version is the one to quote if
+it is ever replaced, and the file's first line points at the notices vendored beside it. Before
+this, the page asked a floating ``@5`` for its script, which put every key typed into it at the
+mercy of a third party — the one place on this host where that matters.
+"""
+
+SWAGGER_UI_CSS = (_ASSETS / "swagger-ui.css").read_bytes()
+"""The same release's stylesheet. Serving the pair from one directory is what keeps them a pair."""
+
+SWAGGER_UI_LICENSE = (_ASSETS / "swagger-ui-bundle.js.LICENSE.txt").read_bytes()
+"""The licences of what the bundle carries, as the bundle's own header names them."""
+
+SWAGGER_FAVICON = "data:,"
+"""A blank icon, deliberately.
+
+FastAPI's default points the page at ``fastapi.tiangolo.com`` — one more third-party fetch on the
+page that holds a key, for a picture. A browser that has no icon to show shows its own.
+"""
+
 
 SWAGGER_DARK_STYLE = f"<style>{(_ASSETS / 'swagger_dark.css').read_text(encoding='utf-8')}</style>"
 """Swagger UI in the documentation site's dark palette, carried by the page itself.
@@ -551,6 +600,10 @@ def create_app(
             "Guides and examples: https://docs.global-wheat.com"
         ),
         docs_url=None,  # registered below instead, so the page can carry the frame reporter
+        # `/redoc` is the second reference UI FastAPI would serve, and it loads its bundle from a
+        # floating CDN tag. It duplicates `/docs` and sits on the origin a key is stored under, so
+        # it is one page no one needs and one way for a third party to reach a key.
+        redoc_url=None,
         lifespan=lifespan,
     )
 
@@ -654,15 +707,20 @@ def create_app(
         Returns
         -------
         HTMLResponse
-            FastAPI's own Swagger UI page with four additions: a field for the reader's key, the
-            dark palette, the trims that remove chrome this contract makes meaningless, and the
-            script that reports this page's height to the site that frames it. The page is otherwise
-            untouched, and a reader who opens `/docs` directly sees the same reference with the same
-            field.
+            FastAPI's own Swagger UI page with five additions: a field for the reader's key, the
+            dark palette, the trims that remove chrome this contract makes meaningless, the script
+            that reports this page's height to the site that frames it, and a policy that admits
+            only this host's scripts and nothing else. The page is otherwise untouched, and a
+            reader who opens `/docs` directly sees the same reference with the same field.
         """
         page = get_swagger_ui_html(
             openapi_url="/openapi.json",
             title=f"{app.title} — reference",
+            # This host's own copy, and a blank icon: the page is where a key is typed, so it
+            # loads nothing a third party can change and nothing it does not need.
+            swagger_js_url=SWAGGER_UI_BUNDLE_PATH,
+            swagger_css_url=SWAGGER_UI_CSS_PATH,
+            swagger_favicon_url=SWAGGER_FAVICON,
             # Swagger is asked not to remember the key: remembering is one entry, shared with the
             # model page, and a second copy of a secret is one the other page cannot clear.
             swagger_ui_parameters={"persistAuthorization": False},
@@ -670,14 +728,39 @@ def create_app(
         html = bytes(page.body).decode()
         html = html.replace('<div id="swagger-ui">', SWAGGER_KEY_BAR, 1)
         reporter = frame_reporter(docs_parent_origin, "#swagger-ui", extra="#key-bar")
-        return HTMLResponse(
-            html.replace(
-                "</body>",
-                f"{SWAGGER_DARK_STYLE}{SWAGGER_TRIM_STYLE}"
-                f"{API_KEY_STORE_SCRIPT}{SWAGGER_KEY_BAR_SCRIPT}{reporter}</body>",
-            ),
-            headers={"Content-Security-Policy": f"frame-ancestors {docs_parent_origin}"},
+        html = html.replace(
+            "</body>",
+            f"{SWAGGER_DARK_STYLE}{SWAGGER_TRIM_STYLE}"
+            f"{API_KEY_STORE_SCRIPT}{SWAGGER_KEY_BAR_SCRIPT}{reporter}</body>",
         )
+        nonce = new_nonce()
+        return HTMLResponse(
+            with_nonce(html, nonce),
+            headers={
+                "Content-Security-Policy": policy(nonce=nonce, frame_ancestors=docs_parent_origin)
+            },
+        )
+
+    @app.get(SWAGGER_UI_BUNDLE_PATH, include_in_schema=False)
+    async def swagger_ui_bundle() -> Response:
+        """Serve Swagger UI's bundle to the reference page, without a key.
+
+        The page cannot send a header for the files it loads, and the files are public source to
+        begin with. An hour of caching keeps a reader's second visit from refetching 1.6 MB, while
+        a redeploy is picked up by a reload rather than by a version prefix this host would have
+        to keep true.
+        """
+        return _swagger_ui_asset(SWAGGER_UI_BUNDLE, "text/javascript")
+
+    @app.get(SWAGGER_UI_CSS_PATH, include_in_schema=False)
+    async def swagger_ui_stylesheet() -> Response:
+        """Serve the stylesheet that belongs to the bundle, from the same release."""
+        return _swagger_ui_asset(SWAGGER_UI_CSS, "text/css")
+
+    @app.get(SWAGGER_UI_LICENSE_PATH, include_in_schema=False)
+    async def swagger_ui_licenses() -> Response:
+        """Serve the notices the bundle's own first line points at."""
+        return _swagger_ui_asset(SWAGGER_UI_LICENSE, "text/plain")
 
     @app.get(PLAY_PATH, include_in_schema=False)
     async def play() -> HTMLResponse:
@@ -694,7 +777,7 @@ def create_app(
         HTMLResponse
             The page, from :mod:`biohack_gateway.play`, carrying that page's own CSP.
         """
-        return play_page(docs_parent_origin)
+        return play_page(docs_parent_origin, data_base_url)
 
     @app.middleware("http")
     async def require_key(request: Request, call_next: RequestResponseEndpoint) -> Response:
@@ -850,6 +933,30 @@ def create_app(
         return _error(500, ErrorCode.INTERNAL_ERROR, "unexpected server error")
 
     return app
+
+
+def _swagger_ui_asset(body: bytes, media_type: str) -> Response:
+    """Answer one of the reference page's own files.
+
+    Parameters
+    ----------
+    body : bytes
+        The file, read from ``assets/`` when this module was imported.
+    media_type : str
+        Its content type, which is what a browser decides from before it runs or applies it.
+
+    Returns
+    -------
+    Response
+        The file, cacheable for an hour. Long enough that a reader's second visit to the reference
+        refetches nothing, short enough that a redeploy is picked up without a version prefix this
+        host would have to keep true.
+    """
+    return Response(
+        body,
+        media_type=media_type,
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 
 def _env_concurrency() -> int | None:
