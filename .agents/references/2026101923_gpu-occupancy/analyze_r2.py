@@ -14,16 +14,14 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import re
 import statistics
 from pathlib import Path
 
 ROOT = Path(__file__).parent
-MACHINES = {
-    "lab-3090": "lab-3090",
-    "homepc-4090": "homepc-4090",
-    "lab-5090": "lab-5090",
-}
+MACHINES_ENV = "GW_ADDRESSES"
+MACHINES: dict[str, str] = {}
 LINE = re.compile(r"^(\d+)[, ]\s*(\d+) %,\s*(\d+) MiB,\s*([\d.]+) W")
 
 
@@ -87,6 +85,26 @@ def summarise(
     }
 
 
+def load_machines() -> None:
+    """Fill ``MACHINES`` from ``GW_ADDRESSES``, alias to the address its gateway lines carry.
+
+    Raises
+    ------
+    SystemExit
+        When the variable is unset or is not JSON: a summary that guessed which machine a line came
+        from would produce a table that looks right and is not. The values are in
+        ``.agents/local/pool.md``.
+    """
+    raw = os.environ.get(MACHINES_ENV, "")
+    if not raw:
+        raise SystemExit(
+            f"{MACHINES_ENV} is unset: alias-to-address is in .agents/local/pool.md, "
+            "and this summary will not guess which machine a line came from"
+        )
+    MACHINES.clear()
+    MACHINES.update(json.loads(raw))
+
+
 def requests_per_machine(log_text: str) -> dict[str, int]:
     """Count the gateway's per-attempt lines by the machine behind each backend URL."""
     counts = dict.fromkeys(MACHINES, 0)
@@ -122,6 +140,7 @@ def health_series(path: Path) -> dict[str, dict[str, object]]:
 
 
 def main() -> int:
+    load_machines()
     document: dict[str, object] = {}
     for mode in ("row", "upload"):
         out = ROOT / f"run_{mode}_r2"

@@ -20,22 +20,38 @@ import time
 import urllib.request
 from datetime import datetime, timezone
 
-BACKENDS = {
-    "lab-5090:12711": "http://<address>:12711",
-    "lab-5090:12712": "http://<address>:12712",
-    "lab-3090:12711": "http://<address>:12711",
-    "lab-3090:12712": "http://<address>:12712",
-    "homepc-4090:12711": "http://<address>:12711",
-    "homepc-4090:12712": "http://<address>:12712",
-}
+POOL_ENV = "GW_POOL"
+
+
+def backends() -> dict[str, str]:
+    """Return the label-to-URL map this sampler polls.
+
+    Returns
+    -------
+    dict of str to str
+        Backend label to base URL, e.g. ``{"lab-3090:12711": "http://..."}``.
+
+    Raises
+    ------
+    SystemExit
+        When ``GW_POOL`` is unset or is not JSON, so that a run stops instead of polling a guess.
+        The real map is kept in ``.agents/local/pool.md``, untracked.
+    """
+    raw = os.environ.get(POOL_ENV, "")
+    if not raw:
+        raise SystemExit(
+            f"{POOL_ENV} is unset: the label-to-URL map is in .agents/local/pool.md, "
+            "and this sampler will not guess an address"
+        )
+    return json.loads(raw)
 
 INTERVAL = 0.5
 
 
-def poll(name: str, deadline: float, trigger: str) -> list[dict[str, object]]:
+def poll(name: str, url: str, deadline: float, trigger: str) -> list[dict[str, object]]:
     """Sample one backend until ``deadline``, returning one row per attempt."""
     rows: list[dict[str, object]] = []
-    url = f"{BACKENDS[name]}/health"
+    url = f"{url}/health"
     while time.monotonic() < deadline:
         started = time.monotonic()
         epoch = time.time()
@@ -79,12 +95,13 @@ def main() -> int:
     results: list[dict[str, object]] = []
     lock = threading.Lock()
 
-    def worker(name: str) -> None:
-        rows = poll(name, deadline, arguments.trigger)
+    def worker(name: str, url: str) -> None:
+        rows = poll(name, url, deadline, arguments.trigger)
         with lock:
             results.extend(rows)
 
-    threads = [threading.Thread(target=worker, args=(name,)) for name in BACKENDS]
+    pool = backends()
+    threads = [threading.Thread(target=worker, args=item) for item in pool.items()]
     print("ready", flush=True)
     for thread in threads:
         thread.start()

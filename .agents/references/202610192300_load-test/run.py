@@ -25,7 +25,8 @@ from typing import Any
 
 import http.client
 
-BASE_HOST = "gwhs-host"
+GW_HOST_ENV = "GW_HOST"
+BASE_HOST = os.environ.get(GW_HOST_ENV, "")
 BASE_PORT = 8001
 CLIENT_TIMEOUT = 60.0
 LOG_PATH = "$HOME/gw-test/gateway.log"
@@ -41,6 +42,27 @@ IMAGES = {
     "gwhs-temp_0004.png": (ROOT / "images" / "gwhs-temp_0004.png", "image/png"),
     "gwhs-temp_0009.jpg": (ROOT / "images" / "gwhs-temp_0009.jpg", "image/jpeg"),
 }
+
+
+def require_host() -> str:
+    """Return the gateway host, or stop and say where the real one is kept.
+
+    Returns
+    -------
+    str
+        The value of ``GW_HOST``.
+
+    Raises
+    ------
+    SystemExit
+        When ``GW_HOST`` is unset, so a load run cannot silently target a guessed address.
+    """
+    if not BASE_HOST:
+        raise SystemExit(
+            f"{GW_HOST_ENV} is unset: the gateway host is in .agents/local/pool.md, "
+            "and this script will not guess an address"
+        )
+    return BASE_HOST
 
 
 def ssh(*args: str) -> str:
@@ -247,6 +269,8 @@ def main() -> int:
     parser.add_argument("--label", default="")
     arguments = parser.parse_args()
 
+    global BASE_HOST
+    BASE_HOST = require_host()
     key = os.environ.get("GW_KEY", "")
     if not key:
         print("GW_KEY is not set", file=sys.stderr)

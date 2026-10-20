@@ -23,10 +23,12 @@ import threading
 import time
 from pathlib import Path
 
-BASE_HOST = "gwhs-host"
+GW_HOST_ENV = "GW_HOST"
+GW_KEY_ENV = "GW_KEY"
+BASE_HOST = os.environ.get(GW_HOST_ENV, "")
 BASE_PORT = 8001
 GATEWAY = f"http://{BASE_HOST}:{BASE_PORT}"
-KEY = "<rotated>"
+KEY = os.environ.get(GW_KEY_ENV, "")
 TIMEOUT = 60.0
 VPS = "gwhs-host"
 LOG_PATH = "$HOME/gw-test/gateway.log"
@@ -47,6 +49,35 @@ IMAGES = (
     (ROOT / "images" / "gwhs-temp_images_00000000.jpg", "image/jpeg"),
     (ROOT / "images" / "gwhs-temp_images_00000009.jpg", "image/jpeg"),
 )
+
+
+def require(name: str, value: str) -> str:
+    """Return ``value``, or stop and say where the real one is kept.
+
+    Parameters
+    ----------
+    name : str
+        The environment variable's name, used in the message.
+    value : str
+        Its value, possibly empty.
+
+    Returns
+    -------
+    str
+        The value, unchanged, when it is set.
+
+    Raises
+    ------
+    SystemExit
+        When the variable is unset: a guessed address or key would send real work to the wrong
+        machine, so the run stops instead. The values live in ``.agents/local/pool.md``.
+    """
+    if not value:
+        raise SystemExit(
+            f"{name} is unset: the gateway's address and token are in .agents/local/pool.md "
+            "and .env, and this script will not guess either"
+        )
+    return value
 
 
 def ssh(*arguments: str, timeout: float = 30.0) -> str:
@@ -169,6 +200,9 @@ def snapshot(path: Path) -> None:
 
 
 def main() -> int:
+    global BASE_HOST, KEY
+    BASE_HOST = require(GW_HOST_ENV, BASE_HOST)
+    KEY = require(GW_KEY_ENV, KEY)
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=("row", "upload"), required=True)
     parser.add_argument("--seconds", type=float, default=60.0)
