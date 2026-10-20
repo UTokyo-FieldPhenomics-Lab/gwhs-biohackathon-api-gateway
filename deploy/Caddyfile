@@ -12,11 +12,11 @@
 api.global-wheat.com {
 	# The one limit on a request body, and the only place it is written down.
 	#
-	# 15 MB is policy, not a buffer size: every model resizes its input to 1008², so a larger file
-	# buys no accuracy and only costs the host — which has 1936 MiB of RAM and holds each upload in
-	# memory while it forwards it. 15 MB covers a 48 MP phone JPEG with room to spare and refuses the
-	# TIFFs nobody needs to send. Raising it on site is this line plus `systemctl reload caddy`; the
-	# message below names the number, so both change together.
+	# 15 MB is policy, not a buffer size: every model resizes its input to at most 1008 px on a
+	# side, so a larger file buys no accuracy and only costs the host — which has 1936 MiB of RAM
+	# and holds each upload in memory while it forwards it. 15 MB covers a 48 MP phone JPEG with
+	# room to spare and refuses the TIFFs nobody needs to send. Raising it on site is this line plus
+	# `systemctl reload caddy`; the message below names the number, so both change together.
 	#
 	# It sits here rather than in the gateway because this is where the bytes arrive, and because
 	# Caddy counts what actually streams past, which is the only check a chunked upload cannot dodge.
@@ -30,6 +30,6 @@ api.global-wheat.com {
 	# otherwise answer an empty `413`, which is indistinguishable from a proxy failure.
 	handle_errors 413 {
 		header Content-Type application/json
-		respond `{"error":{"code":"payload_too_large","message":"the image is over the 15 MB limit; compress it or convert it to JPEG and send it again"}}` 413
+		respond `{"error":{"code":"payload_too_large","message":"the image is over the 15 MB limit; resize it to about 1008 px — the model runs no larger — and send it again"}}` 413
 	}
 }
