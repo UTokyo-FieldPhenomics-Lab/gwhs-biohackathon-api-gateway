@@ -13,10 +13,11 @@ here.
   exceptions are named in the code — `/health` and the two pages the documentation site frames —
   because they carry no data and could not be opened in a browser if the page itself needed a header.
   An absent pool is a closed gateway rather than an open one, and a pool that has never parsed answers
-  `503 unavailable` until it does. A token may have three *inferences* in flight and no more — the
-  pool's own width — refused as `429 quota_exceeded` rather than queued; `occupies_lane` is what
-  decides which routes are counted, and it counts only the two predict routes, because a metadata
-  read holds no GPU. A per-key request *rate* is still absent. [`project.md`](project.md) holds that decision and its triggers.
+  `503 unavailable` until it does. A token may have three *inferences* in flight and no more — a
+  fairness number, not the pool's width — refused as `429 quota_exceeded` rather than queued;
+  `occupies_lane` is what decides which routes are counted, and it counts only the upload route,
+  because a row answer may come from the cache and hold no GPU. A per-key request *rate* is still
+  absent. [`project.md`](project.md) holds that decision and its triggers.
 - **Images reach clients through the public `data.*` plane**, so nothing has to be anonymous.
 - **Routing is a sequential retry over interchangeable backends, cheapest expected wait first.** Score
   each live backend by its **measured round trip plus what the requests already in flight are likely
@@ -42,6 +43,19 @@ here.
   declares. Counting per container would tell a request for the third model that the card is free
   while two inferences run on it. A container that declares no machine is counted alone, and ties
   within one machine go to the container whose own lock is free.
+- **Uploads are admitted by bytes, because the link is the scarce thing they hold.** The gateway
+  keeps at most one link's worth of bodies in flight — about 24 MB, `BIOHACK_UPLOAD_BYTES` — queues
+  the rest in `(team_in_flight, arrival)` order so a team with nothing running goes before a team
+  with two, and refuses with `429` plus `Retry-After` after 20 s rather than letting a request sit
+  until a client gives up. The capacity behind that budget is measured from completed uploads
+  (bytes over busy seconds, seeded at 1.5 MB/s), because a bad night on the link is a fact only the
+  traffic can report. Rows are not queued: they carry no bytes and the thread pool already bounds
+  them.
+- **A cached answer is not a request, and it does not hide which machine answered.** The cache is
+  keyed by the published revision, so a republish is a cold start; it stores only row predictions,
+  serves them with `cached: true` and the original `computed_by`, and takes no lane on the way out.
+  It is disposable: deleting the file is a cold start, never a loss. Nothing in it may be the only
+  copy of anything.
 - **A handler that reaches a backend is a plain `def`, never `async def`.** The transport is a
   blocking socket call, so an async handler runs it on the event loop and holds every other route
   for the round trip — an upload did exactly that, and `/health` answered in 11 s under six of them
