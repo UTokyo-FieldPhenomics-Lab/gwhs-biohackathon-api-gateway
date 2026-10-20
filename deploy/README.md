@@ -305,10 +305,11 @@ which is how the same command runs against the copy taken above, on any machine:
 uv run biohack-gateway tokens list --file ~/private/tokens.json
 ```
 
-A team sends its token in the `X-API-Key` header. **Everything requires one except `/health` and the
-documentation pages** (`/docs`, `/redoc`, `/openapi.json`), which carry no data and could not be
-opened in a browser if the page that lists the endpoints needed a header itself. An unknown path is
-refused before routing as well, so the open surface cannot be probed into existence:
+A team sends its token in the `X-API-Key` header. **Everything requires one except `/health`, the
+documentation pages** (`/docs`, `/play`, `/openapi.json`) **and the three files the reference page
+loads** (Swagger UI's bundle, its stylesheet, and the notices the bundle names), which carry no data
+and could not be opened in a browser if the page that lists the endpoints needed a header itself. An
+unknown path is refused before routing as well, so the open surface cannot be probed into existence:
 
 ```bash
 curl -s                     https://api.global-wheat.com/health          # {"status":"ok","version":…}

@@ -24,12 +24,32 @@ api.global-wheat.com {
 		max_size 15MB
 	}
 
+	# Every answer carries HSTS, so a browser that has seen this host once will not ask it for plain
+	# HTTP again. That matters for the two pages a key is typed into: the first request a reader
+	# makes is the one a network between here and them could answer itself, and the redirect on 80
+	# happens after the connection that would already be theirs.
+	#
+	# A day, not a year, and no `preload`. This host exists for one event; a browser that remembers
+	# it for a year would refuse plain HTTP to the name long after the event, and preload removal is
+	# a submission measured in months. `includeSubDomains` is absent because there are no subdomains.
+	header {
+		Strict-Transport-Security "max-age=86400"
+	}
+
+	# Compress what leaves. The reference page now loads its own 1.6 MB Swagger UI bundle instead of
+	# a CDN's precompressed copy, and the JSON answers gain the same way; zstd is what a browser
+	# asks for first, gzip is what everything else gets.
+	encode zstd gzip
+
 	reverse_proxy 127.0.0.1:8000
 
 	# A refusal in the contract's own shape, because a participant reads one decoder. Caddy would
 	# otherwise answer an empty `413`, which is indistinguishable from a proxy failure.
 	handle_errors 413 {
 		header Content-Type application/json
+		# Error routes are their own route group, so the site-level header above does not reach
+		# this one; a refusal is still an answer a browser should remember the scheme of.
+		header Strict-Transport-Security "max-age=86400"
 		respond `{"error":{"code":"payload_too_large","message":"the image is over the 15 MB limit; resize it to about 1008 px — the model runs no larger — and send it again"}}` 413
 	}
 }
