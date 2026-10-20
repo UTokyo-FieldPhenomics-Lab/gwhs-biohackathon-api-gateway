@@ -235,3 +235,10 @@ awsAccessKeys.csv
 
 # OpenChamber's own state: the screenshots and session data it keeps while working in this checkout.
 /.openchamber
+
+# The pool's real addresses live here, and the raw logs that carry them stay beside their runs: the
+# repository names a machine by its alias (lab-3090, homepc-4090, gwhs-host) and .agents/local/pool.md
+# resolves it. Ignored exactly as .env is, for the reason in .agents/rules/project.md §Security.
+/.agents/local/
+.agents/references/**/gateway.log
+.agents/references/202610192300_load-test/gateway-full.log
