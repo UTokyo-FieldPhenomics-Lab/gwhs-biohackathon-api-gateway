@@ -1,9 +1,13 @@
-"""Put the three client files into the built site, after the site has been built.
+"""Put the client files into the built site, after the site has been built.
 
 `clients/` is where the sources live: the files the checks in this repository run against, and the
 ones a review reads. The site is where a participant gets them, because a download that a page links
 to has to be served from that page's origin — and because an ES module import needs a JavaScript
 content type, which a raw GitHub URL does not carry.
+
+Five files are copied rather than three: Python and Java ship one each, and JavaScript ships a core
+and the two entries that import it, one for a browser and one for Node. The entries import the core
+by a relative path, so all three have to sit beside each other under the same URL prefix.
 
 The copy goes into the **build output**, not into `docs/content/`: one file, one place, and no copy
 of a source file sitting in the source tree for somebody to edit by mistake. Zensical publishes what
@@ -35,9 +39,12 @@ FILES = SITE / "clients"
 SOURCES = (
     REPO / "clients/python/global_wheat.py",
     REPO / "clients/js/global-wheat.js",
+    REPO / "clients/js/global-wheat.web.js",
+    REPO / "clients/js/global-wheat.node.js",
     REPO / "clients/java/GlobalWheat.java",
 )
-"""The files a participant downloads, one per language."""
+"""The files a participant downloads: one per language, plus the two JavaScript entries, which
+import the core beside them and so must be published beside it."""
 
 
 def sync() -> list[str]:

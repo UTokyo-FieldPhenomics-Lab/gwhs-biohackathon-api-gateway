@@ -15,10 +15,16 @@
 //
 // Uploading a photograph is `predict_file`, and loading a row's image is `image_bytes`:
 //
-//   import {Client} from "https://docs.global-wheat.com/clients/global-wheat.js";
+//   import {Client} from "https://docs.global-wheat.com/clients/global-wheat.web.js";
 //   const client = new Client();                 // the key comes from GLOBAL_WHEAT_API_KEY, or pass it
 //   const row = await client.image("gwhd", 0);
 //   ctx.putImageData(new ImageData(rgba(row.objects[0].mask), row.width), 0, 0);
+//
+// This file is the core: the routes, the parameters, and the decoders, and no image code at all.
+// A photograph is resized before it is sent by the entry that knows how to resize one —
+// `global-wheat.web.js` (a canvas) or `global-wheat.node.js` (`sharp`) — and each of those is a
+// subclass that supplies the `resizer` this file asks for. Without one, `predict_file` sends the
+// original bytes.
 //
 // The file has no dependencies, and it is usable three ways: as an ES module, as a CommonJS
 // require in Node, and as a plain <script> that leaves the same four names on `globalThis`.
@@ -54,8 +60,12 @@ class Client {
    * @param {string} [options.base] The API's origin. Defaults to `GLOBAL_WHEAT_API`, then the public host.
    * @param {number} [options.timeout] Seconds to wait for an answer.
    * @param {Function} [options.fetch] A transport to send through, where one is already wrapped.
+   * @param {Function} [options.resizer] How an upload is made smaller, as
+   *   `(image, side) => Promise<Blob|Uint8Array|null>`: the image at most `side` pixels on its long
+   *   edge, or `null` where it already fits and needs no re-encode. The browser and Node entries
+   *   each supply one; this file does not, so an upload goes out untouched.
    */
-  constructor({key, base, timeout = DEFAULT_TIMEOUT, fetch: transport} = {}) {
+  constructor({key, base, timeout = DEFAULT_TIMEOUT, fetch: transport, resizer = null} = {}) {
     const environment = globalThis.process?.env ?? {};
     this.key = key ?? environment[KEY_ENV] ?? "";
     if (!this.key) {
@@ -63,8 +73,10 @@ class Client {
     }
     this.base = (base ?? environment[BASE_ENV] ?? DEFAULT_BASE).replace(/\/+$/, "");
     this.timeout = timeout;
+    this.resizer = resizer;
     this._fetch = transport ?? globalThis.fetch;
     this._descriptions = new Map();
+    this._declarations = new Map();
   }
 
   // -- the dataset surface ---------------------------------------------------
@@ -192,22 +204,95 @@ class Client {
 
   /**
    * Run one model on your own photograph.
+   *
+   * When the client has a `resizer` — which the browser and Node entries supply — the photograph is
+   * shrunk to the side the model will actually run at before it is sent, so a 12 MP phone photo
+   * crosses the network as a couple of hundred kilobytes. An image already that small is sent
+   * byte-for-byte, with no re-encode.
    * @param {string} model The model id.
    * @param {Blob|File|Uint8Array|ArrayBuffer} image JPEG, PNG, WebP, TIFF or GIF, at most 15 MB;
    *   the API decides the type from the bytes rather than from a declared one.
-   * @param {object} [options] `decode`, plus the model's own parameters, encoded as in `predict`.
+   * @param {object} [options] `decode`, `resizeBeforeSubmit`, plus the model's own parameters,
+   *   encoded as in `predict`. `resizeBeforeSubmit: false` sends the original bytes untouched. It
+   *   is the client's own switch and is never forwarded as a model parameter.
    * @returns {Promise<object>}
    */
-  async predict_file(model, image, {decode = true, ...params} = {}) {
+  async predict_file(model, image, {decode = true, resizeBeforeSubmit = true, ...params} = {}) {
+    const upload = resizeBeforeSubmit ? await this.#prepared(model, image, params) : image;
     const form = new FormData();
     const name = image.name ?? "upload.jpg";
-    form.append("file", image instanceof Blob ? image : new Blob([image]), name);
+    form.append("file", upload instanceof Blob ? upload : new Blob([upload]), name);
     const body = await this.#call("POST", `/models/${segment(model)}/predict/upload`, {
       params: modelParams(params),
       form,
     });
     if (decode) decode_objects(body);
     return body;
+  }
+
+  /**
+   * The bytes to upload: the resizer's answer, or the original where it declined.
+   * @param {string} model
+   * @param {Blob|File|Uint8Array|ArrayBuffer} image
+   * @param {object} params The model's parameters, read for `imgsz`.
+   * @returns {Promise<Blob|File|Uint8Array|ArrayBuffer>}
+   */
+  async #prepared(model, image, params) {
+    if (!this.resizer) return image;
+    const side = await this.#target_side(model, params);
+    if (!side) return image;
+    try {
+      return (await this.resizer(image, side)) ?? image;
+    } catch {
+      // A format this platform cannot decode is still a file the API may accept: send it whole and
+      // let the API answer with its own 400. The browser has no TIFF decoder and `sharp` refuses
+      // what it does not know, and neither is a reason to fail a call the API would have served.
+      return image;
+    }
+  }
+
+  /**
+   * The side the model will actually run at, derived from its own declaration rather than invented.
+   *
+   * It is `min(imgsz, the model's ceiling)` when the caller passes `imgsz` and the model declares
+   * that parameter, and the model's published `resolution` otherwise — 1008 for `sam3.1-meta`,
+   * 512 for `gwfss-segformer-b4`, which offers no `imgsz` at all. `null` where the declaration
+   * could not be read or publishes no side: the caller then sends the original and lets the predict
+   * call report the error in the API's own words.
+   * @param {string} model
+   * @param {object} params
+   * @returns {Promise<?number>}
+   */
+  async #target_side(model, params) {
+    const detail = await this.#declaration(model);
+    const resolution = Number(detail?.resolution);
+    if (!(resolution > 0)) return null;
+    const given = Number(params.imgsz);
+    if (params.imgsz == null || !(given > 0)) return resolution;
+    const declared = (detail.parameters ?? []).find((parameter) => parameter.name === "imgsz");
+    if (!declared) return resolution;
+    const ceiling = declaration_ceiling(declared);
+    return ceiling ? Math.min(given, ceiling) : given;
+  }
+
+  /**
+   * One model's declaration, fetched at most once per client.
+   *
+   * A failed fetch is remembered as `null` rather than retried: the predict call about to run will
+   * report the same failure with the API's own words, and a declaration this client cannot read
+   * should not cost a second round trip on every upload.
+   * @param {string} model
+   * @returns {Promise<?object>}
+   */
+  async #declaration(model) {
+    if (!this._declarations.has(model)) {
+      try {
+        this._declarations.set(model, await this.model(model));
+      } catch {
+        this._declarations.set(model, null);
+      }
+    }
+    return this._declarations.get(model);
   }
 
   // -- geometry --------------------------------------------------------------
@@ -348,6 +433,22 @@ function segment(value) {
 /** Drop the options a caller left unset, so no empty parameter is sent. */
 function defined(options) {
   return Object.fromEntries(Object.entries(options).filter(([, value]) => value != null));
+}
+
+/**
+ * The largest side a model's `imgsz` parameter accepts.
+ *
+ * A model publishes the sides it was run at, and a value above the largest runs at it rather than
+ * being refused, so the list is the ceiling. `maximum` is the fallback for a declaration that
+ * carries no list; `null` leaves the caller's own value to stand.
+ * @param {object} parameter The `imgsz` entry of a model's `parameters`.
+ * @returns {?number}
+ */
+function declaration_ceiling(parameter) {
+  const sides = (parameter.values ?? []).map(Number).filter((side) => side > 0);
+  if (sides.length) return Math.max(...sides);
+  const maximum = Number(parameter.maximum);
+  return maximum > 0 ? maximum : null;
 }
 
 /**

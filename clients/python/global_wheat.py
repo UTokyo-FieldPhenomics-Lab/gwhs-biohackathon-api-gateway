@@ -25,11 +25,12 @@ The file is written to be downloaded and imported, not installed::
     for obj in row["objects"]:
         print(obj["category"], obj["mask"].sum())
 
-Dependencies are ``requests`` and ``numpy``, and nothing else.
+Dependencies are ``requests``, ``numpy`` and ``pillow``, and nothing else.
 """
 
 from __future__ import annotations
 
+import io
 import json
 import os
 from collections.abc import Iterator, Mapping, Sequence
@@ -39,6 +40,7 @@ from urllib.parse import quote
 
 import numpy as np
 import requests
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 __all__ = [
     "API_KEY_HEADER",
@@ -47,6 +49,7 @@ __all__ = [
     "DEFAULT_PAGE_SIZE",
     "DEFAULT_TIMEOUT",
     "KEY_ENV",
+    "UPLOAD_QUALITY",
     "ApiError",
     "Client",
     "label_masks",
@@ -74,6 +77,14 @@ than a budget: an upload from a phone on a slow link is the case it is sized for
 
 DEFAULT_PAGE_SIZE = 100
 """Rows per page. The API's own default, and its ceiling is 1000."""
+
+UPLOAD_QUALITY = 90
+"""The JPEG quality a resized upload is encoded at.
+
+High enough that the resize, not the encoder, is what the model sees; the image is about to be
+shrunk again by the model's own preprocessing, and a lower setting buys kilobytes nobody would miss
+while adding artifacts to the boundaries a head count depends on.
+"""
 
 
 class ApiError(Exception):
@@ -135,6 +146,7 @@ class Client:
         self._session = session or requests.Session()
         self._session.headers[API_KEY_HEADER] = self.key
         self._descriptions: dict[str, dict[str, Any]] = {}
+        self._declarations: dict[str, dict[str, Any] | None] = {}
 
     def __enter__(self) -> Client:
         """Use the client as a context manager.
@@ -436,10 +448,17 @@ class Client:
         model: str,
         image: str | Path | bytes,
         *,
+        resize_before_submit: bool = True,
         decode: bool = True,
         **params: object,
     ) -> dict[str, Any]:
         """Run one model on your own photograph.
+
+        The image is resized to the side the model runs at before it is sent, because the model
+        resizes every input it receives anyway: a larger upload buys no resolution, only time on the
+        wire. The target is the model's own — ``imgsz`` where you pass it and the model declares it,
+        otherwise the ``resolution`` the model publishes — so the pixels the network sees are the
+        ones it would have produced from the full image.
 
         Parameters
         ----------
@@ -448,11 +467,15 @@ class Client:
         image : str or pathlib.Path or bytes
             The file to send, as a path or already in memory. JPEG, PNG, WebP, TIFF or GIF, at most
             15 MB and 50 megapixels; the API decides by the bytes rather than by a declared type.
+        resize_before_submit : bool, optional
+            Resize before sending. ``False`` sends the file untouched, which is the documented
+            opt-out for a caller who wants the original bytes on the wire.
         decode : bool, optional
             Attach each object's ``mask``, decoded.
         **params
             The model's own control parameters, encoded as in :meth:`predict` — a geometry value is
-            one JSON array in one parameter.
+            one JSON array in one parameter. ``resize_before_submit`` is this client's own option,
+            and is never sent as a parameter.
 
         Returns
         -------
@@ -466,6 +489,14 @@ class Client:
             when no machine is answering, ``504`` on a timeout.
         """
         name, payload, media_type = _upload(image)
+        if resize_before_submit:
+            target = self._target_side(model, params)
+            if target is not None:
+                prepared = _prepare_upload(payload, target)
+                if prepared is not payload:
+                    # The prepared bytes are a JPEG whatever the source was, and a multipart part
+                    # that declares something it is not is a lie the API happens to forgive.
+                    name, payload, media_type = f"{Path(name).stem}.jpg", prepared, "image/jpeg"
         body: dict[str, Any] = self._call(
             "POST",
             f"/models/{_segment(model)}/predict/upload",
@@ -475,6 +506,68 @@ class Client:
         if decode:
             _decode_objects(body)
         return body
+
+    def _declaration(self, model: str) -> dict[str, Any] | None:
+        """Return what a model published about itself, fetching it at most once.
+
+        Parameters
+        ----------
+        model : str
+            The model id.
+
+        Returns
+        -------
+        dict or None
+            The ``GET /models/{id}`` body, or ``None`` where the fetch failed. A failure is cached
+            like an answer: the side this client resizes to is a convenience, and asking again on
+            every upload would turn one missing declaration into one request per image.
+
+        Notes
+        -----
+        A failed fetch does not raise. The caller then sends the original bytes, and the predict
+        call is what reports the failure — with the status and code the API actually meant.
+        """
+        if model not in self._declarations:
+            try:
+                self._declarations[model] = self.model(model)
+            except (ApiError, requests.RequestException):
+                self._declarations[model] = None
+        return self._declarations[model]
+
+    def _target_side(self, model: str, params: Mapping[str, Any]) -> int | None:
+        """Work out the side this model would resize the image to anyway.
+
+        Parameters
+        ----------
+        model : str
+            The model id.
+        params : mapping
+            The parameters the caller passed, which may carry ``imgsz``.
+
+        Returns
+        -------
+        int or None
+            The side to resize to, or ``None`` where the model declared nothing to derive it from
+            and the original bytes should travel.
+
+        Notes
+        -----
+        The number is derived, never invented: a caller's ``imgsz`` is capped by the ceiling the
+        model declared, because a larger value would be clamped by the model and resizing to it
+        would send pixels nobody uses. Without ``imgsz`` the model's published ``resolution`` is the
+        answer, since that is the side its own preprocessing picks.
+        """
+        declared = self._declaration(model)
+        if declared is None:
+            return None
+        ceiling = _declared_side(declared)
+        requested = _as_side(params.get("imgsz"))
+        if requested is not None and requested > 0 and ceiling is not None:
+            return min(requested, ceiling)
+        resolution = declared.get("resolution")
+        if isinstance(resolution, int) and resolution > 0:
+            return resolution
+        return None
 
     # -- geometry ------------------------------------------------------------
 
@@ -731,6 +824,112 @@ def _decode_objects(body: dict[str, Any]) -> None:
         rle = obj.get("rle")
         if isinstance(rle, dict):
             obj["mask"] = rle_decode(cast("str", rle["counts"]), cast("Sequence[int]", rle["size"]))
+
+
+def _declared_side(declared: Mapping[str, Any]) -> int | None:
+    """Read the largest side a model declared it runs at.
+
+    Parameters
+    ----------
+    declared : mapping
+        A ``GET /models/{id}`` body.
+
+    Returns
+    -------
+    int or None
+        The ceiling of the model's ``imgsz`` parameter, or ``None`` where it declares no such
+        parameter — a model that resizes to one fixed side publishes that side as ``resolution``
+        instead, and has no knob to cap.
+    """
+    parameters = declared.get("parameters")
+    if not isinstance(parameters, list):
+        return None
+    for parameter in parameters:
+        if not isinstance(parameter, dict) or parameter.get("name") != "imgsz":
+            continue
+        # `imgsz` publishes the sides it was actually run at, as a list, rather than a range: the
+        # ceiling is the largest of them, and a value above it is clamped by the model anyway.
+        values = parameter.get("values")
+        if isinstance(values, list) and values:
+            return int(values[-1])
+        maximum = parameter.get("maximum")
+        if isinstance(maximum, (int, float)):
+            return int(maximum)
+    return None
+
+
+def _as_side(value: object) -> int | None:
+    """Read a caller's ``imgsz`` value as a side, where it is one.
+
+    Parameters
+    ----------
+    value : any
+        The value the caller passed for ``imgsz``.
+
+    Returns
+    -------
+    int or None
+        The side, or ``None`` where the value is not a number. A value the client cannot read is
+        left for the model to refuse: guessing here would resize to a side nobody asked for.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+def _prepare_upload(image: str | Path | bytes, target_side: int) -> bytes:
+    """Prepare one photograph for upload, at the side the model will resize it to.
+
+    Parameters
+    ----------
+    image : str or pathlib.Path or bytes
+        The photograph, as a path or already read.
+    target_side : int
+        The longest side the result may have, in pixels.
+
+    Returns
+    -------
+    bytes
+        A JPEG of at most ``target_side`` pixels on its longest side, upright, with no EXIF left.
+        **The caller's own object** where the image already fits: an image at or under the target
+        keeps its bytes, its quality and its metadata. Bytes Pillow cannot read are also returned
+        untouched — the API is the authority on what it decodes, and refusing here would replace
+        its ``400`` with this client's opinion.
+
+    Notes
+    -----
+    ``Image.draft`` is what makes this cheap for JPEGs: it tells the decoder to hand back a
+    one-quarter or one-eighth scale, so a 12 MP photo is never fully decoded. Pillow only applies it
+    to JPEG, which is the format an upload almost always is; a PNG is decoded at full size because
+    its decoder has no shortcut.
+
+    The EXIF transpose comes before the resize because the orientation tag is about the photograph
+    as a whole, and a rotation after a non-square resize would have to resize twice to fit again.
+    """
+    if target_side <= 0:
+        raise ValueError(f"target_side must be positive, got {target_side}")
+    payload = image if isinstance(image, bytes) else Path(image).read_bytes()
+    try:
+        opened = Image.open(io.BytesIO(payload))
+    except (UnidentifiedImageError, OSError):
+        return payload
+    with opened:
+        if max(opened.size) <= target_side:
+            # The header says it already fits: no decode, no re-encode, the file goes as it is.
+            return payload
+        if opened.format == "JPEG":
+            # Before the first pixel is decoded; a no-op for anything that is not a JPEG.
+            opened.draft("RGB", (target_side, target_side))
+        upright = ImageOps.exif_transpose(opened).convert("RGB")
+        # Pillow's own rule: fit inside the square, keep the aspect ratio, never enlarge. Anything
+        # already smaller is left alone, which is also why the header check above can return early.
+        upright.thumbnail((target_side, target_side), Image.Resampling.LANCZOS)
+        encoded = io.BytesIO()
+        upright.save(encoded, format="JPEG", quality=UPLOAD_QUALITY)
+    return encoded.getvalue()
 
 
 def _upload(image: str | Path | bytes) -> tuple[str, bytes, str]:

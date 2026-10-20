@@ -185,11 +185,16 @@ def test_an_upload_sends_the_file_as_the_field_named_file(tmp_path: Path) -> Non
     """The route's contract is one multipart field, and the name and type are only what it needs."""
     photo = tmp_path / "photo.png"
     photo.write_bytes(b"\x89PNG\r\n\x1a\n")
-    client, session = make([Reply(200, {"model": "sam3.1-meta", "objects": []})])
+    client, session = make(
+        [
+            Reply(200, {"id": "sam3.1-meta", "resolution": 1008, "parameters": []}),
+            Reply(200, {"model": "sam3.1-meta", "objects": []}),
+        ]
+    )
     client.predict_file("sam3.1-meta", photo, prompt="head")
-    name, payload, media_type = session.calls[0]["files"]["file"]
+    name, payload, media_type = session.calls[1]["files"]["file"]
     assert (name, payload, media_type) == ("photo.png", b"\x89PNG\r\n\x1a\n", "image/png")
-    assert session.calls[0]["url"].endswith("/predict/upload")
+    assert session.calls[1]["url"].endswith("/predict/upload")
 
 
 def test_a_geometry_parameter_is_one_json_value_in_one_parameter() -> None:
@@ -207,12 +212,15 @@ def test_a_geometry_parameter_is_one_json_value_in_one_parameter() -> None:
 
 def test_an_upload_encodes_a_geometry_parameter_the_same_way() -> None:
     """One encoder, both routes: the upload carries the same query contract as the address call."""
-    client, session = make([Reply(200, {"model": "sam3.1-meta", "objects": []})])
-    client.predict_file(
-        "sam3.1-meta", b"\x89PNG\r\n\x1a\n", points=[[256, 300, 1], [40, 40, 0]]
+    client, session = make(
+        [
+            Reply(200, {"id": "sam3.1-meta", "resolution": 1008, "parameters": []}),
+            Reply(200, {"model": "sam3.1-meta", "objects": []}),
+        ]
     )
+    client.predict_file("sam3.1-meta", b"\x89PNG\r\n\x1a\n", points=[[256, 300, 1], [40, 40, 0]])
 
-    assert session.calls[0]["params"] == {"points": "[[256,300,1],[40,40,0]]"}
+    assert session.calls[1]["params"] == {"points": "[[256,300,1],[40,40,0]]"}
 
 
 def test_a_boolean_is_true_or_false_and_an_unset_value_is_left_out() -> None:

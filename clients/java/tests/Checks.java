@@ -10,18 +10,24 @@
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import javax.imageio.ImageIO;
 
 public final class Checks {
 
     private static final List<String> seen = new ArrayList<>();
+    private static byte[] lastUpload;
     private static int failures;
 
     public static void main(String[] args) throws Exception {
@@ -80,6 +86,36 @@ public final class Checks {
                     client.predict_file("sam3.1-meta", new byte[] {(byte) 0xff, (byte) 0xd8}, "photo.jpg", null);
             check("an upload answers", uploaded.get("model").equals("sam3.1-meta"));
             check("an upload sends one file part", seen.get(seen.size() - 1).contains("name=\"file\""));
+            check(
+                    "bytes ImageIO cannot read go as they are",
+                    Arrays.equals(uploadedImage(), new byte[] {(byte) 0xff, (byte) 0xd8}));
+
+            byte[] portrait = sidewayPhoto();
+            check("the fixture carries an orientation tag", GlobalWheat.exifOrientation(portrait) == 6);
+            client.predict_file("sam3.1-meta", portrait, "photo.jpg", null);
+            BufferedImage sent = decode(uploadedImage());
+            check("an orientation-6 photo arrives upright", sent.getHeight() > sent.getWidth());
+            check(
+                    "at no more than the declared side",
+                    Math.max(sent.getWidth(), sent.getHeight()) <= 1008);
+            check("and smaller than the photograph", uploadedImage().length < portrait.length);
+
+            int beforeOptOut = seen.size();
+            client.predict_file("sam3.1-meta", portrait, "photo.jpg", null, false);
+            check(
+                    "resizeBeforeSubmit false sends the original length",
+                    uploadedImage().length == portrait.length);
+            check("and asks the model nothing first", seen.size() - beforeOptOut == 1);
+
+            byte[] small = photo(800, 600, 0);
+            client.predict_file("sam3.1-meta", small, "small.jpg", null);
+            check("an image that already fits is unchanged", Arrays.equals(uploadedImage(), small));
+
+            client.predict_file("gwfss-segformer-b4", portrait, "photo.jpg", null);
+            BufferedImage segformer = decode(uploadedImage());
+            check(
+                    "a model that publishes 512 gets 512",
+                    Math.max(segformer.getWidth(), segformer.getHeight()) == 512);
 
             try {
                 client.model("nope");
@@ -114,6 +150,99 @@ public final class Checks {
     @SuppressWarnings("unchecked")
     private static List<Map<String, Object>> objects(Map<String, Object> body) {
         return (List<Map<String, Object>>) body.get("objects");
+    }
+
+    /** A 4000x3000 photograph stored sideways, tagged orientation 6, as a portrait phone writes one. */
+    private static byte[] sidewayPhoto() throws IOException {
+        return photo(4000, 3000, 6);
+    }
+
+    /**
+     * Build a JPEG with an EXIF orientation tag, written by hand because ImageIO cannot write one.
+     *
+     * @param width the stored width
+     * @param height the stored height
+     * @param orientation the tag 0x0112 value, or 0 for none
+     * @return the file's bytes
+     */
+    private static byte[] photo(int width, int height, int orientation) throws IOException {
+        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        for (int y = 0; y < height; y += 16) {
+            for (int x = 0; x < width; x += 16) {
+                image.setRGB(x, y, (x * 255 / width) << 16 | (y * 255 / height) << 8 | 96);
+            }
+        }
+        ByteArrayOutputStream encoded = new ByteArrayOutputStream();
+        ImageIO.write(image, "jpeg", encoded);
+        if (orientation == 0) {
+            return encoded.toByteArray();
+        }
+        byte[] jpeg = encoded.toByteArray();
+        byte[] segment = exifApp1(orientation);
+        ByteArrayOutputStream tagged = new ByteArrayOutputStream();
+        tagged.write(jpeg, 0, 2);                       // SOI, then the APP1, then the rest
+        tagged.write(segment);
+        tagged.write(jpeg, 2, jpeg.length - 2);
+        return tagged.toByteArray();
+    }
+
+    /** One APP1 segment whose only TIFF entry is the orientation tag, big-endian. */
+    private static byte[] exifApp1(int orientation) {
+        byte[] tiff = {
+            'M', 'M', 0, 42, 0, 0, 0, 8,               // big-endian, IFD0 at offset 8
+            0, 1,                                       // one entry
+            0x01, 0x12,                                 // tag 0x0112
+            0, 3,                                       // type SHORT
+            0, 0, 0, 1,                                 // count 1
+            (byte) (orientation >> 8), (byte) orientation, 0, 0,
+            0, 0, 0, 0                                  // no next IFD
+        };
+        int length = 2 + 6 + tiff.length;               // the two length bytes, "Exif\0\0", the TIFF
+        ByteArrayOutputStream segment = new ByteArrayOutputStream();
+        segment.write(0xff);
+        segment.write(0xe1);
+        segment.write(length >> 8);
+        segment.write(length & 0xff);
+        segment.writeBytes("Exif\0\0".getBytes(StandardCharsets.US_ASCII));
+        segment.writeBytes(tiff);
+        return segment.toByteArray();
+    }
+
+    /** The image part of the multipart body the handler recorded last. */
+    private static byte[] uploadedImage() {
+        byte[] header = "\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
+        int start = indexOf(lastUpload, header) + header.length;
+        int end = lastUpload.length;
+        for (int at = lastUpload.length - 4; at > start; at--) {
+            if (lastUpload[at] == '\r'
+                    && lastUpload[at + 1] == '\n'
+                    && lastUpload[at + 2] == '-'
+                    && lastUpload[at + 3] == '-') {
+                end = at;
+                break;
+            }
+        }
+        return Arrays.copyOfRange(lastUpload, start, end);
+    }
+
+    private static int indexOf(byte[] haystack, byte[] needle) {
+        for (int at = 0; at + needle.length <= haystack.length; at++) {
+            boolean found = true;
+            for (int offset = 0; offset < needle.length; offset++) {
+                if (haystack[at + offset] != needle[offset]) {
+                    found = false;
+                    break;
+                }
+            }
+            if (found) {
+                return at;
+            }
+        }
+        throw new IllegalStateException("the multipart body has no header separator");
+    }
+
+    private static BufferedImage decode(byte[] image) throws IOException {
+        return ImageIO.read(new ByteArrayInputStream(image));
     }
 
     /** Every recorded object's pixel count is the {@code area} beside it. */
@@ -176,8 +305,11 @@ public final class Checks {
         String query = exchange.getRequestURI().getRawQuery();
         Map<String, Object> headers = new LinkedHashMap<>();
         headers.put("key", exchange.getRequestHeaders().getFirst("X-API-Key"));
-        String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+        byte[] raw = exchange.getRequestBody().readAllBytes();
+        String body = new String(raw, StandardCharsets.UTF_8);
         seen.add(path + "?" + query + " " + body + " key=" + headers.get("key"));
+        // The multipart body holds the upload as bytes; the recorded string has already mangled it.
+        lastUpload = path.endsWith("/predict/upload") ? raw : null;
 
         String answer;
         int status = 200;
@@ -192,10 +324,19 @@ public final class Checks {
                     answer =
                             "{\"dataset\":\"gwhs-temp\",\"row\":0,\"objects\":[{\"idx\":0,\"category\":\"head\","
                                     + "\"bbox\":[0,0,1,1],\"area\":2,\"rle\":{\"size\":[2,2],\"counts\":\"0120\"}}]}";
+            case "/models/sam3.1-meta" ->
+                    answer =
+                            "{\"id\":\"sam3.1-meta\",\"resolution\":1008,\"declared\":true,\"parameters\":["
+                                    + "{\"name\":\"imgsz\",\"type\":\"number\",\"values\":[672,784,896,1008]}]}";
+            case "/models/gwfss-segformer-b4" ->
+                    answer =
+                            "{\"id\":\"gwfss-segformer-b4\",\"resolution\":512,\"declared\":true,\"parameters\":[]}";
             case "/models/sam3.1-meta/predict", "/models/sam3.1-meta/predict/upload" ->
                     answer =
                             "{\"model\":\"sam3.1-meta\",\"objects\":[{\"idx\":0,\"category\":\"head\","
                                     + "\"bbox\":[0,0,1,1],\"area\":2,\"rle\":{\"size\":[2,2],\"counts\":\"0120\"}}]}";
+            case "/models/gwfss-segformer-b4/predict/upload" ->
+                    answer = "{\"model\":\"gwfss-segformer-b4\",\"objects\":[]}";
             default -> {
                 status = 401;
                 answer = "{\"error\":{\"code\":\"invalid_key\",\"message\":\"that key is not in the pool\"}}";

@@ -5,5 +5,8 @@
   "description": "Not published: it only makes this directory an ES module so `node --test` reads the client the way a browser does.",
   "scripts": {
     "test": "node --test tests/"
+  },
+  "devDependencies": {
+    "sharp": "^0.35.5"
   }
 }

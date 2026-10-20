@@ -212,13 +212,26 @@ An upload is the file itself, with the same parameters. `predict_file` decides t
 bytes, not from the name, and the API refuses anything it cannot decode — a phone's HEIC has to be
 converted to JPEG first.
 
+The model resizes whatever it receives to the side it runs at — 1008 px for `sam3.1-meta` — so a
+larger photograph buys nothing. This cell does the same with the Pillow it already used to display
+step 5, and `predict_file` would have done it anyway:
+
 ```python
 import pathlib
+from io import BytesIO
+
+from PIL import Image, ImageOps
 
 photo = pathlib.Path("photo.jpg")
 if photo.exists():
-    mine = client.predict_file("sam3.1-meta", photo, prompt="wheat head")
-    print(len(mine["objects"]), "objects in", photo)
+    with Image.open(photo) as picture:
+        picture = ImageOps.exif_transpose(picture)
+        picture.thumbnail((1008, 1008))
+        prepared = BytesIO()
+        picture.convert("RGB").save(prepared, "JPEG", quality=90)
+
+    mine = client.predict_file("sam3.1-meta", prepared.getvalue(), prompt="wheat head")
+    print(len(mine["objects"]), "objects in", photo, "at", mine["resolution_used"], "px")
 else:
     print("put a photo beside this notebook, or upload one in Colab and name it here")
 ```

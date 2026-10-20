@@ -12,6 +12,7 @@ requires-python = ">=3.12"
 dependencies = [
     # The Python client's own dependencies, named here so the checks import what a participant gets.
     "numpy>=2.0",
+    "pillow>=11",
     "requests>=2.32",
 ]
 

@@ -1,0 +1,6 @@
+# `sharp` exists here only so the Node client's checks and its benchmark can run; it is a
+# devDependency of these checks, never something a participant installs from this directory. Neither
+# the modules nor the lock file npm writes beside `package.json` belongs in the repository: there is
+# no published package and no other workflow that reads them.
+node_modules/
+package-lock.json

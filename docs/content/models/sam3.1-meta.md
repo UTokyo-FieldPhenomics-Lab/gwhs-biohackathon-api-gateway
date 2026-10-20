@@ -52,6 +52,9 @@ effect is not characterised: a positive point beside the phrase changed the answ
 longer matched the text-only result, and a negative point did not reliably subtract. Boxes are what
 this page shows for that reason. If you use points, read the answer rather than trusting it.
 
+An answer from geometry alone carries `"category": null`: there was no phrase to name the object,
+and repeating one would describe the question rather than the picture.
+
 ## Size
 
 `imgsz` is one of four sides this model was actually run at — `672`, `784`, `896`, `1008` — and 1008

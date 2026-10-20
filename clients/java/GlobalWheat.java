@@ -25,22 +25,39 @@
 //       System.out.println(mask.width() + "x" + mask.height());
 //   }
 
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.geom.AffineTransform;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Set;
+import javax.imageio.IIOImage;
+import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
+import javax.imageio.ImageWriteParam;
+import javax.imageio.ImageWriter;
+import javax.imageio.plugins.jpeg.JPEGImageWriteParam;
+import javax.imageio.stream.ImageInputStream;
+import javax.imageio.stream.MemoryCacheImageOutputStream;
 
 public final class GlobalWheat {
 
@@ -113,6 +130,10 @@ public final class GlobalWheat {
         private final String base;
         private final double timeoutSeconds;
         private final Map<String, Map<String, Object>> descriptions = new LinkedHashMap<>();
+        // What each model published about itself, and which ones were asked and did not answer.
+        // Asked once per client: a missing declaration is not worth a request per photograph.
+        private final Map<String, Map<String, Object>> declarations = new LinkedHashMap<>();
+        private final Set<String> undeclared = new HashSet<>();
 
         /**
          * Build a client from the environment: {@code GLOBAL_WHEAT_API_KEY} and, where it is set,
@@ -352,8 +373,24 @@ public final class GlobalWheat {
 
         /** Run one model on your own photograph, read from a file. */
         public Map<String, Object> predict_file(String model, File image, Map<String, ?> params) {
+            return predict_file(model, image, params, true);
+        }
+
+        /**
+         * Run one model on your own photograph, read from a file.
+         *
+         * @param model the model id
+         * @param image the file
+         * @param params the model's own parameters
+         * @param resizeBeforeSubmit resize to the side the model runs at before sending; {@code
+         *     false} sends the file untouched
+         * @return the same body {@code predict} answers
+         */
+        public Map<String, Object> predict_file(
+                String model, File image, Map<String, ?> params, boolean resizeBeforeSubmit) {
             try (InputStream stream = new java.io.FileInputStream(image)) {
-                return predict_file(model, read(stream), image.getName(), params);
+                return predict_file(
+                        model, read(stream), image.getName(), params, resizeBeforeSubmit);
             } catch (IOException failure) {
                 throw new IllegalArgumentException("cannot read " + image, failure);
             }
@@ -361,6 +398,11 @@ public final class GlobalWheat {
 
         /**
          * Run one model on your own photograph.
+         *
+         * <p>The image is resized to the side the model runs at before it is sent, because the
+         * model resizes every input it receives anyway: a larger upload buys no resolution, only
+         * time on the wire. The target is the model's own — {@code imgsz} where you pass it and
+         * the model declares it, otherwise the {@code resolution} the model publishes.
          *
          * @param model the model id
          * @param image the bytes: JPEG, PNG, WebP, TIFF or GIF, at most 15 MB; the API decides the
@@ -371,15 +413,134 @@ public final class GlobalWheat {
          */
         public Map<String, Object> predict_file(
                 String model, byte[] image, String filename, Map<String, ?> params) {
+            return predict_file(model, image, filename, params, true);
+        }
+
+        /**
+         * Run one model on your own photograph.
+         *
+         * @param model the model id
+         * @param image the bytes
+         * @param filename the name multipart requires, never trusted by the API
+         * @param params the model's own parameters
+         * @param resizeBeforeSubmit resize to the side the model runs at before sending; {@code
+         *     false} sends the original bytes untouched, and asks the model nothing first
+         * @return the same body {@code predict} answers
+         */
+        public Map<String, Object> predict_file(
+                String model,
+                byte[] image,
+                String filename,
+                Map<String, ?> params,
+                boolean resizeBeforeSubmit) {
+            byte[] payload = image;
+            String name = filename;
+            if (resizeBeforeSubmit) {
+                int side = targetSide(model, params);
+                if (side > 0) {
+                    byte[] prepared = prepareUpload(image, side);
+                    if (prepared != image) {
+                        // The prepared bytes are a JPEG whatever the source was, and a multipart
+                        // part that declares something it is not is a lie the API happens to
+                        // forgive.
+                        payload = prepared;
+                        int dot = filename.lastIndexOf('.');
+                        name = (dot > 0 ? filename.substring(0, dot) : filename) + ".jpg";
+                    }
+                }
+            }
             Map<String, Object> answer =
                     call(
                             "POST",
                             "/models/" + segment(model) + "/predict/upload",
                             modelQuery(params),
                             null,
-                            image);
+                            payload);
             decodeObjects(answer);
             return answer;
+        }
+
+        /**
+         * Read what a model published about itself, once per client.
+         *
+         * @param model the model id
+         * @return the {@code GET /models/{id}} body, or {@code null} where the fetch failed
+         */
+        private Map<String, Object> declaration(String model) {
+            if (declarations.containsKey(model)) {
+                return declarations.get(model);
+            }
+            if (undeclared.contains(model)) {
+                return null;
+            }
+            try {
+                Map<String, Object> found = model(model);
+                declarations.put(model, found);
+                return found;
+            } catch (RuntimeException failure) {
+                // Not an error of its own: the caller sends the original bytes and lets the
+                // predict call report what the API actually meant.
+                undeclared.add(model);
+                return null;
+            }
+        }
+
+        /**
+         * Work out the side this model would resize the image to anyway.
+         *
+         * @param model the model id
+         * @param params the caller's parameters, which may carry {@code imgsz}
+         * @return the side to resize to, or {@code 0} where the model declared nothing to derive
+         *     it from and the original bytes should travel
+         */
+        private int targetSide(String model, Map<String, ?> params) {
+            Map<String, Object> declared = declaration(model);
+            if (declared == null) {
+                return 0;
+            }
+            int ceiling = declaredCeiling(declared);
+            Object requested = params == null ? null : params.get("imgsz");
+            // A caller's imgsz is capped by the ceiling the model declared: a larger value would be
+            // clamped by the model, and resizing to it would send pixels nobody uses.
+            if (requested instanceof Number number && ceiling > 0) {
+                return Math.min(Math.max(1, number.intValue()), ceiling);
+            }
+            if (declared.get("resolution") instanceof Number resolution
+                    && resolution.intValue() > 0) {
+                return resolution.intValue();
+            }
+            return 0;
+        }
+
+        /**
+         * Read the largest side a model declared it runs at.
+         *
+         * @param declared a {@code GET /models/{id}} body
+         * @return the ceiling of its {@code imgsz} parameter, or {@code 0} where it declares none
+         */
+        private static int declaredCeiling(Map<String, Object> declared) {
+            Object parameters = declared.get("parameters");
+            if (!(parameters instanceof List<?> entries)) {
+                return 0;
+            }
+            for (Object entry : entries) {
+                if (!(entry instanceof Map<?, ?> parameter)
+                        || !"imgsz".equals(parameter.get("name"))) {
+                    continue;
+                }
+                // imgsz publishes the sides it was actually run at, as a list, rather than a range:
+                // the ceiling is the largest of them.
+                if (parameter.get("values") instanceof List<?> values && !values.isEmpty()) {
+                    Object last = values.get(values.size() - 1);
+                    if (last instanceof Number number) {
+                        return number.intValue();
+                    }
+                }
+                if (parameter.get("maximum") instanceof Number maximum) {
+                    return maximum.intValue();
+                }
+            }
+            return 0;
         }
 
         // -- geometry ---------------------------------------------------------
@@ -559,6 +720,279 @@ public final class GlobalWheat {
             }
             return collected.toByteArray();
         }
+    }
+
+    /**
+     * Prepare one photograph for upload, at the side the model will resize it to.
+     *
+     * <p>Decoded with {@code ImageIO}, turned upright from its EXIF orientation tag, scaled to fit
+     * inside a square of {@code targetSide}, and encoded as a JPEG at quality 0.9. The image itself
+     * is returned where it already fits or where {@code ImageIO} has no reader for it: an upload at
+     * or under the target keeps its bytes and its metadata, and the API, not this client, is the
+     * authority on which formats it decodes.
+     *
+     * <p>The EXIF read is hand-written because the JDK has no EXIF parser and {@code ImageIO} drops
+     * the tag when it writes: without it a portrait phone photograph would reach the model
+     * sideways, which is worse than a large one.
+     *
+     * @param image the file's bytes
+     * @param targetSide the longest side the result may have, in pixels
+     * @return the JPEG to send, or the same array that was given
+     */
+    static byte[] prepareUpload(byte[] image, int targetSide) {
+        if (targetSide <= 0) {
+            throw new IllegalArgumentException("target side must be positive, got " + targetSide);
+        }
+        BufferedImage decoded = decodeIfLarger(image, targetSide);
+        if (decoded == null) {
+            return image;
+        }
+        return encodeJpeg(scale(orient(decoded, exifOrientation(image)), targetSide));
+    }
+
+    /**
+     * Decode an image only if its header says it is larger than the target.
+     *
+     * <p>The header alone carries the size, so an image that already fits is never decoded, and one
+     * whose format this JDK cannot read is never decoded either: both come back as {@code null},
+     * which means "send the original bytes".
+     *
+     * @param image the file's bytes
+     * @param targetSide the longest side the result may have
+     * @return the decoded image, or {@code null} where the original should travel
+     */
+    private static BufferedImage decodeIfLarger(byte[] image, int targetSide) {
+        ImageInputStream input = null;
+        ImageReader reader = null;
+        try {
+            input = ImageIO.createImageInputStream(new ByteArrayInputStream(image));
+            if (input == null) {
+                return null;
+            }
+            Iterator<ImageReader> readers = ImageIO.getImageReaders(input);
+            if (!readers.hasNext()) {
+                return null;   // a format with no reader here — TIFF, WebP — goes on untouched
+            }
+            reader = readers.next();
+            reader.setInput(input, false, true);
+            if (Math.max(reader.getWidth(0), reader.getHeight(0)) <= targetSide) {
+                return null;
+            }
+            return reader.read(0);
+        } catch (IOException | RuntimeException failure) {
+            return null;   // not an image this JDK reads: let the API answer with its own 400
+        } finally {
+            if (reader != null) {
+                reader.dispose();
+            }
+            if (input != null) {
+                try {
+                    input.close();
+                } catch (IOException ignored) {
+                    // closing a memory stream cannot fail in a way that matters here
+                }
+            }
+        }
+    }
+
+    /** Scale an image down to fit inside a square, keeping its aspect ratio; never enlarge. */
+    private static BufferedImage scale(BufferedImage image, int targetSide) {
+        int width = image.getWidth();
+        int height = image.getHeight();
+        int longest = Math.max(width, height);
+        if (longest <= targetSide) {
+            return image;
+        }
+        double factor = (double) targetSide / longest;
+        int scaledWidth = Math.max(1, (int) Math.round(width * factor));
+        int scaledHeight = Math.max(1, (int) Math.round(height * factor));
+        BufferedImage scaled =
+                new BufferedImage(scaledWidth, scaledHeight, BufferedImage.TYPE_INT_RGB);
+        Graphics2D graphics = scaled.createGraphics();
+        try {
+            graphics.setRenderingHint(
+                    RenderingHints.KEY_INTERPOLATION,
+                    RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+            graphics.setRenderingHint(
+                    RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            // JPEG has no alpha channel. A transparent pixel composites onto white, which is what a
+            // viewer would show, rather than onto the black an unfilled canvas starts with.
+            graphics.setColor(Color.WHITE);
+            graphics.fillRect(0, 0, scaledWidth, scaledHeight);
+            graphics.drawImage(image, 0, 0, scaledWidth, scaledHeight, null);
+        } finally {
+            graphics.dispose();
+        }
+        return scaled;
+    }
+
+    /**
+     * Apply an EXIF orientation to the pixels themselves.
+     *
+     * @param image the decoded image, in its stored orientation
+     * @param orientation the tag 0x0112 value
+     * @return the upright image, or the same image for orientation 1 or an unknown value
+     */
+    private static BufferedImage orient(BufferedImage image, int orientation) {
+        if (orientation <= 1 || orientation > 8) {
+            return image;
+        }
+        int width = image.getWidth();
+        int height = image.getHeight();
+        boolean swaps = orientation >= 5;
+        int targetWidth = swaps ? height : width;
+        int targetHeight = swaps ? width : height;
+        BufferedImage upright =
+                new BufferedImage(targetWidth, targetHeight, BufferedImage.TYPE_INT_RGB);
+        Graphics2D graphics = upright.createGraphics();
+        try {
+            graphics.drawImage(image, affine(orientation, width, height), null);
+        } finally {
+            graphics.dispose();
+        }
+        return upright;
+    }
+
+    /**
+     * The transform that turns a stored image into the one the orientation describes.
+     *
+     * @param orientation the tag 0x0112 value, from 2 to 8
+     * @param width the stored width
+     * @param height the stored height
+     * @return the affine transform, written as its six matrix entries so each case is readable
+     */
+    private static AffineTransform affine(int orientation, int width, int height) {
+        return switch (orientation) {
+            case 2 -> new AffineTransform(-1, 0, 0, 1, width, 0);      // mirror horizontally
+            case 3 -> new AffineTransform(-1, 0, 0, -1, width, height); // rotate 180
+            case 4 -> new AffineTransform(1, 0, 0, -1, 0, height);      // mirror vertically
+            case 5 -> new AffineTransform(0, 1, 1, 0, 0, 0);            // transpose
+            case 6 -> new AffineTransform(0, 1, -1, 0, height, 0);      // rotate 90 clockwise
+            case 7 -> new AffineTransform(0, -1, -1, 0, height, width); // transverse
+            default -> new AffineTransform(0, -1, 1, 0, 0, width);      // 8: rotate 90 anticlockwise
+        };
+    }
+
+    /**
+     * Read the EXIF orientation tag from a JPEG's APP1 segment.
+     *
+     * <p>Enough of the container to find the tag and nothing else: walk the marker segments after
+     * the start-of-image until the APP1 that starts with {@code Exif}, then read IFD0's one entry.
+     *
+     * @param image the file's bytes
+     * @return the tag 0x0112 value, or 1 — "as stored" — where there is no tag
+     */
+    static int exifOrientation(byte[] image) {
+        if (image.length < 4 || (image[0] & 0xff) != 0xff || (image[1] & 0xff) != 0xd8) {
+            return 1;
+        }
+        int at = 2;
+        while (at + 4 <= image.length) {
+            if ((image[at] & 0xff) != 0xff) {
+                return 1;   // not a marker: the file is malformed, and 1 changes nothing
+            }
+            int marker = image[at + 1] & 0xff;
+            if (marker == 0xff) {
+                at++;       // a fill byte, not a segment
+                continue;
+            }
+            if (marker == 0xd8 || marker == 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
+                at += 2;    // a marker with no payload
+                continue;
+            }
+            if (marker == 0xda || marker == 0xd9) {
+                return 1;   // the scan data starts here; metadata is behind us
+            }
+            int length = ((image[at + 2] & 0xff) << 8) | (image[at + 3] & 0xff);
+            if (length < 2 || at + 2 + length > image.length) {
+                return 1;
+            }
+            if (marker == 0xe1 && length >= 8 && isExif(image, at + 4, at + 2 + length)) {
+                return orientationInTiff(image, at + 10, at + 2 + length);
+            }
+            at += 2 + length;
+        }
+        return 1;
+    }
+
+    /** Whether an APP1 segment's payload starts with the six bytes of {@code Exif\0\0}. */
+    private static boolean isExif(byte[] image, int at, int end) {
+        if (at + 6 > end) {
+            return false;
+        }
+        return image[at] == 'E' && image[at + 1] == 'x' && image[at + 2] == 'i'
+                && image[at + 3] == 'f' && image[at + 4] == 0 && image[at + 5] == 0;
+    }
+
+    /**
+     * Read the orientation tag out of IFD0 of a TIFF header.
+     *
+     * @param image the file's bytes
+     * @param start where the TIFF header begins, after {@code Exif\0\0}
+     * @param end where the segment ends, so a truncated file is not read past its bytes
+     * @return the tag's value, or 1 where it is absent
+     */
+    private static int orientationInTiff(byte[] image, int start, int end) {
+        if (start + 8 > end) {
+            return 1;
+        }
+        boolean little;
+        if (image[start] == 'I' && image[start + 1] == 'I') {
+            little = true;
+        } else if (image[start] == 'M' && image[start + 1] == 'M') {
+            little = false;
+        } else {
+            return 1;
+        }
+        long offset = unsigned32(image, start + 4, little);
+        if (offset < 8 || start + offset + 2 > end) {
+            return 1;
+        }
+        int ifd = start + (int) offset;
+        int count = unsigned16(image, ifd, little);
+        for (int index = 0; index < count; index++) {
+            int entry = ifd + 2 + index * 12;
+            if (entry + 12 > end) {
+                return 1;
+            }
+            if (unsigned16(image, entry, little) == 0x0112) {
+                return unsigned16(image, entry + 8, little);
+            }
+        }
+        return 1;
+    }
+
+    /** Read two bytes as an unsigned number, in the TIFF header's own byte order. */
+    private static int unsigned16(byte[] data, int at, boolean little) {
+        int first = data[at] & 0xff;
+        int second = data[at + 1] & 0xff;
+        return little ? (second << 8) | first : (first << 8) | second;
+    }
+
+    /** Read four bytes as an unsigned number, in the TIFF header's own byte order. */
+    private static long unsigned32(byte[] data, int at, boolean little) {
+        long first = unsigned16(data, at, little);
+        long second = unsigned16(data, at + 2, little);
+        return little ? (second << 16) | first : (first << 16) | second;
+    }
+
+    /** Encode an image as a JPEG at quality 0.9, the one quality this client writes. */
+    private static byte[] encodeJpeg(BufferedImage image) {
+        ImageWriter writer = ImageIO.getImageWritersByFormatName("jpeg").next();
+        ByteArrayOutputStream encoded = new ByteArrayOutputStream();
+        try (MemoryCacheImageOutputStream stream = new MemoryCacheImageOutputStream(encoded)) {
+            writer.setOutput(stream);
+            JPEGImageWriteParam parameters = new JPEGImageWriteParam(Locale.ROOT);
+            parameters.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
+            parameters.setCompressionQuality(0.9f);
+            writer.write(null, new IIOImage(image, null, null), parameters);
+            stream.flush();
+        } catch (IOException failure) {
+            throw new UncheckedIOException("cannot encode the upload as JPEG", failure);
+        } finally {
+            writer.dispose();
+        }
+        return encoded.toByteArray();
     }
 
     /**

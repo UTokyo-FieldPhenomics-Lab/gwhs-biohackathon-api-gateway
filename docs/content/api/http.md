@@ -54,6 +54,32 @@ A page of rows reports `next_cursor`; send it back as `cursor` for the next page
 `null`. Filters are query parameters, and a key sent twice narrows the result rather than widening it:
 `?split=train&split=val` means both, never either.
 
+### Resizing before you send
+
+The upload route takes the file as the multipart field `file`, and **the model resizes whatever it
+receives to the side it runs at**: 1008 px for `sam3.1-meta`, 512 px for `gwfss-segformer-b4`. That
+side is the model's own and `GET /models/<id>` publishes it as `resolution`. A larger photograph buys
+nothing — the pixels beyond that side are discarded before the network sees them.
+
+Send it at about that side. Pillow is usually already there, because it is what displays an image:
+
+```python
+from io import BytesIO
+from PIL import Image, ImageOps
+
+with Image.open("photo.jpg") as photo:
+    photo = ImageOps.exif_transpose(photo)   # a phone's EXIF orientation, applied to the pixels
+    photo.thumbnail((1008, 1008))            # 512 for gwfss-segformer-b4
+    prepared = BytesIO()
+    photo.convert("RGB").save(prepared, "JPEG", quality=90)
+
+# prepared.getvalue() is what goes in the multipart field `file`
+```
+
+The clients on this site do this for you: `predict_file` resizes by default and sends the original
+bytes untouched with `resize_before_submit=False`. The run-a-model page does the same, and its
+**resize before sending** box is the way to send a photograph whole.
+
 ## Refusals
 
 Every refusal is one body, whichever route produced it:
@@ -67,8 +93,8 @@ Every refusal is one body, whichever route produced it:
 | `400` | `invalid_request` | the request's own fault: a row that does not exist, a parameter outside its range, bytes that are not an image. The `message` names what was refused. |
 | `401` | `invalid_key` | the key is wrong, or missing |
 | `404` | `not_found` | no such dataset or model |
-| `413` | `payload_too_large` | an upload over 15 MB |
-| `429` | `quota_exceeded` | three inferences in flight already from this key; nothing was queued |
+| `413` | `payload_too_large` | an upload over 15 MB — [resize it](#resizing-before-you-send) first |
+| `429` | `quota_exceeded` | three inferences in flight already from this key, or the upload link has no room for this body; nothing was queued, and `Retry-After` says when to come back |
 | `503` | `unavailable` | no machine is answering this model. Safe to retry |
 | `504` | `upstream_timeout` | the model took too long. Safe to retry |
 
@@ -126,6 +152,7 @@ says so, and `resolution_used` tells you the side that ran either way:
 | what | limit | over it |
 |---|---|---|
 | inferences in flight, per key | 3 | `429`, not a queue |
+| uploaded bytes in flight, the whole pool | about 24 MB | `429` with `Retry-After`, after waiting up to 20 s |
 | any other request | none | — |
 | an uploaded image | 15 MB | `413` |
 | an uploaded image, decoded | 50 megapixels | `400` |
