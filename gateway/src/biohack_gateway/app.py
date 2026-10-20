@@ -18,7 +18,7 @@ import asyncio
 import logging
 import os
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager, nullcontext, suppress
 from enum import StrEnum
 from importlib.metadata import version as installed_version
 from pathlib import Path
@@ -28,17 +28,24 @@ from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import HTMLResponse, JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import RequestResponseEndpoint
 
+from biohack_gateway.admission import UploadQueue
 from biohack_gateway.auth import Authenticator
+from biohack_gateway.cache import CacheStats, ResultCache
 from biohack_gateway.dataset_index import DEFAULT_INDEX_DIR, load_datasets
 from biohack_gateway.datasets import DEFAULT_DATA_BASE_URL, create_dataset_router
 from biohack_gateway.frames import frame_reporter
-from biohack_gateway.limits import DEFAULT_MAX_CONCURRENT_PER_TOKEN, ConcurrencyGate
+from biohack_gateway.limits import (
+    DEFAULT_MAX_CONCURRENT_PER_TOKEN,
+    ConcurrencyGate,
+    LaneRefused,
+)
 from biohack_gateway.models import (
     DEFAULT_MODELS_FILE,
+    MachineSummary,
     ModelRegistry,
     Transport,
     create_model_router,
@@ -133,19 +140,26 @@ why each names the one site allowed to frame it. Every other path, including one
 is behind the gate.
 """
 
-LANE_SUFFIXES = ("/predict", "/predict/upload")
-"""The two routes below a model that occupy one of the pool's lanes.
+LANE_SUFFIXES = ("/predict/upload",)
+"""The one route below a model that the middleware charges one of the pool's lanes for.
 
 A lane is GPU time, and it is the only scarce thing a participant can hold: a metadata read is an
 in-memory lookup that answers in microseconds and queues behind nothing. The per-token ceiling
-exists so one team's loop cannot take every lane — so it counts these two routes and nothing else.
-Before this was made explicit the middleware counted every request, which refused a page's own load
-(a dataset listing, a row's detail, the model directory) on a pool whose `max_in_flight` was one.
+exists so one team's loop cannot take every lane — so it counts GPU work and nothing else.
+
+`POST /models/{model}/predict` is deliberately absent. It takes its lane in the handler, after the
+answer has been looked for in the cache: a stored answer occupies no GPU, so charging it a lane
+would refuse a participant while no machine was busy. An upload always reaches a backend, so the
+middleware can charge it before the bytes are read — which is where a refusal is cheapest.
+
+Before either route was distinguished from the rest, the middleware counted every request, which
+refused a page's own load (a dataset listing, a row's detail, the model directory) on a pool whose
+`max_in_flight` was one.
 """
 
 
 def occupies_lane(path: str) -> bool:
-    """Report whether a route consumes one of the pool's inference lanes.
+    """Report whether the middleware must take a lane before serving a path.
 
     Parameters
     ----------
@@ -155,17 +169,17 @@ def occupies_lane(path: str) -> bool:
     Returns
     -------
     bool
-        `True` for ``POST /models/{model}/predict`` and ``…/predict/upload``, which are the only two
-        routes that reach a backend's GPU; `False` for everything else, including the model
-        directory and the whole dataset surface.
+        `True` for ``POST /models/{model}/predict/upload``, which always reaches a backend; `False`
+        for everything else, including ``…/predict`` — it looks the answer up first and takes its
+        own lane in `models.predict` only when it has to ask a machine.
 
     Notes
     -----
     A path test rather than a marker on the route handlers, because the middleware is where the
     team is known and it is one place: the alternative is a dependency every future route has to
     remember, and the entry that forgets it would be uncounted rather than obviously wrong. The
-    suffix names the model surface's own two operations, and
-    `test_the_lane_is_only_the_two_predict_routes` is what keeps them in step.
+    suffix names the model surface's own route, and
+    `test_the_middleware_charges_only_the_upload_route` is what keeps them in step.
     """
     return path.startswith("/models/") and path.endswith(LANE_SUFFIXES)
 
@@ -357,6 +371,48 @@ class HealthResponse(BaseModel):
     version: str
 
 
+class PoolLink(BaseModel):
+    """The one link every machine shares, as upload admission sees it.
+
+    The budget is one link, not one machine, so these figures are stated once rather than repeated
+    on every row of `machines`: a number that is the same everywhere is not a fact about a machine.
+
+    Attributes
+    ----------
+    bytes_in_flight : int
+        Upload bytes the gateway has admitted and not yet released.
+    bytes_per_s : float
+        The link's measured capacity, in bytes per second — what the budget follows.
+    budget_bytes : int
+        The byte budget in force: the sum a burst may put on the link at once.
+    waiting : int
+        Uploads parked for room right now.
+    """
+
+    bytes_in_flight: int = 0
+    bytes_per_s: float = 0.0
+    budget_bytes: int = 0
+    waiting: int = 0
+
+
+class PoolResponse(BaseModel):
+    """The operator's view of the pool — `GET /pool`, not part of the participant contract.
+
+    Attributes
+    ----------
+    machines : list of MachineSummary
+        One entry per machine, grouped exactly as the router counts them.
+    link : PoolLink
+        The shared link's figures, stated once.
+    cache : CacheStats
+        What the row cache holds and how often it answered.
+    """
+
+    machines: list[MachineSummary] = Field(default_factory=list)
+    link: PoolLink = Field(default_factory=PoolLink)
+    cache: CacheStats = Field(default_factory=lambda: CacheStats(0, 0, 0, 0))
+
+
 def _code_for(status_code: int) -> ErrorCode:
     """Choose the code for a rejection raised by the framework.
 
@@ -409,6 +465,8 @@ def create_app(
     backend_token: str = "",
     model_transport: Transport = http_transport,
     max_concurrent_per_token: int | None = None,
+    cache: ResultCache | None = None,
+    admission: UploadQueue | None = None,
 ) -> FastAPI:
     """Build the application.
 
@@ -441,6 +499,16 @@ def create_app(
         :data:`biohack_gateway.limits.DEFAULT_MAX_CONCURRENT_PER_TOKEN`, `0` disables the cap, and a
         number fixes it — the last two only for measuring the pool from one key. It is a policy
         number and is deliberately not derived from the pool's published width.
+    cache : ResultCache or None, optional
+        The store of row answers, built here when `None` — which reads `BIOHACK_CACHE`,
+        `BIOHACK_CACHE_PATH` and `BIOHACK_CACHE_MAX_BYTES` and is what a host gets. A test passes
+        its own instance, so nothing in the suite writes to the host's file, and the store is
+        closed on shutdown.
+    admission : UploadQueue or None, optional
+        The byte budget uploads wait on. `None` builds one from the environment:
+        `BIOHACK_UPLOAD_BYTES` caps the sum a burst may put on the link, and
+        `BIOHACK_UPLOAD_WAIT_SECONDS` says how long a request may wait. That is what a host gets;
+        a test passes its own, which is how a refusal is reached without moving a gigabyte.
 
     Returns
     -------
@@ -453,6 +521,8 @@ def create_app(
         if max_concurrent_per_token is None
         else max_concurrent_per_token
     )
+    answers = ResultCache() if cache is None else cache
+    uploads = UploadQueue() if admission is None else admission
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -461,7 +531,8 @@ def create_app(
         A task of its own rather than work inside a request: a request that arrives while a machine
         is off must not be the thing that discovers it, and a page that keeps asking must not make
         the gateway keep asking. It is cancelled on shutdown, so a reload never leaves two tasks
-        asking the same machines.
+        asking the same machines — and the answer store is closed there too, so a restart's WAL is
+        checkpointed rather than left for the next process to recover.
         """
         watching = asyncio.create_task(watch_pool(registry))
         try:
@@ -470,6 +541,7 @@ def create_app(
             watching.cancel()
             with suppress(asyncio.CancelledError):
                 await watching
+            answers.close()
 
     app = FastAPI(
         title="Global Wheat API",
@@ -504,6 +576,47 @@ def create_app(
         """
         return HealthResponse(status="ok", version=APP_VERSION)
 
+    @app.get(
+        "/pool",
+        response_model=PoolResponse,
+        response_model_exclude_unset=True,
+        include_in_schema=False,
+        summary="The pool as the router sees it",
+    )
+    def pool() -> PoolResponse:
+        """Report the machines routing is choosing between, and what the cache is worth.
+
+        Not part of the participant contract, and hidden from the reference for that reason: a
+        machine's own name and the depth of its queue are the operator's business, while the model
+        surface publishes only the reproducibility record of whoever answered. It is keyed like
+        every other route — it is absent from :data:`OPEN_PATHS` — because a queue depth is still
+        something about this host.
+
+        Returns
+        -------
+        PoolResponse
+            One entry per machine, grouped exactly as the router counts, each carrying the link's
+            in-flight bytes and measured rate beside its own depth; and the cache's counts.
+
+        Notes
+        -----
+        A plain `def` because it reads the answer store, whose SQLite query is blocking: FastAPI
+        runs it in the thread pool, so a slow disk cannot hold the event loop every other route
+        shares. Nothing here asks a backend — the probe owns that clock — so the numbers are the
+        last verdict and its age, not a fresh measurement.
+        """
+        held = uploads.stats()
+        return PoolResponse(
+            machines=registry.machines(),
+            link=PoolLink(
+                bytes_in_flight=held.bytes_in_flight,
+                bytes_per_s=uploads.link.bytes_per_second,
+                budget_bytes=held.budget_bytes,
+                waiting=held.waiting,
+            ),
+            cache=answers.stats(),
+        )
+
     authenticator = Authenticator(tokens_path)
     datasets = load_datasets(index_dir)
     app.include_router(create_dataset_router(datasets, data_base_url))
@@ -512,6 +625,9 @@ def create_app(
             registry,
             datasets,
             data_base_url,
+            answers,
+            slots,
+            uploads,
         )
     )
 
@@ -625,32 +741,43 @@ def create_app(
             )
 
         request.state.team_id = team_id
-        # A slot is a GPU lane, so only the routes that reach a backend take one. Counting a
-        # metadata read would refuse a participant's page load on the strength of work no machine
-        # is doing, which is the opposite of what the cap is for.
-        counted = occupies_lane(path)
-        if counted and not slots.acquire(team_id):
-            # Refused here rather than queued: the cap is the pool's own width, so a team at it is
-            # asking for more lanes than exist, and a wait nobody can see is worse than an answer
-            # the client can act on.
-            logger.info(
-                "%s %s team=%s refused: %d lanes busy",
-                request.method,
-                request.url.path,
-                team_id,
-                slots.in_flight(team_id),
-            )
-            return _error(
-                429,
-                ErrorCode.QUOTA_EXCEEDED,
-                f"at most {slots.ceiling()} inferences at once per token; retry when one finishes",
-            )
-        logger.info("%s %s team=%s", request.method, request.url.path, team_id)
+        # A slot is a GPU lane, so only work that reaches a backend takes one. An upload always
+        # does, and the middleware charges it before the bytes are read — the cheapest place to
+        # refuse. A row predict does not: it looks the answer up first and takes its own lane in
+        # `models.predict` only on a miss, so a cached answer is never refused as "too many
+        # inferences" while no machine is busy.
+        held = (
+            slots.hold(team_id, f"{request.method} {request.url.path}")
+            if occupies_lane(path)
+            else nullcontext()
+        )
         try:
-            return await call_next(request)
-        finally:
-            if counted:
-                slots.release(team_id)
+            with held:
+                logger.info("%s %s team=%s", request.method, request.url.path, team_id)
+                return await call_next(request)
+        except LaneRefused as refused:
+            # A response rather than a raised exception here: the application's handlers sit
+            # *inside* this middleware, so nothing would turn an exception raised at this depth
+            # into the contract's 429.
+            return _error(429, ErrorCode.QUOTA_EXCEEDED, str(refused))
+
+    @app.exception_handler(LaneRefused)
+    async def lane_refused(request: Request, exc: LaneRefused) -> JSONResponse:
+        """Give a route's lane refusal the same 429 the middleware builds by hand.
+
+        Parameters
+        ----------
+        request : Request
+            The incoming request, unused but required by the handler signature.
+        exc : LaneRefused
+            The refusal, carrying the sentence the limit wrote.
+
+        Returns
+        -------
+        JSONResponse
+            The contract's ``429``, with the same body the middleware returns for an upload.
+        """
+        return _error(429, ErrorCode.QUOTA_EXCEEDED, str(exc))
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -691,9 +818,15 @@ def create_app(
         Returns
         -------
         JSONResponse
-            The status that was asked for, with the body this contract defines.
+            The status that was asked for, with the body this contract defines. Headers a route
+            attached to the exception are carried too — `Retry-After` on an admission refusal is the
+            case — because a rejection that arrives without them tells a client to retry with no
+            idea when.
         """
-        return _error(exc.status_code, _code_for(exc.status_code), str(exc.detail))
+        response = _error(exc.status_code, _code_for(exc.status_code), str(exc.detail))
+        for name, value in (exc.headers or {}).items():
+            response.headers[name] = value
+        return response
 
     @app.exception_handler(Exception)
     async def unexpected_error(request: Request, exc: Exception) -> JSONResponse:

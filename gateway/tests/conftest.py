@@ -8,12 +8,20 @@ turns a schema drift into a failing test instead of a wrong answer.
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 import pytest
+
+# The cache is a file under the host's home by default, and this suite must never read or write it:
+# `biohack_gateway.app` builds one at import, before a fixture could intervene. Switching it off
+# here keeps every test that does not ask for a cache on the path it had before the store existed;
+# `tests/test_cache.py` asks for one explicitly. Set at import rather than in a fixture because the
+# application module is imported during collection, which happens after this file is read.
+os.environ["BIOHACK_CACHE"] = "off"
 
 REVISION = "a" * 40
 """The pinned upstream revision every fixture dataset records."""

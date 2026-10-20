@@ -4,7 +4,9 @@ The gateway does exactly three things with a model request. It resolves the addr
 into the public URL of an image, through the same index the dataset surface reads, so both surfaces
 address a row identically. It forwards the request to a backend over one uniform protocol. And it
 returns the backend's own answer, whose geometry the backend has already put into the shape this
-contract publishes.
+contract publishes. A row prediction is also kept, keyed by the dataset's published revision, and a
+repeat of the same question is answered without reaching a machine at all; an upload is never kept,
+because its image is the caller's rather than the dataset's.
 
 Nothing here encodes geometry, holds a weight, or knows what a mask is. :class:`ObjectOut` and
 :class:`RleMask` are imported from the dataset surface rather than written again: a second
@@ -38,14 +40,18 @@ import time
 import urllib.parse
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, NoReturn
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
+from biohack_gateway.admission import UploadQueue, UploadRefused
+from biohack_gateway.cache import CachedAnswer, ResultCache, cache_key, canonical_request
 from biohack_gateway.dataset_index import Dataset
 from biohack_gateway.datasets import ObjectOut, image_addresses
+from biohack_gateway.limits import ConcurrencyGate
 
 logger = logging.getLogger(__name__)
 
@@ -271,6 +277,44 @@ class ModelDirectory(BaseModel):
     models: list[ModelSummary]
 
 
+class MachineSummary(BaseModel):
+    """One machine in the pool, as the router counts it — the unit a queue belongs to.
+
+    This is the operator's view of the pool — `GET /pool` — and not part of the participant
+    contract: it carries a machine's own name, which is an inventory fact, where the published model
+    surface deliberately carries only the reproducibility record of the machine that answered.
+
+    Attributes
+    ----------
+    machine : str
+        The name the containers on it declare, or one container's own URL where it declared none —
+        the same key :attr:`Backend.machine_key` groups by, so the depth here is the depth the
+        router scored with.
+    models : list of str
+        The models whose backends run on it, in id order. A card carrying three containers has
+        three.
+    alive : bool
+        Whether any of its backends answered the last probe. A machine with one answering container
+        and one loading is up: something on it can take work.
+    rtt_ms : float or None
+        The best measured round trip to it, in milliseconds. `None` until a probe answered, which
+        is why it is optional rather than zero — "not measured" and "instantaneous" are different
+        facts.
+    in_flight : int
+        Requests this gateway has running against it, summed across every model it serves.
+    probed_seconds_ago : int or None
+        How long ago its newest probe answered, to the nearest second. `None` where it has never
+        been asked, because a verdict without its age is a promise about the past.
+    """
+
+    machine: str
+    models: list[str] = field(default_factory=list)
+    alive: bool = False
+    rtt_ms: float | None = None
+    in_flight: int = 0
+    probed_seconds_ago: int | None = None
+
+
 class ComputedBy(BaseModel):
     """The machine that produced an answer, as that machine reported itself.
 
@@ -336,10 +380,18 @@ class ModelPrediction(BaseModel):
         The side the model actually ran at, where it reports one. This is the field that explains a
         mask's blockiness, and the one that makes a clamped `imgsz` visible without a warning.
     computed_by : ComputedBy or None
-        The machine that produced the answer, where the backend reports one.
+        The machine that produced the answer, where the backend reports one. It is repeated
+        unchanged when the answer comes from the cache: it records the machine that actually ran,
+        and the cache ran nothing.
     warnings : list of ModelWarning
         Anything the model did instead of what was asked. Absent from an answer that needed none,
         because the field is additive and the gateway relays rather than invents.
+    cached : bool
+        Whether this answer was served from the cache rather than computed for this call. Absent
+        from a freshly computed answer, so a live answer's wire shape is unchanged.
+    cached_at : datetime or None
+        When the stored answer was computed, present exactly when :attr:`cached` says it was
+        stored. A caller comparing two answers needs to know one of them is from the past.
     """
 
     model: str
@@ -347,6 +399,8 @@ class ModelPrediction(BaseModel):
     resolution_used: int | None = None
     computed_by: ComputedBy | None = None
     warnings: list[ModelWarning] = field(default_factory=list)
+    cached: bool = False
+    cached_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -944,6 +998,51 @@ class ModelRegistry:
             checked_seconds_ago=None if not checked else max(0, round(now - checked)),
         )
 
+    def machines(self) -> list[MachineSummary]:
+        """Report the pool as machines rather than as models, in name order.
+
+        Returns
+        -------
+        list of MachineSummary
+            One entry per machine any backend runs on, with the models it serves, whether any of
+            its containers is answering, the best measured round trip, the depth this gateway has
+            against it, and the age of its newest probe.
+
+        Notes
+        -----
+        Grouping is :attr:`Backend.machine_key`'s, deliberately the same key the router counts and
+        scores by: an operator reading `/pool` must see the queue the routing decision used, not a
+        second grouping of the same containers that could disagree with it.
+
+        The round trip is the **best** of the machine's containers, because they share its network
+        path: the slower figure is a container's own startup, not the route to the card. Nothing is
+        asked here — `/pool` reads what the probe last said and must stay cheap enough to poll, and
+        asking a backend on the request path is what `gateway.md` rules out.
+        """
+        now = time.monotonic()
+        grouped: dict[str, list[tuple[str, Backend]]] = {}
+        for model, backends in self._backends.items():
+            for backend in backends:
+                grouped.setdefault(backend.machine_key, []).append((model, backend))
+        with self._lock:
+            depths = dict(self._machine_in_flight)
+        machines: list[MachineSummary] = []
+        for machine in sorted(grouped):
+            pairs = grouped[machine]
+            measured = [backend.rtt_seconds for _, backend in pairs if backend.rtt_seconds > 0]
+            probed = max((backend.probed_at for _, backend in pairs), default=0.0)
+            machines.append(
+                MachineSummary(
+                    machine=machine,
+                    models=sorted({model for model, _ in pairs}),
+                    alive=any(backend.alive for _, backend in pairs),
+                    rtt_ms=min(measured) * 1000.0 if measured else None,
+                    in_flight=depths.get(machine, 0),
+                    probed_seconds_ago=None if not probed else max(0, round(now - probed)),
+                )
+            )
+        return machines
+
     def _begin(self, model: str, mode: str) -> tuple[list[Backend], int, int]:
         """Order a model's live backends and reserve the one that will be tried first.
 
@@ -1298,8 +1397,10 @@ def _declared_machine(raw: Any) -> ComputedBy | None:
         return None
 
 
-def _image_url(datasets: Mapping[str, Dataset], dataset: str, row: int, base: str) -> str:
-    """Resolve an address to the public URL of its image, or refuse.
+def _resolved(
+    datasets: Mapping[str, Dataset], dataset: str, row: int, base: str
+) -> tuple[str, str]:
+    """Resolve an address to the public URL of its image, with the revision it was published at.
 
     Parameters
     ----------
@@ -1314,8 +1415,11 @@ def _image_url(datasets: Mapping[str, Dataset], dataset: str, row: int, base: st
 
     Returns
     -------
-    str
+    url : str
         The public `data.*` URL the backend is told to fetch.
+    revision : str
+        The dataset's published revision, which is part of a cache key: a republish changes it, and
+        the cache goes cold instead of answering about an image that has moved.
 
     Raises
     ------
@@ -1328,7 +1432,7 @@ def _image_url(datasets: Mapping[str, Dataset], dataset: str, row: int, base: st
     image = found.row_index.get(row)
     if image is None:
         raise HTTPException(status_code=404, detail="no such row")
-    return str(image_addresses(found, image, base)["image_url"])
+    return str(image_addresses(found, image, base)["image_url"]), found.revision
 
 
 class PredictInput(BaseModel):
@@ -1615,10 +1719,32 @@ def _checked_query(summary: ModelSummary, request: Request) -> str:
     return query
 
 
+def _team(request: Request) -> str:
+    """Read the team the request gate authenticated, whose lanes this request counts against.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming request, after the gate has run, which is the only way a route is reached.
+
+    Returns
+    -------
+    str
+        The team id the middleware recorded. Empty only where the gate did not run, which no
+        registered route allows — the empty name then shares one ceiling with every other request
+        that arrived without a token.
+    """
+    team: str = getattr(request.state, "team_id", "")
+    return team
+
+
 def create_model_router(
     registry: ModelRegistry,
     datasets: Mapping[str, Dataset],
     data_base_url: str,
+    cache: ResultCache,
+    slots: ConcurrencyGate,
+    uploads: UploadQueue,
 ) -> APIRouter:
     """Build the model surface over a loaded registry and the dataset index.
 
@@ -1631,6 +1757,16 @@ def create_model_router(
         dataset surface.
     data_base_url : str
         The public distribution's base URL, with or without a trailing slash.
+    cache : ResultCache
+        Where a row prediction is looked for before a backend is asked, and stored after it
+        answers. Uploads never touch it: their image is the caller's, so their answer is not a
+        fact about a published row.
+    slots : ConcurrencyGate
+        The per-token lane ceiling. A row predict takes its lane here rather than in the
+        middleware, because only a miss reaches a GPU at all.
+    uploads : UploadQueue
+        The byte budget every upload waits on. Only ``predict/upload`` touches it: a row carries no
+        bytes worth counting, and making one wait for a photograph would be the wrong queue.
 
     Returns
     -------
@@ -1696,7 +1832,9 @@ def create_model_router(
         description=(
             "The image is addressed as `(dataset, row)` and resolved by the gateway, so a client "
             "never sends a URL one. Parameters are the model's own; `GET /models/{model}` lists "
-            "them with their defaults, and omitting one uses the model's default."
+            "them with their defaults, and omitting one uses the model's default. Asking the same "
+            "question about the same published row again is answered from a cache and occupies no "
+            "GPU."
         ),
     )
     def predict(
@@ -1719,25 +1857,67 @@ def create_model_router(
         Returns
         -------
         ModelPrediction
-            The model's own answer, already in this contract's geometry.
+            The model's own answer, already in this contract's geometry, with `cached` and
+            `cached_at` set when it was served from the store rather than computed for this call.
 
         Raises
         ------
         HTTPException
             No model has that id; the query names something the model does not accept; the address
-            does not resolve; or every backend failed.
+            does not resolve; the team holds every lane it may; or every backend failed.
+
+        Notes
+        -----
+        **The lane is taken here, not in the middleware, because the lookup comes first.** An
+        answer the cache already holds occupies no GPU, so charging it a lane would refuse a
+        participant for "too many inferences" while no machine was busy — the same mistake that
+        made a page load cost a lane before `occupies_lane` existed.
+
+        The stored body is the backend's own bytes, so an answer read back and an answer computed
+        now go through one parser and one contract check; only `cached` and `cached_at` are added,
+        and only on a hit.
         """
+        started = time.monotonic()
         summary = registry.describe(model)
         query = _checked_query(summary, request)
-        url = _image_url(datasets, body.dataset, body.row, base)
-        reply = registry.forward(
-            model,
-            path="predict",
+        url, revision = _resolved(datasets, body.dataset, body.row, base)
+        asked = canonical_request(
+            dataset=body.dataset,
+            revision=revision,
+            row=body.row,
+            model=model,
             query=query,
-            body=json.dumps({"input": {"url": url}}).encode(),
-            content_type="application/json",
         )
-        return _prediction(reply, model)
+        key = cache_key(asked)
+        answer = _replay(cache, key, cache.get(key), model)
+        if answer is None:
+            with slots.hold(_team(request), f"POST {request.url.path}"):
+                reply = registry.forward(
+                    model,
+                    path="predict",
+                    query=query,
+                    body=json.dumps({"input": {"url": url}}).encode(),
+                    content_type="application/json",
+                )
+                # Parsed before it is stored: a body this contract cannot read is a broken
+                # backend, and storing it would hand that 502 to every later caller of the key.
+                answer = _prediction(reply, model)
+                if reply.status == 200:
+                    cache.put(key, asked, reply.body)
+            verdict = "miss"
+        else:
+            verdict = "hit"
+        # One line per predict, and it says which of the two paths answered: the rate of hits is
+        # what tells an operator whether the store is earning the disk it occupies.
+        logger.info(
+            "cache=%s model=%s dataset=%s row=%d ms=%.1f",
+            verdict,
+            model,
+            body.dataset,
+            body.row,
+            (time.monotonic() - started) * 1000.0,
+        )
+        return answer
 
     @router.post(
         "/models/{model}/predict/upload",
@@ -1751,7 +1931,8 @@ def create_model_router(
         description=(
             "The participant's own photograph, sent as multipart and forwarded to the backend as "
             "bytes. It is never stored: this is the one path that carries bytes through the "
-            "gateway, and it carries them no further than the model."
+            "gateway, and it carries them no further than the model. Its answer is never cached "
+            "either — the image is the caller's, so the answer is not a fact about a published row."
         ),
     )
     def predict_upload(
@@ -1780,7 +1961,8 @@ def create_model_router(
         ------
         HTTPException
             No model has that id, the query names something the model does not accept, the upload is
-            empty, or every backend failed.
+            empty, the link stayed busy for the whole wait (`429` with `Retry-After`), or every
+            backend failed.
 
         Notes
         -----
@@ -1791,6 +1973,13 @@ def create_model_router(
         `/health` answered in 11.08 s and 5.31 s, and in 1.2 ms once they drained. The sibling
         `predict` route is sync for the same reason; reading the body through `file.file` is what
         lets this one be.
+
+        **The bytes are admitted after they are read, because their length is the number admission
+        needs.** The per-token lane is already held by the middleware at this point, so a team over
+        its ceiling is refused before its body reaches this handler. What is left is the link: the
+        queue waits here, before the backend is asked, and the release is in a `finally` so a
+        failed forward frees the bytes it held. The `Retry-After` is whole seconds from the queue's
+        own estimate, computed once, so it and the message agree.
         """
         summary = registry.describe(model)
         query = _checked_query(summary, request)
@@ -1798,13 +1987,39 @@ def create_model_router(
         if not payload:
             raise HTTPException(status_code=400, detail="the upload is empty")
         media_type = _image_media_type(payload)
-        reply = registry.forward(
-            model,
-            path="predict/upload",
-            query=query,
-            body=payload,
-            content_type=media_type,
-        )
+        team = _team(request)
+        try:
+            # The middleware already holds this request's lane, so the gate's count includes this
+            # one; what the queue orders by is the work that was in flight before it.
+            uploads.acquire(team, max(0, slots.in_flight(team) - 1), len(payload))
+        except UploadRefused as refused:
+            logger.info(
+                "upload refused model=%s team=%s bytes=%d retry_after=%d",
+                model,
+                team,
+                len(payload),
+                refused.retry_after_seconds,
+            )
+            raise HTTPException(
+                status_code=429,
+                detail=str(refused),
+                headers={"Retry-After": str(refused.retry_after_seconds)},
+            ) from None
+        started = time.monotonic()
+        # At least the body has crossed; the answer's bytes are added once there is one, so a
+        # failed forward is still recorded as having used the link for what it did send.
+        completed = len(payload)
+        try:
+            reply = registry.forward(
+                model,
+                path="predict/upload",
+                query=query,
+                body=payload,
+                content_type=media_type,
+            )
+            completed += len(reply.body)
+        finally:
+            uploads.release(team, len(payload), time.monotonic() - started, completed)
         return _prediction(reply, model)
 
     return router
@@ -1836,6 +2051,47 @@ def _refusal(reply: Reply) -> str:
         if isinstance(document.get("detail"), str):
             return str(document["detail"])
     return "the backend refused the request"
+
+
+def _replay(
+    cache: ResultCache, key: str, stored: CachedAnswer | None, model: str
+) -> ModelPrediction | None:
+    """Return a stored answer as this contract reads it, or `None` when the store cannot help.
+
+    Parameters
+    ----------
+    cache : ResultCache
+        The store the answer came from, so an entry this contract cannot read can be dropped rather
+        than served again.
+    key : str
+        The key the answer was found under.
+    stored : CachedAnswer or None
+        What the store returned, if anything.
+    model : str
+        The model id the answer must claim.
+
+    Returns
+    -------
+    ModelPrediction or None
+        The answer with `cached` and `cached_at` set, or `None` where there was nothing stored or
+        what was stored is no longer this contract's answer.
+
+    Notes
+    -----
+    A store outlives the deploy that filled it. A body written under an older shape may stop
+    parsing the day a field becomes required, and replaying it would turn one stale row into a
+    permanent `502` for that key — nothing clears it but a shell. A miss is the only failure a
+    cache is allowed to have, so the entry is dropped and the caller asks a backend.
+    """
+    if stored is None:
+        return None
+    try:
+        answer = _prediction(Reply(status=200, body=stored.body), model)
+    except HTTPException as unreadable:
+        logger.warning("dropping a cached answer this contract cannot read: %s", unreadable.detail)
+        cache.forget(key)
+        return None
+    return answer.model_copy(update={"cached": True, "cached_at": stored.computed_at})
 
 
 def _prediction(reply: Reply, model: str) -> ModelPrediction:

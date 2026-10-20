@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import socket
+import sqlite3
 import threading
 import time
 from collections.abc import Iterator, Mapping
@@ -27,6 +28,7 @@ import uvicorn
 from fastapi.testclient import TestClient
 
 from biohack_gateway.app import create_app, occupies_lane
+from biohack_gateway.cache import ResultCache
 from biohack_gateway.models import (
     RESPONSE_TIMEOUT_SECONDS,
     UNHEALTHY_SECONDS,
@@ -251,6 +253,7 @@ def build_client(
     models: Any = None,
     backend_token: str = BACKEND_TOKEN,
     max_concurrent_per_token: int | None = None,
+    cache: ResultCache | None = None,
 ) -> Iterator[TestClient]:
     """Build a client whose model surface answers through the fake backends.
 
@@ -269,6 +272,9 @@ def build_client(
     max_concurrent_per_token : int or None
         The per-token cap to build with. `None` follows the pool's width, and `0` disables it,
         which is what a test of routing alone wants.
+    cache : ResultCache or None, optional
+        The store the route reads. `None` builds the disabled one the suite runs with, so a test
+        that needs a stored answer passes its own file.
 
     Returns
     -------
@@ -291,6 +297,7 @@ def build_client(
             backend_token=backend_token,
             model_transport=backends,
             max_concurrent_per_token=max_concurrent_per_token,
+            cache=cache,
         )
     with TestClient(app, raise_server_exceptions=False) as client:
         yield client
@@ -365,6 +372,57 @@ def test_a_predict_resolves_the_address_and_returns_the_models_answer(
     assert url == f"{FIRST}/models/{MODEL}/predict"
     assert headers["X-Backend-Token"] == BACKEND_TOKEN
     assert json.loads(body or b"{}") == {"input": {"url": f"{BASE}/gwhd/images/00000000.jpg"}}
+
+
+def test_a_stored_answer_the_contract_cannot_read_is_dropped(
+    tmp_path: Path, index_dir: Path
+) -> None:
+    """A cache outlives a deploy, and a stale body must cost a miss rather than a permanent 502."""
+    path = tmp_path / "cache.sqlite"
+    store = ResultCache(path, enabled=True)
+    backends = FakeBackends()
+    # The generator owns the client's lifespan: dropping it here would shut the app down and
+    # close the store before the first request.
+    stream = build_client(tmp_path, index_dir, backends, cache=store)
+    client = next(stream)
+
+    first = client.post(f"/models/{MODEL}/predict", headers=KEY, json={"dataset": "gwhd", "row": 0})
+    assert first.status_code == 200
+    assert len(backends.predict_calls()) == 1
+
+    # What an older contract wrote: a body this one will not read as a model answer.
+    with sqlite3.connect(path) as connection:
+        connection.execute("UPDATE answers SET body = ?", (b'{"nonsense": true}',))
+        connection.commit()
+
+    second = client.post(
+        f"/models/{MODEL}/predict", headers=KEY, json={"dataset": "gwhd", "row": 0}
+    )
+
+    assert second.status_code == 200
+    assert second.json() == first.json()
+    assert len(backends.predict_calls()) == 2, "a body outside the contract was served instead"
+    assert store.stats().entries == 1, "the unreadable entry was left in place"
+    stream.close()
+
+
+def test_a_geometry_only_answer_may_carry_no_category(tmp_path: Path, index_dir: Path) -> None:
+    """A point with no text prompt has no label, and the contract says so instead of refusing it.
+
+    The model publishes `category: null` for an answer it could not name; the object shape used to
+    require a string, which turned a documented combination of parameters into a `502`.
+    """
+    answer = dict(PREDICTION)
+    answer["objects"] = [{**PREDICTION["objects"][0], "category": None}]
+    backends = FakeBackends(replies={FIRST: [Reply(status=200, body=json.dumps(answer).encode())]})
+    client = next(build_client(tmp_path, index_dir, backends))
+
+    response = client.post(
+        f"/models/{MODEL}/predict", headers=KEY, json={"dataset": "gwhd", "row": 0}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["objects"][0]["category"] is None
 
 
 def test_the_parameters_are_forwarded_verbatim(client: TestClient, backends: FakeBackends) -> None:
@@ -1452,11 +1510,15 @@ def test_a_metadata_read_never_takes_an_inference_lane(tmp_path: Path, index_dir
         next(served, None)
 
 
-def test_the_lane_is_only_the_two_predict_routes() -> None:
-    """The middleware's classifier, which is the whole of the rule, in one place."""
-    for path in ("/models/sam3.1-meta/predict", "/models/sam3.1-meta/predict/upload"):
-        assert occupies_lane(path), path
+def test_the_middleware_charges_only_the_upload_route() -> None:
+    """The middleware's classifier, which is the whole of its rule, in one place.
+
+    A row predict is not here: it looks the answer up in the cache first and takes a lane in the
+    handler only on a miss, so the middleware must not charge it on the way in.
+    """
+    assert occupies_lane("/models/sam3.1-meta/predict/upload")
     for path in (
+        "/models/sam3.1-meta/predict",
         "/models",
         "/models/sam3.1-meta",
         "/datasets",

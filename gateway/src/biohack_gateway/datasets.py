@@ -243,8 +243,11 @@ class ObjectOut(BaseModel):
     ----------
     idx : int
         The object's index inside its row, dense from zero.
-    category : str
-        The resolved class name, or the upstream integer as text where it named none.
+    category : str or None
+        The resolved class name, or the upstream integer as text where it named none. `None` on a
+        model answer that came from geometry alone: a point or a box with no text prompt has no
+        label to give, and repeating the prompt as a class would be a fact about the question
+        rather than the picture.
     bbox : list of float
         `[x, y, w, h]`.
     area : float or None
@@ -261,7 +264,7 @@ class ObjectOut(BaseModel):
     """
 
     idx: int
-    category: str
+    category: str | None = None
     bbox: list[float]
     area: float | None = None
     attributes: list[str] | None = None
