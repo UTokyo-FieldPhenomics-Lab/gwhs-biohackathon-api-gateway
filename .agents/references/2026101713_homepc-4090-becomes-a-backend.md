@@ -6,12 +6,12 @@ was written for the 3090 and the 5090. Everything in it held; the differences ar
 ## The path was already there
 
 Measured from the gateway host, not from the laboratory workstation — `labpc-host` has no tailnet
-client and routes `homepc-4090` to its own default gateway, so "unreachable from the lab" says
+client and routes the backend's address to its own default gateway, so "unreachable from the lab" says
 nothing about the backend.
 
 ```
 tailscale status --json          # home-router advertises the home LAN, online
-ip route get homepc-4090     # dev tailscale0 table 52, src gwhs-host
+ip route get <the 4090's address>    # dev tailscale0 table 52, src <the host's address>
 ```
 
 | Probe | Before the container | After |

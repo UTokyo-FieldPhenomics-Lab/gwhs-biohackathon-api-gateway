@@ -17,7 +17,7 @@ Three things this file does not argue, and only links:
 
 **These are private addresses on the UTokyo Field Phenomics Lab tailnet, and only the gateway host
 can reach them.** Each room's router is a tailnet node advertising its own `/24`; the gateway host
-accepts those routes, so `lab-5090` resolves from that host and from no other machine. Nothing
+accepts those routes, so the address of `lab-5090` resolves from that host and from no other machine. Nothing
 is published to the internet and no port is forwarded. A reader outside this lab who tries one of
 these addresses gets a timeout — that is the design, not a fault.
 
@@ -52,16 +52,17 @@ Conventions that hold everywhere and are not re-decided per machine:
 ### Reaching a machine to look at it
 
 Every administrative connection goes **through the gateway host**, because it is the only machine
-that accepts the routes. A workstation on the laboratory LAN routes `lab-5090` to its own
-default gateway and gets nowhere, so a backend is unreachable "from the lab" while sitting in it.
+that accepts the routes. Both `HostName` values below are in `.agents/local/pool.md`. A workstation
+on the laboratory LAN routes the backend's address to its own default gateway and gets nowhere, so a
+backend is unreachable "from the lab" while sitting in it.
 
     Host gwhs-host
-      HostName gwhs-host
+      HostName <the host's address>
       User admin
       IdentityFile ~/.ssh/gwhs-demo.pem
 
     Host lab-5090
-      HostName lab-5090
+      HostName <the 5090's address>
       User "Field of Phenomics"
       IdentityFile ~/.ssh/lab-5090
       ProxyJump gwhs-host
@@ -84,7 +85,7 @@ Run both on the gateway host, and read the answer rather than trusting the shape
 tailscale status --json | python3 -c 'import json,sys; [print(a, v["HostName"], v["TailscaleIPs"][0]) for v in json.load(sys.stdin)["Peer"].values() for a in v["AllowedIPs"] if a.startswith("192.168")]'
 
 # reachability: the subnet routes live in their own table, so `ip route` shows none of them
-ip route get lab-3090; nc -vz lab-3090 12711
+ip route get <address>; nc -vz <address> 12711
 ```
 
 Two readings that already cost us a wrong theory each: **a refused port is not an unreachable host**
@@ -186,7 +187,7 @@ VM*, where the router cannot reach them.
    ```
 
    `-RemoteAddress` is the **source**; both ranges are there because the router rewrites it to the
-   local subnet in practice (sshd logs `the 5090's own proxy`, which is not the caller). **Never widen it to
+   local subnet in practice (sshd logs the Docker Desktop proxy, which is not the caller). **Never widen it to
    `Any`** — that is the public internet.
 
 7. **Write the administrator's public key to the program-data file**, not the profile, then restart
@@ -209,7 +210,7 @@ VM*, where the router cannot reach them.
 
    ```powershell
    New-NetFirewallRule -DisplayName "biohack backends" -Direction Inbound -Protocol TCP `
-     -LocalPort 12711,12712 -RemoteAddress <the 5090's LAN>/24,100.64.0.0/10 -Action Allow
+     -LocalPort 12711,12712 -RemoteAddress the 5090's LAN,100.64.0.0/10 -Action Allow
    ```
 
    One rule lists every model port the machine publishes; a machine that adds a model adds its

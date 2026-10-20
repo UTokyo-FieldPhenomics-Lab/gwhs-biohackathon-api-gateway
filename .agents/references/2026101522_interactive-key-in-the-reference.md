@@ -179,7 +179,7 @@ things bite:
   `TLS alert internal error (592)`) *before* any certificate is presented — there is no "accept the
   risk" button, and plain `http://` only gets a `308` back to the same dead end. Map the name instead:
   an `/etc/hosts` line (whole machine, needs sudo, hides the real path — remove it after), or one
-  throwaway browser profile with `--host-resolver-rules="MAP api.global-wheat.com gwhs-host"`.
+  throwaway browser profile with `--host-resolver-rules="MAP api.global-wheat.com <the host's address>"`.
 - **A frame served from `100.64.0.0/10` trips Chrome's private-network check**
   (`net::ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`). That is an artifact of the fallback address, and
   it is disabled in that profile alone rather than in the site.

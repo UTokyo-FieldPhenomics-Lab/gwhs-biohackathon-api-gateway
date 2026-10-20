@@ -68,7 +68,7 @@ baked value is enough:
       -e BACKEND_TOKEN=… --name sam3.1-meta sam3.1-meta
 
 Two things verified rather than assumed: **Docker Desktop's firewall rule follows the published port by
-itself** (`/health` answers 200 on `lab-5090:12711` from the gateway host, and the old `:8000`
+itself** (`/health` answers 200 on `lab-5090`, port `12711`, from the gateway host, and the old `:8000`
 answers `000`), and the image's `EXPOSE 8000` is cosmetic — it stays 8000 until the next build, which
 only `docker run -P` would ever have read.
 

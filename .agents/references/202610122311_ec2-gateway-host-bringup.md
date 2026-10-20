@@ -80,7 +80,7 @@ bulk transfer (model weights, image batches) and confirm with `tailscale ping`, 
 
 ## How the host is reached
 
-`ssh -i <key> <user>@gwhs-host` works, as does the same over the public IP. Debian's
+`ssh -i <key> admin@gwhs-host` works, as does the same over the public IP. Debian's
 official images use the `admin` user, not `ec2-user`.
 
 Important distinction: this is **plain OpenSSH reached over the Tailscale interface**, not

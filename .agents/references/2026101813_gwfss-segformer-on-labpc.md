@@ -102,9 +102,9 @@ head 88,848 px, stem 15,437, leaf 124,434, background 33,425 — in 25,711 bytes
 
 | machine | address | image | build |
 |---|---|---|---|
-| `lab-5090` | `lab-5090:12712` | 18.1 GB | inside WSL, by `ssh → wsl -e bash` |
-| `lab-3090` | `lab-3090:12712` | 18.2 GB | on `labpc` |
-| `homepc-4090` | `homepc-4090:12712` | 11.3 GB | on `homepc` |
+| `lab-5090` | port `12712` | 18.1 GB | inside WSL, by `ssh → wsl -e bash` |
+| `lab-3090` | port `12712` | 18.2 GB | on `labpc` |
+| `homepc-4090` | port `12712` | 11.3 GB | on `homepc` |
 
 The folder travelled as a 55 kB tarball: `scp` to the Linux host, and `cat | ssh → wsl` to the Windows
 one, with the sha256 checked on the far side before extracting — the transfer goes through `cmd`, so

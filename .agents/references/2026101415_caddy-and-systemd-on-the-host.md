@@ -2,7 +2,7 @@
 
 Date: 2026-10-14.
 Topic: the first real run of `deploy/setup-gateway.sh`, on the host as it is today — Debian 13
-trixie, `t3.small`, Elastic IP `gwhs-host`, reached over the tailnet because the security group's
+trixie, `t3.small`, its Elastic IP, reached over the tailnet because the security group's
 TCP 22 rule is an address allow-list this workstation is not on. Constraints this run produced are in
 [`../rules/deploy.md`](../rules/deploy.md); the plan it verifies is in
 [`../plans/2026101414_✅tls-and-systemd-on-the-gateway-host.md`](../plans/2026101414_✅tls-and-systemd-on-the-gateway-host.md).
@@ -17,7 +17,7 @@ Read-only checks before anything ran, all by hand over SSH:
 | Listening sockets | `sshd`, `tailscaled`; nothing on 80, 443, or 8000 |
 | Checkout | `/opt/gwhs-biohackathon-api-gateway` at `b163801`, which is `origin/main` — local `main` was 10 commits ahead and unpushed |
 | `uv`, `sudo -n`, `stat getent install mktemp seq` | all present; `sudo` passwordless |
-| The script's own preflight, run by hand | `checkip` `= gwhs-host` `=` the authoritative `A` record → pass |
+| The script's own preflight, run by hand | `checkip` `=` the Elastic IP `=` the authoritative `A` record → pass |
 | `gnupg` | **absent** — the Debian image does not ship `gpg`, so installing it was necessary and not paranoia |
 
 ## The one precondition I got wrong

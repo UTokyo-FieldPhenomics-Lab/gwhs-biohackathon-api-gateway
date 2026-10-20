@@ -35,7 +35,7 @@ not been restarted"). Restarting the gateway after the containers is now a sente
 **2. `-p 127.0.0.1:12711:12711` is not the run line this pool uses.** The first re-create on `labpc`
 copied the wrong part of `docker inspect`: `HostConfig.PortBindings` shows `"HostIp": ""` for a
 container published on every interface, and the new one was created with loopback only — so the host
-answered `000` for `lab-3090:12711` while the container looked healthy from its own machine.
+answered `000` for the backend on `lab-3090`, port `12711` while the container looked healthy from its own machine.
 The run line is `-p 12711:12711`; the check is the one the deploy doc already names — prove it **from
 the gateway host**, never from the machine.
 

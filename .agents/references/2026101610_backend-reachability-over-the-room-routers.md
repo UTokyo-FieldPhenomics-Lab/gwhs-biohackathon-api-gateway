@@ -37,8 +37,8 @@ The 10-15 read settled this before the addresses did, with `tailscale ping` from
 
 | Peer | Path |
 |---|---|
-| `room-router-c` | `via the campus client network:41641` in **259 ms** — direct, not relayed |
-| `aliyun-tokyo-server` | `via a client:41641` in 234 ms — direct |
+| `room-router-c` | `via <the campus address>:41641` in **259 ms** — direct, not relayed |
+| `aliyun-tokyo-server` | `via <a public address>:41641` in 234 ms — direct |
 | `room-router-a` | held a direct session while `tailscale status` ran (`tx`/`rx` moving) |
 
 Outbound from AWS, the host completes UDP hole-punching to machines behind the campus NAT, and
@@ -145,7 +145,7 @@ slow; nothing bulk should cross it.
   conclusion before `ip route get` was tried — and the same table, holding a route for the *client's*
   prefix, is what once made the host look unreachable from the whole campus
   ([`2026101513_host-unreachable-from-the-utokyo-network.md`](2026101513_host-unreachable-from-the-utokyo-network.md)).
-- **Reach the host at its tailnet address.** `ssh -i ~/.ssh/gwhs-demo.pem <user>@gwhs-host` worked
+- **Reach the host at its tailnet address.** `ssh -i ~/.ssh/gwhs-demo.pem admin@gwhs-host` worked
   from the laboratory LAN.
 
 To re-run: on the host, `tailscale status --json` for the advertisements, then `ip route get <target>`

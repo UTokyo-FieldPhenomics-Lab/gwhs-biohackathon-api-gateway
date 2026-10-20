@@ -12,7 +12,7 @@ TLS and the service manager depend on nothing that is still missing:
 
 | Needs | State |
 |---|---|
-| `api.global-wheat.com` resolving to the host's Elastic IP | done — `gwhs-host` |
+| `api.global-wheat.com` resolving to the host's Elastic IP | done — the A record matches it |
 | TCP 80/443 accepted from outside | done — open all along; the timeout I measured came from one workstation's own network |
 | Something listening on `127.0.0.1:8000` | the skeleton app qualified; a real index is not needed |
 | A checkout, a venv, `uv` | done by `prepare-host.sh` |
