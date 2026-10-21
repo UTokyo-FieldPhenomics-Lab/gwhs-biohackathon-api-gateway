@@ -1,14 +1,13 @@
-"""The narrow S3 surface the publisher needs: head one object, put one object.
+"""The narrow S3 surface the publisher needs: head one object, create one object.
 
 Two methods are the whole interface, and an in-memory implementation of them keeps every
 decision in the publisher testable without a bucket. The publisher never lists, never
-deletes, and never copies: a path is written once, and the only question is whether it
-already holds exactly what this run would write.
+deletes, and never copies: a path is written once, so the only write is a create that the
+bucket refuses when the key is already taken. There is no unconditional write to reach for.
 """
 
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -26,9 +25,10 @@ class ObjectUnreadable(RuntimeError):
     """A HEAD was denied, so whether the object exists cannot be determined.
 
     A private bucket that grants `GetObject` but not `ListBucket` answers `403` for a key
-    that does not exist, because telling the two apart would leak existence. The publisher
-    must read that as neither "absent" nor "present": it settles the question with a
-    conditional create, which only succeeds if the key really is free.
+    that does not exist, because telling the two apart would leak existence. A reader must
+    therefore treat that answer as neither "absent" nor "present". The publisher never
+    decides existence from a HEAD before writing — it attempts a conditional create — and
+    needs a HEAD only to verify a write or to inspect what an occupied key holds.
     """
 
 
@@ -45,8 +45,9 @@ class ObjectInfo:
     size : int
         Content length in bytes.
     etag : str
-        Entity tag with the surrounding quotes removed. For a single-part `PUT` it is the
-        content MD5, which is what makes the comparison cheap.
+        Entity tag with the surrounding quotes removed. It is opaque: the publisher compares
+        the answer to a write with the HEAD that follows it, and never computes or interprets
+        one.
     content_type : str or None
         Stored content type, absent on an object written by other means.
     cache_control : str or None
@@ -84,9 +85,12 @@ class ObjectStore(Protocol):
         *,
         content_type: str,
         cache_control: str,
-        if_none_match: bool = False,
     ) -> str:
-        """Write one object in a single request and return its entity tag.
+        """Create one object and return the entity tag the bucket answered with.
+
+        The write is conditional on the key being free, so it can never replace an object
+        that is already published. There is deliberately no unconditional variant: a header
+        that is wrong is a conflict for a human to resolve, not something a publish repairs.
 
         Parameters
         ----------
@@ -98,20 +102,17 @@ class ObjectStore(Protocol):
             Type to store with the object.
         cache_control : str
             Cache lifetime to store with the object.
-        if_none_match : bool, default False
-            Refuse the write when the key already holds an object. It is how the publisher
-            settles existence under a policy that grants no `ListBucket`.
 
         Returns
         -------
         str
-            The entity tag the bucket answered with, quotes removed. A single-part
-            `PUT` makes it the content MD5, which verification compares against.
+            The entity tag the bucket answered with, quotes removed. It is opaque and is
+            compared only against the HEAD that follows the write.
 
         Raises
         ------
         AlreadyExists
-            `if_none_match` was set and the key is already occupied.
+            The key already holds an object.
         """
         ...
 
@@ -187,18 +188,16 @@ class Boto3ObjectStore:
         *,
         content_type: str,
         cache_control: str,
-        if_none_match: bool = False,
     ) -> str:
-        """Write one object in a single request and return its entity tag."""
+        """Create one object and return its entity tag."""
         request: dict[str, Any] = {
             "Bucket": self.bucket,
             "Key": key,
             "Body": body,
             "ContentType": content_type,
             "CacheControl": cache_control,
+            "IfNoneMatch": "*",
         }
-        if if_none_match:
-            request["IfNoneMatch"] = "*"
         try:
             response = self._client.put_object(**request)
         except ClientError as error:
@@ -209,25 +208,49 @@ class Boto3ObjectStore:
         return str(response["ETag"]).strip('"')
 
 
+@dataclass(frozen=True)
+class StoredObject:
+    """What the in-memory bucket holds under one key.
+
+    Attributes
+    ----------
+    body : bytes
+        Stored bytes.
+    content_type : str
+        Stored content type.
+    cache_control : str
+        Stored cache lifetime.
+    etag : str
+        Entity tag this particular write was given. It is opaque and unique per write,
+        never derived from the bytes, so a test can model a readback that disagrees with the
+        write without any local hash.
+    """
+
+    body: bytes
+    content_type: str
+    cache_control: str
+    etag: str
+
+
 @dataclass
 class MemoryObjectStore:
-    """An in-memory bucket, used by tests and by a dry local run.
+    """An in-memory bucket, used by tests.
 
     Attributes
     ----------
     objects : dict
-        Key to `(body, content_type, cache_control)`.
+        Key to :class:`StoredObject`.
     """
 
-    objects: dict[str, tuple[bytes, str, str]] = field(default_factory=dict)
+    objects: dict[str, StoredObject] = field(default_factory=dict)
+    _writes: int = field(default=0, repr=False, compare=False)
 
     def head(self, key: str) -> ObjectInfo | None:
         """Return what the store holds under `key`, or `None` if it is absent."""
         stored = self.objects.get(key)
         if stored is None:
             return None
-        body, content_type, cache_control = stored
-        return ObjectInfo(len(body), hashlib.md5(body).hexdigest(), content_type, cache_control)
+        return ObjectInfo(len(stored.body), stored.etag, stored.content_type, stored.cache_control)
 
     def put(
         self,
@@ -236,10 +259,11 @@ class MemoryObjectStore:
         *,
         content_type: str,
         cache_control: str,
-        if_none_match: bool = False,
     ) -> str:
-        """Store one object and answer with the entity tag the real bucket would."""
-        if if_none_match and key in self.objects:
+        """Create one object under a fresh simulated entity tag."""
+        if key in self.objects:
             raise AlreadyExists(f"{key}: already exists")
-        self.objects[key] = (bytes(body), content_type, cache_control)
-        return hashlib.md5(body).hexdigest()
+        self._writes += 1
+        etag = f"simulated-etag-{self._writes}"
+        self.objects[key] = StoredObject(bytes(body), content_type, cache_control, etag)
+        return etag

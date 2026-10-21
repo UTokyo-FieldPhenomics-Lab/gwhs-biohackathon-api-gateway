@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-
 import pytest
 from botocore.exceptions import ClientError
 
@@ -57,8 +55,20 @@ def test_the_memory_store_round_trips_an_object() -> None:
 
     etag = store.put("k", b"abc", content_type="image/jpeg", cache_control="public")
 
-    assert etag == hashlib.md5(b"abc").hexdigest()
+    assert store.objects["k"].body == b"abc"
     assert store.head("k") == ObjectInfo(3, etag, "image/jpeg", "public")
+
+
+def test_every_write_is_given_its_own_opaque_entity_tag() -> None:
+    """The fake stores an entity tag per write; it never derives one from the bytes."""
+    store = MemoryObjectStore()
+
+    first = store.put("a", b"same", content_type="image/jpeg", cache_control="public")
+    second = store.put("b", b"same", content_type="image/jpeg", cache_control="public")
+
+    assert first != second
+    assert store.objects["a"].etag == first
+    assert store.objects["b"].etag == second
 
 
 def test_boto3_head_answers_none_when_the_object_is_absent() -> None:
@@ -84,7 +94,7 @@ def test_boto3_head_maps_the_response_into_an_object_info() -> None:
 
 
 def test_boto3_put_is_one_request_with_both_headers() -> None:
-    """A single-part PUT keeps the entity tag equal to the content MD5."""
+    """One request carries the body and the two headers the publisher owns."""
     client = _Client(put={"ETag": '"abc"'})
     store = Boto3ObjectStore("bucket", session=_Session(client))
 
@@ -123,34 +133,30 @@ def test_a_conditional_create_that_loses_the_race_is_reported() -> None:
     store = Boto3ObjectStore("bucket", session=_Session(client))
 
     with pytest.raises(AlreadyExists):
-        store.put(
-            "k", b"abc", content_type="image/jpeg", cache_control="public", if_none_match=True
-        )
+        store.put("k", b"abc", content_type="image/jpeg", cache_control="public")
 
     ((_, kwargs),) = client.calls
     assert kwargs["IfNoneMatch"] == "*"
 
 
-def test_a_plain_put_does_not_ask_for_a_condition() -> None:
-    """The repair path writes unconditionally; only the create path is conditional."""
+def test_every_put_asks_the_bucket_to_create_only() -> None:
+    """No caller can overwrite: the store never sends an unconditional PUT."""
     client = _Client(put={"ETag": '"abc"'})
     store = Boto3ObjectStore("bucket", session=_Session(client))
 
     store.put("k", b"abc", content_type="image/jpeg", cache_control="public")
 
     ((_, kwargs),) = client.calls
-    assert "IfNoneMatch" not in kwargs
+    assert kwargs["IfNoneMatch"] == "*"
 
 
-def test_the_memory_store_refuses_a_conditional_create_on_an_occupied_key() -> None:
-    """The fake enforces the same create-if-absent rule the bucket does."""
+def test_the_memory_store_refuses_a_second_write_of_an_occupied_key() -> None:
+    """The fake enforces the same create-only rule the bucket does."""
     store = MemoryObjectStore()
     store.put("k", b"abc", content_type="image/jpeg", cache_control="public")
 
     with pytest.raises(AlreadyExists):
-        store.put(
-            "k", b"abc", content_type="image/jpeg", cache_control="public", if_none_match=True
-        )
+        store.put("k", b"abc", content_type="image/jpeg", cache_control="public")
 
 
 def test_a_session_is_built_from_an_explicit_pair(monkeypatch: pytest.MonkeyPatch) -> None:

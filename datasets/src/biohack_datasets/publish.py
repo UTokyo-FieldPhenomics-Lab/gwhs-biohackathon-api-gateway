@@ -1,10 +1,15 @@
 """Orchestrate a publish: build and validate the index, upload objects, verify.
 
 One call per dataset performs the whole path: read the cached parquet serially, build the
-metadata index beside its target, upload every image and mask as a single-part PUT, HEAD
-each one back, and only then move the index into place. Nothing is uploaded before the
-metadata validates, and a failure during upload leaves the previously published index
-untouched. Reads stay serial; only uploads run concurrently.
+metadata index beside its target, create every image and mask with a conditional single-part
+PUT, HEAD each new object back, and only then move the index into place. Nothing is uploaded
+before the metadata validates, and a failure during upload leaves the previously published
+index untouched. Reads stay serial; only uploads run concurrently.
+
+An object is written once. A key that is already taken is compared and then either skipped
+or reported as a conflict; it is never overwritten and its headers are never repaired by a
+second write. The comparison establishes size and the two owned headers, which is all a
+bucket will say about an object without transferring it.
 """
 
 from __future__ import annotations
@@ -26,7 +31,7 @@ from biohack_datasets.formats import CACHE_CONTROL, CONTENT_TYPES
 from biohack_datasets.index import build, commit, counts, utc_timestamp
 from biohack_datasets.labels import Palette, load_palette
 from biohack_datasets.model import Row
-from biohack_datasets.s3 import AlreadyExists, ObjectInfo, ObjectStore, ObjectUnreadable
+from biohack_datasets.s3 import AlreadyExists, ObjectStore, ObjectUnreadable
 from biohack_datasets.sources import Source, Upstream
 
 DEFAULT_INDEX_DIR = Path.home() / ".config" / "biohack-gateway" / "index"
@@ -54,7 +59,7 @@ class IncompleteCache(PublishError):
 
 
 class ObjectConflict(PublishError):
-    """An object under a key we would write holds different bytes."""
+    """An object already occupies a key this publish would write, and does not match."""
 
 
 class VerificationError(PublishError):
@@ -79,8 +84,9 @@ class PublishSummary:
         Images indexed.
     objects : int
         Object annotations indexed.
-    uploaded, skipped, repaired : int
-        Objects written, already correct, and re-put to repair a header.
+    uploaded, skipped : int
+        Objects created by this run, and objects already present with matching size and
+        owned headers.
     """
 
     dataset_id: str
@@ -91,7 +97,6 @@ class PublishSummary:
     objects: int
     uploaded: int
     skipped: int
-    repaired: int
 
 
 def parse_bucket(value: str | None) -> str | None:
@@ -230,7 +235,7 @@ def publish_dataset(
     AdapterNotImplemented
         The provenance record names an adapter this package does not implement.
     PublishError
-        An object under a planned key holds different bytes.
+        An object already occupies a planned key with a different size or owned header.
     VerificationError
         An uploaded object does not read back as written.
     """
@@ -291,12 +296,12 @@ def publish_dataset(
     try:
         if store is None:
             emit("    uploaded nothing: no bucket configured")
-            uploaded = skipped = repaired = 0
+            uploaded = skipped = 0
         else:
-            uploaded, skipped, repaired = _upload(
+            uploaded, skipped = _upload(
                 adapter, files, source.dataset_id, store, concurrency, limit=limit
             )
-            emit(f"    {uploaded} uploaded, {repaired} repaired, {skipped} skipped")
+            emit(f"    {uploaded} uploaded, {skipped} skipped")
         rows, objects = counts(temporary)
         commit(temporary, index_path)
     except BaseException:
@@ -312,7 +317,6 @@ def publish_dataset(
         objects=objects,
         uploaded=uploaded,
         skipped=skipped,
-        repaired=repaired,
     )
 
 
@@ -479,7 +483,7 @@ def _upload(
     store: ObjectStore,
     concurrency: int,
     limit: int | None = None,
-) -> tuple[int, int, int]:
+) -> tuple[int, int]:
     """Upload every object, reading rows serially and uploading concurrently.
 
     Parameters
@@ -494,13 +498,15 @@ def _upload(
         Destination bucket.
     concurrency : int
         Uploads in flight.
+    limit : int or None, optional
+        Read only the dataset's first rows.
 
     Returns
     -------
-    tuple of (int, int, int)
-        Uploaded, skipped, and repaired object counts.
+    tuple of (int, int)
+        Uploaded and skipped object counts.
     """
-    counts_by_action = {"uploaded": 0, "skipped": 0, "repaired": 0}
+    counts_by_action = {"uploaded": 0, "skipped": 0}
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
         pending: deque[Future[str]] = deque()
         for row in _rows(adapter, files, limit):
@@ -510,11 +516,16 @@ def _upload(
                     counts_by_action[pending.popleft().result()] += 1
         while pending:
             counts_by_action[pending.popleft().result()] += 1
-    return counts_by_action["uploaded"], counts_by_action["skipped"], counts_by_action["repaired"]
+    return counts_by_action["uploaded"], counts_by_action["skipped"]
 
 
 def _put_object(store: ObjectStore, key: str, body: bytes, extension: str) -> str:
-    """Put one object if it is absent or its owned headers changed, then verify it.
+    """Create one object when the key is free, then verify it; a taken key is compared.
+
+    The bucket is asked to create first, so no HEAD is ever read as evidence of absence. A
+    create that is refused means the key already holds something: it is compared against this
+    run's size and owned headers, and reported as a conflict when they disagree. A new object
+    is read back before its key counts as published.
 
     Parameters
     ----------
@@ -530,50 +541,32 @@ def _put_object(store: ObjectStore, key: str, body: bytes, extension: str) -> st
     Returns
     -------
     str
-        `"uploaded"`, `"skipped"`, or `"repaired"`.
+        `"uploaded"` for a new object, `"skipped"` for an occupied key that already matches.
 
     Raises
     ------
     ObjectConflict
-        The key holds a different number of bytes; the operator decides between a new
-        dataset id and a deliberate wipe.
+        The occupied key holds a different size or a different owned header. The operator
+        decides between a new dataset id and a deliberate wipe.
     VerificationError
-        The object does not read back as written.
+        A new object does not read back as written.
     """
     content_type = CONTENT_TYPES[extension]
     try:
-        existing = store.head(key)
-    except ObjectUnreadable:
-        # A private bucket cannot say "absent" without `ListBucket`, so existence is settled
-        # by a conditional create, which succeeds only if the key is really free.
-        existing = None
-    if existing is None:
-        try:
-            etag = store.put(
-                key,
-                body,
-                content_type=content_type,
-                cache_control=CACHE_CONTROL,
-                if_none_match=True,
-            )
-        except AlreadyExists:
-            action, etag = _settle_existing(store, key, body, content_type)
-        else:
-            action = "uploaded"
-    else:
-        action, etag = _settle_existing(store, key, body, content_type, existing)
+        etag = store.put(key, body, content_type=content_type, cache_control=CACHE_CONTROL)
+    except AlreadyExists:
+        _require_already_correct(store, key, len(body), content_type)
+        return "skipped"
     _verify(store, key, len(body), etag, content_type)
-    return action
+    return "uploaded"
 
 
-def _settle_existing(
-    store: ObjectStore,
-    key: str,
-    body: bytes,
-    content_type: str,
-    existing: ObjectInfo | None = None,
-) -> tuple[str, str]:
-    """Decide what to do with a key that already holds an object.
+def _require_already_correct(store: ObjectStore, key: str, size: int, content_type: str) -> None:
+    """Confirm that an occupied object's size and owned headers match the planned object.
+
+    Size and the two owned headers are the whole comparison a bucket supports without
+    transferring the object, so this establishes agreement on those and nothing more. It is
+    not a claim that the stored bytes are identical, and it never writes.
 
     Parameters
     ----------
@@ -581,74 +574,43 @@ def _settle_existing(
         Destination bucket.
     key : str
         Object key.
-    body : bytes
-        Bytes this run would write.
+    size : int
+        Byte length this run would write.
     content_type : str
         Type this run would write.
-    existing : ObjectInfo, optional
-        What the bucket already reported. Read afresh when omitted, which is the case after
-        a conditional create lost the race.
-
-    Returns
-    -------
-    tuple of (str, str)
-        The action, and the entity tag of the object as it now stands.
 
     Raises
     ------
     ObjectConflict
-        The key holds a different number of bytes, or it exists while `GetObject` is denied,
-        so the comparison cannot be made.
+        The object cannot be read, holds a different number of bytes, or was stored with a
+        different content type or cache lifetime.
     """
-    if existing is None:
-        try:
-            existing = store.head(key)
-        except ObjectUnreadable as error:
-            raise ObjectConflict(
-                f"{key}: the object exists but HEAD is denied;"
-                " the policy needs s3:GetObject on the prefix"
-            ) from error
+    try:
+        existing = store.head(key)
+    except ObjectUnreadable as error:
+        raise ObjectConflict(
+            f"{key}: the object exists but HEAD is denied, so it cannot be compared;"
+            " the policy needs s3:GetObject on the prefix"
+        ) from error
     if existing is None:
         raise ObjectConflict(
             f"{key}: a conditional create was refused but the key reads back as absent"
         )
-    if _already_correct(existing, body, content_type):
-        return "skipped", existing.etag
-    if existing.size != len(body):
+    if existing.size != size:
         raise ObjectConflict(
-            f"{key}: bucket holds {existing.size} bytes, this publish would write {len(body)};"
+            f"{key}: bucket holds {existing.size} bytes, this publish would write {size};"
             " a changed object is a new dataset id or a deliberate wipe, never an overwrite"
         )
-    etag = store.put(key, body, content_type=content_type, cache_control=CACHE_CONTROL)
-    return "repaired", etag
-
-
-def _already_correct(existing: ObjectInfo, body: bytes, content_type: str) -> bool:
-    """Say whether an existing object is already what this run would write.
-
-    Parameters
-    ----------
-    existing : ObjectInfo
-        What the bucket holds.
-    body : bytes
-        Bytes this run would write.
-    content_type : str
-        Type this run would write.
-
-    Returns
-    -------
-    bool
-        True when size and both owned headers already agree.
-    """
-    return (
-        existing.size == len(body)
-        and existing.content_type == content_type
-        and existing.cache_control == CACHE_CONTROL
-    )
+    if existing.content_type != content_type or existing.cache_control != CACHE_CONTROL:
+        raise ObjectConflict(
+            f"{key}: bucket holds {existing.content_type!r} with Cache-Control"
+            f" {existing.cache_control!r}, this publish would write {content_type!r} with"
+            f" {CACHE_CONTROL!r}; a header is not repaired by a second write"
+        )
 
 
 def _verify(store: ObjectStore, key: str, size: int, etag: str, content_type: str) -> None:
-    """Read one object back and compare it with what was just written.
+    """Read one new object back and compare it with what was just written.
 
     Parameters
     ----------
@@ -666,9 +628,15 @@ def _verify(store: ObjectStore, key: str, size: int, etag: str, content_type: st
     Raises
     ------
     VerificationError
-        The object is missing or disagrees in size, entity tag, or a header.
+        The object is missing, cannot be read, or disagrees in size, entity tag, or a header.
     """
-    readback = store.head(key)
+    try:
+        readback = store.head(key)
+    except ObjectUnreadable as error:
+        raise VerificationError(
+            f"{key}: the write succeeded but HEAD is denied, so it cannot be verified;"
+            " the policy needs s3:GetObject on the prefix"
+        ) from error
     if (
         readback is None
         or readback.size != size

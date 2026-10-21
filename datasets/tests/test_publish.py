@@ -1,8 +1,9 @@
-"""Tests for the publish path: build, upload, skip, repair, conflict, verify."""
+"""Tests for the publish path: build, upload, skip, conflict, verify."""
 
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pyarrow as pa
@@ -20,7 +21,13 @@ from biohack_datasets.publish import (
     parse_bucket,
     publish_dataset,
 )
-from biohack_datasets.s3 import AlreadyExists, MemoryObjectStore, ObjectInfo, ObjectUnreadable
+from biohack_datasets.s3 import (
+    AlreadyExists,
+    MemoryObjectStore,
+    ObjectInfo,
+    ObjectUnreadable,
+    StoredObject,
+)
 from biohack_datasets.sources import Source, Upstream
 
 REVISION = "655118534e9ad980b6f7c0dd6566a406d5a29a27"
@@ -163,41 +170,67 @@ def test_a_publish_builds_the_index_and_uploads_every_object(tmp_path: Path) -> 
     assert summary.objects == 2  # type: ignore[attr-defined]
     assert summary.uploaded == 2  # type: ignore[attr-defined]
     assert set(store.objects) == {"demo/images/00000000.jpg", "demo/images/00000001.png"}
-    for key, (_body, content_type, cache_control) in store.objects.items():
+    for key, stored in store.objects.items():
         extension = key.rsplit(".", 1)[1]
-        assert content_type == CONTENT_TYPES[extension]
-        assert cache_control == CACHE_CONTROL
+        assert stored.content_type == CONTENT_TYPES[extension]
+        assert stored.cache_control == CACHE_CONTROL
     tables = read_back(tmp_path / "index" / "demo.db")
     assert len(tables["rows"]) == 2
     assert len(tables["objects"]) == 2
 
 
 def test_a_second_publish_skips_every_object(tmp_path: Path) -> None:
-    """Idempotence by comparison: the same bytes and headers upload nothing."""
+    """Idempotence by comparison: matching size and headers upload nothing."""
     store = MemoryObjectStore()
     _publish(tmp_path, store)
+    written = {key: stored.etag for key, stored in store.objects.items()}
 
     summary = _publish(tmp_path, store)
 
     assert summary.uploaded == 0  # type: ignore[attr-defined]
     assert summary.skipped == 2  # type: ignore[attr-defined]
+    assert {key: stored.etag for key, stored in store.objects.items()} == written
 
 
-def test_an_object_with_a_wrong_header_is_repaired_by_re_putting_the_same_bytes(
-    tmp_path: Path,
-) -> None:
-    """Equal bytes with a different header are not a content change."""
+def test_a_create_is_attempted_before_the_key_is_inspected(tmp_path: Path) -> None:
+    """The bucket is asked to create first; no HEAD decides existence in advance."""
+
+    class _RecordingStore(MemoryObjectStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.calls: list[str] = []
+
+        def head(self, key: str) -> ObjectInfo | None:
+            self.calls.append(f"head {key}")
+            return super().head(key)
+
+        def put(self, key: str, body: bytes, *, content_type: str, cache_control: str) -> str:
+            self.calls.append(f"put {key}")
+            return super().put(key, body, content_type=content_type, cache_control=cache_control)
+
+    store = _RecordingStore()
+
+    _publish(tmp_path, store)
+
+    assert store.calls[:2] == [
+        "put demo/images/00000000.jpg",
+        "head demo/images/00000000.jpg",
+    ]
+
+
+def test_an_object_with_a_wrong_header_is_a_conflict_and_stays_untouched(tmp_path: Path) -> None:
+    """A header is not repaired by re-putting: an occupied key is compared and refused."""
     store = MemoryObjectStore()
     _publish(tmp_path, store)
     key = "demo/images/00000000.jpg"
-    body, _content_type, cache_control = store.objects[key]
-    store.objects[key] = (body, "application/octet-stream", cache_control)
+    stored = store.objects[key]
+    store.objects[key] = replace(stored, content_type="application/octet-stream")
 
-    summary = _publish(tmp_path, store)
+    with pytest.raises(ObjectConflict, match="demo/images/00000000.jpg"):
+        _publish(tmp_path, store)
 
-    assert summary.repaired == 1  # type: ignore[attr-defined]
-    assert summary.skipped == 1  # type: ignore[attr-defined]
-    assert store.objects[key][1] == CONTENT_TYPES["jpg"]
+    assert store.objects[key].etag == stored.etag
+    assert store.objects[key].content_type == "application/octet-stream"
 
 
 def test_an_object_with_different_bytes_stops_and_names_the_key(tmp_path: Path) -> None:
@@ -205,8 +238,8 @@ def test_an_object_with_different_bytes_stops_and_names_the_key(tmp_path: Path) 
     store = MemoryObjectStore()
     _publish(tmp_path, store)
     key = "demo/images/00000000.jpg"
-    body, content_type, cache_control = store.objects[key]
-    store.objects[key] = (body + b"more", content_type, cache_control)
+    stored = store.objects[key]
+    store.objects[key] = replace(stored, body=stored.body + b"more")
 
     with pytest.raises(ObjectConflict, match="demo/images/00000000.jpg"):
         _publish(tmp_path, store)
@@ -215,29 +248,15 @@ def test_an_object_with_different_bytes_stops_and_names_the_key(tmp_path: Path) 
 def test_an_upload_that_does_not_read_back_is_a_verification_error(tmp_path: Path) -> None:
     """The bucket's answer after the write is what authorises the object."""
 
-    class _LyingStore(MemoryObjectStore):
-        def put(
-            self,
-            key: str,
-            body: bytes,
-            *,
-            content_type: str,
-            cache_control: str,
-            if_none_match: bool = False,
-        ) -> str:
-            etag = super().put(
-                key,
-                body,
-                content_type=content_type,
-                cache_control=cache_control,
-                if_none_match=if_none_match,
-            )
-            _, stored_type, stored_control = self.objects[key]
-            self.objects[key] = (b"X" * len(body), stored_type, stored_control)
-            return etag
+    class _MismatchedEtagStore(MemoryObjectStore):
+        """A bucket whose readback answers a different entity tag from the one it stored."""
+
+        def put(self, key: str, body: bytes, *, content_type: str, cache_control: str) -> str:
+            etag = super().put(key, body, content_type=content_type, cache_control=cache_control)
+            return f"{etag}-not-what-was-stored"
 
     with pytest.raises(VerificationError, match="demo/images/00000000.jpg"):
-        _publish(tmp_path, _LyingStore())
+        _publish(tmp_path, _MismatchedEtagStore())
 
 
 def test_a_missing_cache_names_the_fetch_command(tmp_path: Path) -> None:
@@ -274,51 +293,43 @@ def test_github_style_bucket_references_parse_to_a_name() -> None:
     assert parse_bucket(None) is None
 
 
-class _DeniedWhenAbsent(MemoryObjectStore):
-    """A bucket that grants GetObject but not ListBucket: a missing key answers 403."""
+class _HeadDenied(MemoryObjectStore):
+    """A bucket that grants PutObject but not GetObject: every HEAD answers 403."""
 
     def head(self, key: str) -> ObjectInfo | None:
-        info = super().head(key)
-        if info is None:
-            raise ObjectUnreadable(f"{key}: denied")
-        return info
+        raise ObjectUnreadable(f"{key}: denied")
 
 
-class _RaceStore(_DeniedWhenAbsent):
-    """The same bucket, where a create is refused because the key appeared between HEAD and PUT."""
+class _RaceStore(MemoryObjectStore):
+    """A bucket where the create is refused because the key appeared while it was in flight."""
 
-    def put(
-        self,
-        key: str,
-        body: bytes,
-        *,
-        content_type: str,
-        cache_control: str,
-        if_none_match: bool = False,
-    ) -> str:
-        if if_none_match and key not in self.objects:
-            self.objects[key] = (bytes(body), content_type, cache_control)
+    def put(self, key: str, body: bytes, *, content_type: str, cache_control: str) -> str:
+        if key not in self.objects:
+            self.objects[key] = StoredObject(
+                bytes(body), content_type, cache_control, "appeared-mid-flight"
+            )
             raise AlreadyExists(f"{key}: lost the race")
-        return super().put(
-            key,
-            body,
-            content_type=content_type,
-            cache_control=cache_control,
-            if_none_match=if_none_match,
-        )
+        return super().put(key, body, content_type=content_type, cache_control=cache_control)
 
 
-def test_a_denied_head_is_settled_by_a_conditional_create(tmp_path: Path) -> None:
-    """A policy without ListBucket answers 403 for a missing key; the create decides."""
-    store = _DeniedWhenAbsent()
+def test_a_bucket_that_denies_head_cannot_verify_an_upload(tmp_path: Path) -> None:
+    """Without GetObject the write cannot be read back, so the run stops instead of guessing."""
+    with pytest.raises(VerificationError, match="s3:GetObject"):
+        _publish(tmp_path, _HeadDenied())
 
-    first = _publish(tmp_path, store)
-    second = _publish(tmp_path, store)
 
-    assert first.uploaded == 2  # type: ignore[attr-defined]
-    assert first.skipped == 0  # type: ignore[attr-defined]
-    assert second.uploaded == 0  # type: ignore[attr-defined]
-    assert second.skipped == 2  # type: ignore[attr-defined]
+def test_an_occupied_key_that_cannot_be_read_is_a_conflict(tmp_path: Path) -> None:
+    """A refused create is only a skip when the occupied object can be compared."""
+    store = _HeadDenied()
+    store.put(
+        "demo/images/00000000.jpg",
+        JPEG,
+        content_type=CONTENT_TYPES["jpg"],
+        cache_control=CACHE_CONTROL,
+    )
+
+    with pytest.raises(ObjectConflict, match="s3:GetObject"):
+        _publish(tmp_path, store)
 
 
 def test_losing_the_conditional_create_race_falls_back_to_comparison(tmp_path: Path) -> None:
