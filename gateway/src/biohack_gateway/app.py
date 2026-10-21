@@ -17,14 +17,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager, nullcontext, suppress
 from enum import StrEnum
 from importlib.metadata import version as installed_version
 from pathlib import Path
 from typing import Any, Literal
 
-import anyio.to_thread
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.docs import get_swagger_ui_html
@@ -33,7 +32,7 @@ from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import RequestResponseEndpoint
 
-from biohack_gateway.admission import UploadQueue
+from biohack_gateway.admission import UploadQueue, UploadRefused, UploadSlots
 from biohack_gateway.auth import Authenticator
 from biohack_gateway.cache import CacheStats, ResultCache
 from biohack_gateway.csp import new_nonce, policy, with_nonce
@@ -180,19 +179,6 @@ middleware can charge it before the bytes are read — which is where a refusal 
 Before either route was distinguished from the rest, the middleware counted every request, which
 refused a page's own load (a dataset listing, a row's detail, the model directory) on a pool whose
 `max_in_flight` was one.
-"""
-
-THREAD_POOL_TOKENS = 200
-"""How many worker threads the blocking surface may occupy at once.
-
-FastAPI runs a `def` handler — every route here but `/health`, `/docs` and `/play` — in a worker
-thread, and AnyIO's default pool is 40. This surface can legitimately park more than that: an upload
-waits for the link inside its handler for up to
-:data:`biohack_gateway.admission.DEFAULT_WAIT_SECONDS`, and the designed burst is 50 teams holding 3
-lanes each. At 40, a dozen teams uploading at once occupied every worker, and a dataset listing
-queued behind a photograph: the complaint the byte budget exists to prevent, arriving from a
-resource nobody was counting. What gates the work is the byte budget and the per-key lane; this
-number only decides how much waiting the process holds while it waits.
 """
 
 
@@ -496,7 +482,12 @@ def _code_for(status_code: int) -> ErrorCode:
     return ErrorCode.INTERNAL_ERROR if status_code >= 500 else ErrorCode.INVALID_REQUEST
 
 
-def _error(status_code: int, code: ErrorCode, message: str) -> JSONResponse:
+def _error(
+    status_code: int,
+    code: ErrorCode,
+    message: str,
+    headers: Mapping[str, str] | None = None,
+) -> JSONResponse:
     """Build the one error body.
 
     Every refusal in this application goes through here, which is what keeps the shape single.
@@ -510,6 +501,9 @@ def _error(status_code: int, code: ErrorCode, message: str) -> JSONResponse:
     message : str
         The explanation. It is shown to the caller, so it must never carry a token, a backend
         address, or anything else the caller should not learn.
+    headers : mapping of str to str or None, optional
+        Headers the refusal owes the caller — `Retry-After` on an admission refusal is the case,
+        because a client told to come back later has to be told when.
 
     Returns
     -------
@@ -517,7 +511,11 @@ def _error(status_code: int, code: ErrorCode, message: str) -> JSONResponse:
         The serialized :class:`ErrorResponse`.
     """
     payload = ErrorResponse(error=ErrorDetail(code=code, message=message))
-    return JSONResponse(status_code=status_code, content=payload.model_dump(mode="json"))
+    return JSONResponse(
+        status_code=status_code,
+        content=payload.model_dump(mode="json"),
+        headers=dict(headers) if headers else None,
+    )
 
 
 def create_app(
@@ -531,6 +529,7 @@ def create_app(
     max_concurrent_per_token: int | None = None,
     cache: ResultCache | None = None,
     admission: UploadQueue | None = None,
+    upload_slots: UploadSlots | None = None,
 ) -> FastAPI:
     """Build the application.
 
@@ -573,6 +572,12 @@ def create_app(
         `BIOHACK_UPLOAD_BYTES` caps the sum a burst may put on the link, and
         `BIOHACK_UPLOAD_WAIT_SECONDS` says how long a request may wait. That is what a host gets;
         a test passes its own, which is how a refusal is reached without moving a gigabyte.
+    upload_slots : UploadSlots or None, optional
+        How many uploads may be parsed or served at once. `None` builds one from
+        `BIOHACK_UPLOAD_SLOTS`, or :data:`biohack_gateway.admission.DEFAULT_UPLOAD_SLOTS`. It is a
+        separate parameter from `admission` because it bounds a different resource — the bodies
+        that exist at once, which is this host's memory — and it is taken before the multipart body
+        is parsed rather than after it has been measured.
 
     Returns
     -------
@@ -587,6 +592,7 @@ def create_app(
     )
     answers = ResultCache() if cache is None else cache
     uploads = UploadQueue() if admission is None else admission
+    slots_for_uploads = UploadSlots() if upload_slots is None else upload_slots
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -599,10 +605,6 @@ def create_app(
         checkpointed rather than left for the next process to recover.
         """
         watching = asyncio.create_task(watch_pool(registry))
-        # Sized here, before the first request: a `def` handler runs in one of these threads, and
-        # the pool's default is smaller than the burst this surface accepts. See
-        # :data:`THREAD_POOL_TOKENS`.
-        anyio.to_thread.current_default_thread_limiter().total_tokens = THREAD_POOL_TOKENS
         try:
             yield
         finally:
@@ -806,6 +808,12 @@ def create_app(
         endpoint added later is protected by existing. The team the token belongs to is recorded on
         the request and logged once, which is the attribution that stands in for a counted quota.
 
+        **Only an upload is charged here, and it is charged twice.** A global slot is taken before
+        the multipart body is parsed, because the parsed body is memory this host has a fixed amount
+        of; a request that finds every slot taken is refused at once with a `Retry-After` rather
+        than queued, so it never parks a worker. The per-team lane is what the gateway charges for
+        GPU work, and it is taken only on paths :func:`occupies_lane` names.
+
         Parameters
         ----------
         request : Request
@@ -843,14 +851,36 @@ def create_app(
             )
 
         request.state.team_id = team_id
-        # A slot is a GPU lane, so only work that reaches a backend takes one. An upload always
-        # does, and the middleware charges it before the bytes are read — the cheapest place to
-        # refuse. A row predict does not: it looks the answer up first and takes its own lane in
-        # `models.predict` only on a miss, so a cached answer is never refused as "too many
-        # inferences" while no machine is busy.
+        # Two admissions are charged here, in order. The first counts receive slots, a resource: an
+        # upload's multipart body is spooled — up to fifteen megabytes each — before its handler
+        # runs, so the only place to bound how many bodies exist at once is before the parse, where
+        # a refusal costs nothing. It refuses at once rather than waiting: a parked request would
+        # hold the worker thread the pool exists to spare. The second is the fairness lane: a lane
+        # is a GPU lane, so only work that reaches a backend takes one. An upload always does. A row
+        # predict does not: it looks the answer up first and takes its own lane in `models.predict`
+        # only on a miss, so a cached answer is never refused as "too many inferences" while no
+        # machine is busy.
+        uploading = occupies_lane(path)
+        if uploading:
+            try:
+                slots_for_uploads.acquire()
+            except UploadRefused as refused:
+                logger.info(
+                    "%s %s team=%s refused: all %d upload slots busy",
+                    request.method,
+                    request.url.path,
+                    team_id,
+                    slots_for_uploads.capacity,
+                )
+                return _error(
+                    429,
+                    ErrorCode.QUOTA_EXCEEDED,
+                    str(refused),
+                    headers={"Retry-After": str(refused.retry_after_seconds)},
+                )
         held = (
             slots.hold(team_id, f"{request.method} {request.url.path}")
-            if occupies_lane(path)
+            if uploading
             else nullcontext()
         )
         try:
@@ -862,6 +892,12 @@ def create_app(
             # *inside* this middleware, so nothing would turn an exception raised at this depth
             # into the contract's 429.
             return _error(429, ErrorCode.QUOTA_EXCEEDED, str(refused))
+        finally:
+            # The slot covers the parse and the answer, and it is given back on every path — a
+            # lane, a `4xx` the route built, or a crash — because a slot that only rose would
+            # refuse every upload for the life of the process.
+            if uploading:
+                slots_for_uploads.release()
 
     @app.exception_handler(LaneRefused)
     async def lane_refused(request: Request, exc: LaneRefused) -> JSONResponse:

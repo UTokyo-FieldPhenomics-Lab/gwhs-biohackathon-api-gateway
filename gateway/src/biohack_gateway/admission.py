@@ -22,6 +22,14 @@ carries the estimate, so a client can decide instead of guessing.
 cache, and a row carries no bytes worth counting; putting them behind this queue would make a
 metadata-shaped request wait for a photograph. `predict` never touches this module.
 
+**A slot is the other resource an upload holds, and it is taken before the bytes exist.** The byte
+queue can only admit what it can measure, and a body's length is known only after the multipart
+parser has spooled it — up to fifteen megabytes, in memory or on the tmpfs — which happens before
+the handler runs. So a second gate counts uploads from parse to answer (:class:`UploadSlots`): the
+middleware takes one slot before the body is parsed and gives it back when the handler returns, and
+a request that finds none is refused at once rather than parked. Eight slots is 120 MB of spooled
+bodies and at most 120 MB of payload, the reserve written down at :data:`DEFAULT_UPLOAD_SLOTS`.
+
 The queue is ordered by ``(team_in_flight, arrival)``. That is the whole fairness rule: of the
 requests that can run now, the one whose team is using the link least goes first, and ties are
 broken by who asked first. A team cannot overtake itself out of order, and a team that has nothing
@@ -99,25 +107,55 @@ UPLOAD_BYTES_ENV = "BIOHACK_UPLOAD_BYTES"
 UPLOAD_WAIT_ENV = "BIOHACK_UPLOAD_WAIT_SECONDS"
 """Overrides :data:`DEFAULT_WAIT_SECONDS`, so a load test can reach the refusal without waiting."""
 
+DEFAULT_UPLOAD_SLOTS = 8
+"""How many uploads may be parsed or served at once when the host sets no override.
+
+The number is a capacity calculation, not a taste. A slot is held from the multipart parse until
+the handler has answered, so together the slots bound two copies of every body in flight: the
+spool, which lives in memory up to a megabyte and then on `/tmp`, and the payload the handler
+reads into the heap. At the edge's 15 MB ceiling eight slots hold at most 120 MB of spools and
+120 MB of payloads — 240 MB against the host this serves, which has 1,936 MiB of RAM with no swap.
+In practice the payloads are far smaller, because the byte queue admits about 24 MB of them at
+once (:data:`MAX_BUDGET_BYTES`). The 240 MB bound covers the two stored body copies, not parser
+buffers, parsed predictions or total process RSS; those need separate headroom. Each upstream
+answer is also bounded by the transport's response ceiling. The pools are per process, which is the
+host: `deploy/` runs one worker, so a second worker would double every figure here. A burst deeper
+than the slots is refused immediately, so the threads those uploads would have parked never leave
+the worker pool.
+"""
+
+UPLOAD_SLOTS_ENV = "BIOHACK_UPLOAD_SLOTS"
+"""Overrides :data:`DEFAULT_UPLOAD_SLOTS`, for a host whose memory or edge limit is not this one."""
+
+SLOT_RETRY_SECONDS = 5.0
+"""What an upload refused for want of a slot is told to wait.
+
+Coarse on purpose: a slot frees when another participant's upload finishes, and nothing here can
+know whether that upload is still transferring or already waiting on a GPU. Five seconds is long
+enough that an immediate retry is not another refusal and short enough that a client which waits it
+out is not punished for an estimate that could only have been a guess.
+"""
+
 
 class UploadRefused(RuntimeError):
-    """An upload waited out :data:`DEFAULT_WAIT_SECONDS` without the link making room for it.
+    """An upload was not admitted, and how long until trying again is worth it.
 
-    The exception carries the estimate rather than an HTTP status, the same way
-    :class:`biohack_gateway.limits.LaneRefused` carries its sentence: the route is what turns it
-    into the contract's `429`, and the whole seconds it puts in `Retry-After` are computed once,
-    here, so the header and the message cannot disagree.
+    Raised by :meth:`UploadQueue.acquire` when the link stays busy past its deadline, and by
+    :meth:`UploadSlots.acquire` when every slot is taken. The sentence names the resource that was
+    full rather than an HTTP status, because the layers that catch it are two — a route and the
+    middleware — and they build the contract's `429` differently. What must exist once is the words
+    and the one number they and `Retry-After` agree on, and both are written here.
 
     Attributes
     ----------
     retry_after : float
-        Seconds until the link is expected to have room, including this body's own transfer.
+        Seconds until the resource is expected to have room.
     retry_after_seconds : int
         :attr:`retry_after` rounded up to whole seconds, at least one — `Retry-After` is an integer
         number of seconds, and `0` would tell a client to try again immediately.
     """
 
-    def __init__(self, retry_after: float) -> None:
+    def __init__(self, retry_after: float, reason: str) -> None:
         """Write the refusal from the estimate.
 
         Parameters
@@ -125,13 +163,100 @@ class UploadRefused(RuntimeError):
         retry_after : float
             Seconds until room is expected. It must be finite and positive; the caller gets one
             second where it is not, because a refusal still has to say when to come back.
+        reason : str
+            Which resource was full, written for the caller — the link or the slot pool. It must not
+            carry a value the caller sent.
         """
         self.retry_after = retry_after if math.isfinite(retry_after) and retry_after > 0 else 1.0
         self.retry_after_seconds = max(1, math.ceil(self.retry_after))
-        super().__init__(
-            "the upload link is busy with other participants' images; "
-            f"retry in {self.retry_after_seconds} s"
-        )
+        super().__init__(f"{reason}; retry in {self.retry_after_seconds} s")
+
+
+class UploadSlots:
+    """Count the uploads being parsed or served, and refuse one that finds the pool full.
+
+    Parameters
+    ----------
+    capacity : int or None, optional
+        How many uploads may exist at once. `None` reads :data:`UPLOAD_SLOTS_ENV`, or
+        :data:`DEFAULT_UPLOAD_SLOTS` where that is unset, is not a number, or is not positive.
+
+    Raises
+    ------
+    ValueError
+        `capacity` was passed explicitly and is not positive — a pool of no slots would refuse every
+        upload, which is a host configuration mistake rather than a way to serve.
+
+    Notes
+    -----
+    **Refusal, not a queue.** :meth:`acquire` never waits: a participant told "busy" in a
+    millisecond can decide to retry later, while one parked behind an invisible pool has no way to
+    know whether the wait is two seconds or two minutes — and a parked request is a worker thread
+    held, which is the resource the slots exist to spare.
+
+    The count is held from before the multipart body is parsed until after the handler has answered,
+    because both copies of the body live inside that span. The slot pool and the byte queue are
+    separate on purpose: the queue is fair between teams and follows a measured link, while this is
+    a flat bound on this host's memory and has nothing to be fair about. A team at its lane ceiling
+    is still refused by the lane, which is the fairness number.
+    """
+
+    def __init__(self, capacity: int | None = None) -> None:
+        resolved = _env_slots() if capacity is None else capacity
+        if resolved <= 0:
+            raise ValueError(f"{resolved} upload slots is not a capacity")
+        self._capacity = resolved
+        self._lock = threading.Lock()
+        self._in_flight = 0
+
+    @property
+    def capacity(self) -> int:
+        """Answer how many uploads may exist at once, for the log line a refusal writes.
+
+        Returns
+        -------
+        int
+            The capacity in force, fixed for the life of the process.
+        """
+        return self._capacity
+
+    def acquire(self) -> None:
+        """Take one slot, or refuse at once.
+
+        Raises
+        ------
+        UploadRefused
+            Every slot is held, carrying :data:`SLOT_RETRY_SECONDS` as the wait and nothing counted.
+        """
+        with self._lock:
+            taken = self._in_flight < self._capacity
+            if taken:
+                self._in_flight += 1
+        if not taken:
+            raise UploadRefused(
+                SLOT_RETRY_SECONDS, "every upload slot is busy with another participant's image"
+            )
+
+    def release(self) -> None:
+        """Give one slot back.
+
+        Called from a `finally`, so an upload that failed, was refused by the route, or crashed
+        still frees its place: a count that only rose would close the pool for the life of the
+        process, exactly as it would for the link's bytes.
+        """
+        with self._lock:
+            self._in_flight = max(0, self._in_flight - 1)
+
+    def in_flight(self) -> int:
+        """Report how many slots are held, which is what the tests and the log line assert against.
+
+        Returns
+        -------
+        int
+            The number of uploads currently parsed or being served.
+        """
+        with self._lock:
+            return self._in_flight
 
 
 @dataclass(frozen=True, slots=True)
@@ -436,7 +561,10 @@ class UploadQueue:
                         return True
                     remaining = deadline - self._clock()
                     if remaining <= 0:
-                        raise UploadRefused(self._estimate(waiter))
+                        raise UploadRefused(
+                            self._estimate(waiter),
+                            "the upload link is busy with other participants' images",
+                        )
                     self._condition.wait(remaining)
             finally:
                 # One removal for every path out: admitted, timed out, or interrupted. A waiter left
@@ -621,6 +749,34 @@ def _env_max_budget() -> int:
         logger.warning("%s=%r is not positive; using %d", UPLOAD_BYTES_ENV, raw, MAX_BUDGET_BYTES)
         return MAX_BUDGET_BYTES
     return cap
+
+
+def _env_slots() -> int:
+    """Read the slot capacity from :data:`UPLOAD_SLOTS_ENV`, falling back to the default.
+
+    Returns
+    -------
+    int
+        The configured capacity, or :data:`DEFAULT_UPLOAD_SLOTS` when the variable is unset, is not
+        a number, or is not positive — a host with a typo serves with the shipped reserve rather
+        than admitting nothing.
+    """
+    raw = os.environ.get(UPLOAD_SLOTS_ENV, "").strip()
+    if not raw:
+        return DEFAULT_UPLOAD_SLOTS
+    try:
+        slots = int(raw)
+    except ValueError:
+        logger.warning(
+            "%s=%r is not a number; using %d", UPLOAD_SLOTS_ENV, raw, DEFAULT_UPLOAD_SLOTS
+        )
+        return DEFAULT_UPLOAD_SLOTS
+    if slots <= 0:
+        logger.warning(
+            "%s=%r is not positive; using %d", UPLOAD_SLOTS_ENV, raw, DEFAULT_UPLOAD_SLOTS
+        )
+        return DEFAULT_UPLOAD_SLOTS
+    return slots
 
 
 def _env_wait() -> float:

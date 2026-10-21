@@ -34,6 +34,7 @@ no gateway change, the same bargain the dataset surface strikes with a published
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import http.client
 import json
 import logging
@@ -114,6 +115,10 @@ while a backend that is answering needs the whole budget for the work it is doin
 — an attempt against it ended here, at 3 s, where the same attempt had run the full 60-second
 response budget before this bound existed. What the response budget covers instead is a
 backend that accepts and then goes quiet, which none of these machines does.
+
+It is a ceiling on the *connect phase*, not on the request: a fallback handed only the rest of
+:data:`RESPONSE_TIMEOUT_SECONDS` gets the smaller of the two, so the attempt cannot outlive the
+one budget the caller was given.
 """
 
 RESPONSE_TIMEOUT_SECONDS = 10.0
@@ -126,6 +131,14 @@ RESPONSE_TIMEOUT_SECONDS = 10.0
 of magnitude of headroom, and it is the *ceiling* on what a dead backend costs: a backend
 that never accepts the connection costs :data:`CONNECT_TIMEOUT_SECONDS` instead, which is
 what every dead backend here has actually done.
+
+It is a **wall-clock budget for the whole exchange**, not a socket-inactivity timeout. The
+transport records a monotonic deadline when it is called and ends the connect, send and read
+phases against that one deadline, so a response that drips a byte at a time cannot outlast the
+budget by resetting an inactivity clock on each byte (measured 2026-10-21: 15 bytes at one per
+0.04 s took 0.56 s against a 0.1 s budget, because each read was a fresh timeout). A request's
+retries share the same clock: :meth:`ModelRegistry.forward` gives the first backend the whole
+budget and each fallback only what the attempts before it left.
 """
 
 assert UNHEALTHY_SECONDS >= RESPONSE_TIMEOUT_SECONDS, (
@@ -140,6 +153,50 @@ the machine working, which has a measured ceiling, while the send is this host's
 machine, whose rate belongs to the network of the day. Fifteen megabytes at this floor is a minute,
 which is generous on purpose — a body already accepted from a participant is worth delivering, and a
 send that is merely slow must not be recorded as a machine that failed.
+
+:meth:`ModelRegistry.forward` turns this floor into a **send allowance** and adds it to the one
+deadline it shares across attempts. The transport then enforces that single number, so a slow send
+consumes its own allowance and leaves :data:`RESPONSE_TIMEOUT_SECONDS` for the answer instead of
+resetting a clock per read.
+"""
+
+MAX_RESPONSE_BYTES = 16 * 1024 * 1024
+"""The largest answer one backend may send before the attempt is discarded.
+
+**A host-resource policy, not the mathematical maximum of a legal answer.** A segmentation answer
+is JSON carrying RLE masks, and a complex mask or a larger number of instances can be much bigger
+than any figure extrapolated from one sample: the RLE ratio of the 173,716-pixel, 2,184-character
+mask measured on 2026-10-16 does not bound a many-instance or high-entropy mask. There is no
+derivation from the contract that produces a byte maximum, and this constant does not pretend to be
+one.
+
+What it is chosen from is the observed scale plus a wide margin. The largest answer in the
+2026-10-19 load run was 26,216 bytes; sixteen mebibytes is about 640 times that, which keeps an
+ordinary mask, an unusually detailed one and a many-instance answer inside the ceiling without
+asking an operator to tune anything at an event.
+
+It is deliberately **not** a promise that no legitimate answer is ever refused. An answer above it
+is treated as a broken machine: the reply is ``status=0``, the connection is closed and not pooled,
+and another backend may be tried. If real traffic ever produces a legitimate answer above sixteen
+mebibytes, this constant is the knob to revisit, with the host's memory in mind; it is not an
+environment variable, because a deployment that raises it without raising the memory budget would
+turn a protection into a way to exhaust the process.
+
+The resource it protects is bounded, not eliminated. A body is held whole for the caller, and the
+eight upload slots (:data:`biohack_gateway.admission.DEFAULT_UPLOAD_SLOTS`) can each carry one, so
+the upload path's worst case is eight answers of this size on top of the edge's 15 MB bodies — large
+enough to matter on this host, and still a computable ceiling instead of an unbounded one. The read
+loop stops at one byte over the ceiling, and an announced ``Content-Length`` is refused before the
+body is read at all.
+"""
+
+RESPONSE_READ_CHUNK = 64 * 1024
+"""Bytes one progress read asks for.
+
+``HTTPResponse.read1`` returns what the socket produced rather than filling the request, so this is
+only an upper bound on a single iteration; the read loop rechecks the deadline between chunks.
+64 KiB is large enough that a normal answer takes a handful of reads and small enough that an
+abnormal one never grows the buffer by more than one extra chunk before the ceiling stops it.
 """
 
 MACHINE_STATUSES = frozenset({502, 503, 504})
@@ -448,19 +505,24 @@ class Reply:
         Whether the failure was the clock rather than the backend, which decides the error code the
         caller sees.
     stage : str or None
-        Which half of the exchange the clock ended, when it did: ``"send"`` while the body was still
-        going out, ``"read"`` while waiting for an answer. `None` otherwise.
+        Which half of the exchange the clock ended, when it did: ``"connect"`` while the socket was
+        being opened, ``"send"`` while the body was still going out, ``"read"`` while waiting for an
+        answer. `None` otherwise.
 
-        The two are different facts about different things. A slow send is this host's path to the
-        machine — a 15 MB body over a degraded link — and a send the clock ended says nothing about
-        whether the machine is serving, so treating it as a failed backend shut a healthy one out of
-        the pool and repeated the same slow send against the next.
+        The three are different facts about different things. A connect that did not finish, like an
+        outright refusal, says the machine is not reachable and belongs to the pool's health. A slow
+        send is this host's path to the machine — a 15 MB body over a degraded link — and a send the
+        clock ended says nothing about whether the machine is serving, so treating it as a failed
+        backend shut a healthy one out of the pool and repeated the same slow send against the next.
+        A read the clock ended is the machine owing an answer for longer than the request's budget;
+        a fallback that was handed only the budget left by earlier attempts is the request's clock
+        rather than a verdict on that machine, which :meth:`ModelRegistry.forward` distinguishes.
     """
 
     status: int
     body: bytes
     timed_out: bool = False
-    stage: Literal["send", "read"] | None = None
+    stage: Literal["connect", "send", "read"] | None = None
 
 
 Transport = Callable[[str, str, Mapping[str, str], bytes | None, float], Reply]
@@ -482,6 +544,13 @@ class _BoundedHTTPConnection(http.client.HTTPConnection):
     work it is actually doing.
     """
 
+    connect_timeout: float = CONNECT_TIMEOUT_SECONDS
+    """The budget for one handshake.
+
+    The transport narrows it to whatever is left of the request's own deadline, so a fallback cannot
+    spend three seconds on a connect when the caller has one second left.
+    """
+
     def connect(self) -> None:
         """Open the socket under the connect budget, then restore the response budget.
 
@@ -492,7 +561,7 @@ class _BoundedHTTPConnection(http.client.HTTPConnection):
         41 ms for a socket the standard library had configured, and on the 260 ms link to the
         laboratory backends the same delay is bounded by the round trip instead of by 40 ms.
         """
-        self.sock = socket.create_connection((self.host, self.port), CONNECT_TIMEOUT_SECONDS)
+        self.sock = socket.create_connection((self.host, self.port), self.connect_timeout)
         try:
             self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         except OSError:  # an OS without it: the connect budget still matters more than the delay
@@ -564,6 +633,170 @@ def _checkin(key: tuple[str, str, int], connection: http.client.HTTPConnection) 
             idle.append(connection)
 
 
+class _DeadlineWatchdog:
+    """Shut a connected socket down when a monotonic deadline passes.
+
+    ``http.client`` reads the status line, every header line and every chunk-size line with its own
+    ``recv``, and a socket timeout applies to one such call: a peer that drips header bytes never
+    waits long enough for any single timeout to fire, so the request can outlive its budget while
+    every individual read looks healthy. The ``read1`` loop bounds an ordinary body, but not the
+    library's header parsing or chunk framing, and replacing that parser here would be a second HTTP
+    decoder.
+
+    A timer that shuts the socket down is the one bound that covers whatever the library does inside
+    ``getresponse()`` and between chunks: ``shutdown`` wakes a blocked ``recv`` or ``sendall`` on
+    another thread without closing the descriptor under the reader. The timer is stopped and joined
+    before its socket may return to the idle pool, and it records whether it fired so a socket it
+    shut down is never kept.
+    """
+
+    def __init__(self, sock: socket.socket, deadline: float) -> None:
+        """Prepare a watchdog for one connected socket.
+
+        Parameters
+        ----------
+        sock : socket.socket
+            The connected socket to shut down at the deadline.
+        deadline : float
+            The monotonic instant the exchange must have ended by.
+        """
+        self._socket = sock
+        self._lock = threading.Lock()
+        self._fired = False
+        self._finished = False
+        self._timer = threading.Timer(max(0.0, deadline - time.monotonic()), self._shut_down)
+        self._timer.daemon = True
+
+    @property
+    def fired(self) -> bool:
+        """Whether the deadline passed and the socket was shut down.
+
+        Returns
+        -------
+        bool
+            True once the timer has run. Read under the same lock that ``stop`` uses, so a
+            successful exchange cannot report a socket as safe while a shutdown is in progress.
+        """
+        with self._lock:
+            return self._fired
+
+    def arm(self) -> None:
+        """Start the timer.
+
+        Called after the connection exists and before the request is written, so the send and the
+        whole answer are covered by one shutdown instant.
+        """
+        self._timer.start()
+
+    def _shut_down(self) -> None:
+        """End every blocking operation on the socket, or do nothing if the exchange finished."""
+        with self._lock:
+            if self._finished:
+                return
+            self._fired = True
+            # Already closed by the request path is fine; the deadline still stands.
+            with contextlib.suppress(OSError):
+                self._socket.shutdown(socket.SHUT_RDWR)
+
+    def stop(self) -> bool:
+        """Cancel the timer and report whether the socket may be kept.
+
+        Returns
+        -------
+        bool
+            True when the timer never fired, so the socket was not shut down and may go back to the
+            pool. False once the watchdog has shut it down.
+
+        Notes
+        -----
+        The lock is held while the flag is set and the shutdown itself runs, so the two outcomes
+        cannot interleave: either ``stop`` wins and the timer becomes a no-op, or the timer wins and
+        ``stop`` reports the socket as unusable. Joining outside the lock waits for a timer that had
+        already started, so nothing can shut the socket down after it has been checked in.
+        """
+        self._timer.cancel()
+        with self._lock:
+            self._finished = True
+            fired = self._fired
+        self._timer.join()
+        return not fired
+
+
+class _ResponseTooLarge(Exception):
+    """A backend answered with more bytes than :data:`MAX_RESPONSE_BYTES`.
+
+    Kept separate from :class:`TimeoutError` because the two are different verdicts: an oversized
+    answer is the backend's fault and the machine should be passed over, while a clock that ended
+    may be the request's own shared budget rather than a fact about the machine.
+    """
+
+
+def _read_response(
+    response: http.client.HTTPResponse,
+    connection: http.client.HTTPConnection,
+    deadline: float,
+) -> bytes:
+    """Read one response body under a single deadline and a single size ceiling.
+
+    Parameters
+    ----------
+    response : http.client.HTTPResponse
+        The response whose body is still unread.
+    connection : http.client.HTTPConnection
+        The connection whose socket timeout is reset before every read, so an inactivity timeout
+        can never outlive the deadline.
+    deadline : float
+        The monotonic instant the whole exchange must have ended by.
+
+    Returns
+    -------
+    bytes
+        The body. It is at most :data:`MAX_RESPONSE_BYTES` long.
+
+    Raises
+    ------
+    TimeoutError
+        The deadline passed before the body ended.
+    _ResponseTooLarge
+        The body announced, or delivered, more than :data:`MAX_RESPONSE_BYTES`.
+
+    Notes
+    -----
+    ``read1`` rather than ``read``: ``read`` asks for the whole body and only returns when it has
+    it, so a peer that drips a byte every few milliseconds keeps resetting the socket's inactivity
+    timeout and the call outlives its budget (measured 2026-10-21: 15 bytes at one per 0.04 s took
+    0.56 s against a 0.1 s budget). ``read1`` returns what one socket read produced, which brings
+    this loop back between body chunks to check the wall clock.
+
+    This loop therefore bounds an ordinary body; it does **not** bound the status line, the headers
+    or chunk-size lines, which ``http.client`` reads inside ``getresponse()`` and between chunks.
+    :class:`_DeadlineWatchdog` is what ends those, by shutting the socket down at the same deadline.
+    """
+    if response.length is not None and response.length > MAX_RESPONSE_BYTES:
+        raise _ResponseTooLarge
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0.0:
+            raise TimeoutError
+        if connection.sock is not None:
+            connection.sock.settimeout(remaining)
+        # One byte over the ceiling is enough to know the answer is too large; asking for exactly
+        # that much keeps a single iteration from buffering an unbounded remainder.
+        chunk = response.read1(min(RESPONSE_READ_CHUNK, MAX_RESPONSE_BYTES - total + 1))
+        if not chunk:
+            if response.length not in (None, 0):
+                # Unlike read(), read1() does not raise for a short Content-Length body. Do not
+                # accept a valid JSON prefix from an incomplete HTTP exchange or return its socket.
+                raise http.client.IncompleteRead(b"", response.length)
+            return b"".join(chunks)
+        total += len(chunk)
+        if total > MAX_RESPONSE_BYTES:
+            raise _ResponseTooLarge
+        chunks.append(chunk)
+
+
 def http_transport(
     method: str, url: str, headers: Mapping[str, str], body: bytes | None, timeout: float
 ) -> Reply:
@@ -580,8 +813,9 @@ def http_transport(
     body : bytes or None
         The request body, where there is one.
     timeout : float
-        Seconds to wait for an answer, which is :data:`RESPONSE_TIMEOUT_SECONDS` in practice. The
-        connect phase is bounded separately and more tightly, by :data:`CONNECT_TIMEOUT_SECONDS`.
+        The whole budget for this call, from the first connect attempt to the last byte of the
+        answer. :meth:`ModelRegistry.forward` passes a request's remaining budget, so retries share
+        one clock; the connect phase is additionally capped by :data:`CONNECT_TIMEOUT_SECONDS`.
 
     Returns
     -------
@@ -604,12 +838,24 @@ def http_transport(
     running out is not a failed backend, and without that retry pooling would turn a saving into the
     first request after every quiet period failing.
 
-    The budget is applied to the socket, not to the `HTTPConnection`: the object reads its timeout
-    only when it creates a socket, and a connection taken from the pool already has one — the
-    probe's own, three seconds. A reused connection therefore has its socket's timeout set twice per
-    call, once to the send budget and once to the response budget, which is what keeps a slow upload
-    from timing out an inference that never started and an inference from being mistaken for a slow
-    upload.
+    **The deadline is a wall clock for the whole exchange, not a socket-inactivity timeout.** It is
+    set before the connect and every phase narrows the socket to what is left of it; the connect
+    phase is additionally capped by :data:`CONNECT_TIMEOUT_SECONDS`. A socket timeout only bounds
+    one blocking call, and ``http.client`` makes many for the status line, each header line and each
+    chunk header, so a peer that drips one byte at a time can outlive it while every individual read
+    looks healthy. A watchdog (:class:`_DeadlineWatchdog`) shuts the connected socket down at the
+    deadline instead, waking whichever read the library is in without this module re-implementing
+    its parser. A shutdown during a header read can look like a complete, empty answer, so an
+    exchange the watchdog ended is reported as a timeout even if a body arrived at the edge.
+
+    The socket's timeout is set for every phase of every call, whether the connection was made here
+    or taken from the pool: ``HTTPConnection`` reads its timeout only when it creates a socket, so a
+    kept connection would otherwise keep the probe's three seconds — which is how a predict that
+    reused one timed out at three seconds.
+
+    A body over :data:`MAX_RESPONSE_BYTES` ends the attempt as an unreachable-machine failure rather
+    than as an answer: the connection is closed instead of pooled, and the caller may try another
+    backend. The bytes of the oversized answer are never held beyond one read chunk.
     """
     parsed = urllib.parse.urlsplit(url)
     factory = _CONNECTIONS.get(parsed.scheme)
@@ -621,34 +867,69 @@ def http_transport(
     target = parsed.path or "/"
     if parsed.query:
         target = f"{target}?{parsed.query}"
-    send_timeout = max(timeout, len(body) / MIN_SEND_BYTES_PER_SECOND) if body else timeout
+    deadline = time.monotonic() + timeout
 
     for attempt in (0, 1):
         connection = _checkout(key) if attempt == 0 else None
         reused = connection is not None
         if connection is None:
             connection = factory(parsed.hostname, parsed.port, timeout=timeout)
-        # The socket carries the send budget while the body goes out and the response budget once
-        # it has, because the two are limited by different things (see
-        # :data:`MIN_SEND_BYTES_PER_SECOND`). `timeout` is read when a socket is *created*, not
-        # after: assigning the attribute alone leaves a kept connection on the budget it was made
-        # with, and the probe makes its own with :data:`DECLARATION_TIMEOUT_SECONDS` — which is how
-        # a predict that reused one timed out at three seconds.
-        connection.timeout = send_timeout
-        if connection.sock is not None:
-            connection.sock.settimeout(send_timeout)
-        stage: Literal["send", "read"] = "send"
+        stage: Literal["connect", "send", "read"] = "connect"
+        watchdog: _DeadlineWatchdog | None = None
+        keep = False
         try:
+            if connection.sock is None:
+                connect_budget = min(CONNECT_TIMEOUT_SECONDS, deadline - time.monotonic())
+                if connect_budget <= 0.0:
+                    raise TimeoutError
+                if isinstance(connection, _BoundedHTTPConnection):
+                    connection.connect_timeout = connect_budget
+                else:
+                    # The standard library's ``HTTPSConnection`` reads ``self.timeout`` when its
+                    # handshake creates the socket, and has no separate connect seam.
+                    connection.timeout = connect_budget
+                connection.connect()
+            sock = connection.sock
+            if sock is None:
+                raise ConnectionError("the connection has no socket")
+            remaining = deadline - time.monotonic()
+            if remaining <= 0.0:
+                raise TimeoutError
+            connection.timeout = remaining
+            sock.settimeout(remaining)
+            # The socket timeout above bounds one blocking call. The library makes many of them for
+            # a status line, each header line and each chunk header, so it is not a bound on the
+            # exchange; the watchdog is, and it covers those reads without a second HTTP parser.
+            watchdog = _DeadlineWatchdog(sock, deadline)
+            watchdog.arm()
+            stage = "send"
             connection.request(method, target, body=body, headers=dict(headers))
+            # The send may have spent most of the budget, so the answer gets what is actually left
+            # rather than the timeout computed before the body went out.
+            remaining = deadline - time.monotonic()
+            if remaining <= 0.0:
+                raise TimeoutError
+            connection.timeout = remaining
+            sock.settimeout(remaining)
             stage = "read"
-            connection.timeout = timeout
-            if connection.sock is not None:
-                connection.sock.settimeout(timeout)
             response = connection.getresponse()
             try:
-                payload = response.read()
+                payload = _read_response(response, connection, deadline)
+                if watchdog.fired:
+                    # A shutdown while headers were being read can look like a complete, empty
+                    # answer: EOF is indistinguishable from a zero-length body. An answer that was
+                    # only completed at the clock's edge is therefore not trusted as an answer.
+                    raise TimeoutError
             finally:
                 response.close()
+        except _ResponseTooLarge:
+            connection.close()
+            logger.warning(
+                "backend %s answered more than %d bytes; closing the connection",
+                parsed.hostname,
+                MAX_RESPONSE_BYTES,
+            )
+            return Reply(status=0, body=b"")
         except TimeoutError:
             connection.close()
             return Reply(status=0, body=b"", timed_out=True, stage=stage)
@@ -658,6 +939,9 @@ def http_transport(
             # only when the connection came from the pool: one made for this attempt failing is a
             # backend that is down, not a window that ran out.
             connection.close()
+            if watchdog is not None and watchdog.fired:
+                # A shutdown produced the reset; it is the request's clock, not a stale keep-alive.
+                return Reply(status=0, body=b"", timed_out=True, stage=stage)
             if reused:
                 logger.info("a kept connection to %s had closed; asking again", parsed.hostname)
                 continue
@@ -665,12 +949,19 @@ def http_transport(
             return Reply(status=0, body=b"")
         except (OSError, http.client.HTTPException) as error:
             # Connection refused, no route, DNS, a bad status line, a truncated answer — one outcome
-            # for all of them. `socket.timeout` is an OSError subclass on some platforms and a
-            # TimeoutError on others; the type is checked in that order by the clauses above.
+            # for all of them. A ``TimeoutError`` is caught above; any other operating-system
+            # failure here is not a timeout, unless the watchdog caused it.
             connection.close()
+            if watchdog is not None and watchdog.fired:
+                return Reply(status=0, body=b"", timed_out=True, stage=stage)
             logger.warning("backend unreachable: %s (%s)", url, error)
             return Reply(status=0, body=b"")
-        if response.will_close:
+        finally:
+            # Bound to the success path too: a fired watchdog means the socket was shut down and
+            # must not be pooled, and joining here is what makes that decision race-free.
+            if watchdog is not None:
+                keep = watchdog.stop()
+        if response.will_close or not keep:
             connection.close()
         else:
             _checkin(key, connection)
@@ -1336,6 +1627,22 @@ class ModelRegistry:
             `503` when no backend may be tried — all of them are passed over, or the host
             configured none for this model; or when every backend that was tried failed, reported as
             an upstream failure with the status the last one gave.
+
+        Notes
+        -----
+        **One clock covers the whole request, retries included.** The deadline is
+        :data:`RESPONSE_TIMEOUT_SECONDS` plus the send allowance a body needs at
+        :data:`MIN_SEND_BYTES_PER_SECOND`, and each attempt is given only what is left of it.
+        Without that, two dead backends cost two full budgets and a caller waits twice for the same
+        answer; with it, a fallback inherits the first attempt's overspend and the request ends when
+        its budget does.
+
+        A fallback that times out on the part of the budget it was handed is not marked unhealthy.
+        The transport cannot tell "this machine is slow" from "this attempt was given the last two
+        seconds of a request", and charging the machine for the request's clock would shut a healthy
+        backend out of the pool because another one was slow — the same mistake the send/read split
+        exists to avoid. The counter is charged only where the attempt really did have its own full
+        budget, and the request still ends `504`.
         """
         if not self._token:
             # Fail closed and say whose fault it is. Without a token every backend would answer 401,
@@ -1360,15 +1667,27 @@ class ModelRegistry:
         }
         suffix = f"?{query}" if query else ""
         failures: list[Reply] = []
+        # One budget for the request, send included. A body's send is limited by the link rather
+        # than by the machine, so its allowance is added here once; the transport spends that same
+        # number across connect, send and read rather than resetting a clock per phase.
+        send_allowance = len(body) / MIN_SEND_BYTES_PER_SECOND if body else 0.0
+        deadline = time.monotonic() + send_allowance + RESPONSE_TIMEOUT_SECONDS
         for index, backend in enumerate(backends):
             if index:
+                if deadline - time.monotonic() <= 0.0:
+                    # Every attempt so far has spent what the request had. Asking another machine
+                    # would extend a request the caller was promised would end, and it would be
+                    # judged on a budget the earlier attempts left rather than on its own work.
+                    logger.warning("no budget left to try another backend for %s", model)
+                    break
                 # A fallback was not reserved with the list, because it was not being tried yet.
                 # Its own pre-increment depth is what this attempt queued behind.
                 ahead, machine_ahead = self._reserve(backend)
+            remaining = deadline - time.monotonic()
             url = f"{backend.url}/models/{model}/{path}{suffix}"
             started = time.monotonic()
             try:
-                reply = self._transport("POST", url, headers, body, RESPONSE_TIMEOUT_SECONDS)
+                reply = self._transport("POST", url, headers, body, remaining)
             finally:
                 # Stopped before the release so the figure measures the transport call and nothing
                 # around it: the lock the release takes is the gateway's time, not the backend's.
@@ -1432,6 +1751,17 @@ class ModelRegistry:
                 if reply.status
                 else "unreachable"
             )
+            if reply.timed_out and index > 0:
+                # This attempt was handed only the remainder of the request's one clock. A timeout
+                # here is the request's budget running out, not a verdict on this machine, so the
+                # machine keeps its place and its error count untouched. The next iteration sees an
+                # exhausted deadline and stops; the caller still learns the request timed out.
+                logger.warning(
+                    "backend %s timed out on the budget left by earlier attempts; still serving",
+                    backend.url,
+                )
+                failures.append(reply)
+                continue
             backend.server_errors += 1
             if (
                 reply.status == 0
@@ -1457,7 +1787,11 @@ class ModelRegistry:
             )
 
         last = failures[-1]
-        if last.timed_out:
+        if last.timed_out or deadline - time.monotonic() <= 0.0:
+            # Either the last attempt itself ended on the clock, or the clock ended the request
+            # before another machine could be given a fair try. Both are the same answer to the
+            # caller: the budget ran out, and the pool was not charged for it beyond what a
+            # full-budget attempt established.
             raise HTTPException(status_code=504, detail="the model took too long to answer")
         raise HTTPException(
             status_code=502,
@@ -2090,30 +2424,38 @@ def create_model_router(
         `predict` route is sync for the same reason; reading the body through `file.file` is what
         lets this one be.
 
-        **The bytes are admitted after they are read, because their length is the number admission
-        needs.** The per-token lane is already held by the middleware at this point, so a team over
-        its ceiling is refused before its body reaches this handler. What is left is the link: the
-        queue waits here, before the backend is asked, and the release is in a `finally` so a
-        failed forward frees the bytes it held. The `Retry-After` is whole seconds from the queue's
-        own estimate, computed once, so it and the message agree.
+        **The bytes are admitted by the parsed size, and the body is read only afterwards.** The
+        part's own length is what the multipart parser counted as it spooled — never the client's
+        `Content-Length`, which describes what was sent rather than what arrived — so admission can
+        reserve it before the payload exists. Reading first and admitting second kept the whole body
+        in the heap of every waiting request: at the designed burst, 50 teams holding three uploads
+        each would have been 2.25 GB of photographs against a host with 1,936 MiB of RAM. A part
+        that carries no count has nothing to admit, so it is refused rather than read to find one.
+        The per-token lane is already held by the middleware, as is the slot that covers the parse;
+        what is left here is the link, and the release is in a `finally` so a failed read, a refused
+        backend, or a crash frees the bytes it held. The `Retry-After` is whole seconds from the
+        queue's own estimate, computed once, so it and the message agree.
         """
         summary = registry.describe(model)
         query = _checked_query(summary, request)
-        payload = file.file.read()
-        if not payload:
+        # The parser counted the bytes it wrote, which is the only figure admission can trust: a
+        # client's `Content-Length` describes what was sent, not what arrived.
+        size = file.size
+        if size is None:
+            raise HTTPException(status_code=400, detail="the upload has no declared size")
+        if size == 0:
             raise HTTPException(status_code=400, detail="the upload is empty")
-        media_type = _image_media_type(payload)
         team = _team(request)
         try:
             # The middleware already holds this request's lane, so the gate's count includes this
             # one; what the queue orders by is the work that was in flight before it.
-            uploads.acquire(team, max(0, slots.in_flight(team) - 1), len(payload))
+            uploads.acquire(team, max(0, slots.in_flight(team) - 1), size)
         except UploadRefused as refused:
             logger.info(
                 "upload refused model=%s team=%s bytes=%d retry_after=%d",
                 model,
                 team,
-                len(payload),
+                size,
                 refused.retry_after_seconds,
             )
             raise HTTPException(
@@ -2128,6 +2470,18 @@ def create_model_router(
         # its worst.
         completed = 0
         try:
+            try:
+                payload = file.file.read()
+            except (OSError, ValueError):
+                # Losing the server's spool is not an invalid participant image and must not blame
+                # the backend either. The caller may retry once the gateway can read uploads again.
+                logger.warning("upload unreadable model=%s team=%s bytes=%d", model, team, size)
+                raise HTTPException(
+                    status_code=503, detail="the upload could not be read"
+                ) from None
+            if not payload:
+                raise HTTPException(status_code=400, detail="the upload is empty")
+            media_type = _image_media_type(payload)
             reply = registry.forward(
                 model,
                 path="predict/upload",
@@ -2137,7 +2491,7 @@ def create_model_router(
             )
             completed = len(payload) + len(reply.body)
         finally:
-            uploads.release(team, len(payload), time.monotonic() - started, completed)
+            uploads.release(team, size, time.monotonic() - started, completed)
         return _prediction(reply, model)
 
     return router
