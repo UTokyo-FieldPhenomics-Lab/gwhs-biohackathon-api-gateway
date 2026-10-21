@@ -24,6 +24,17 @@ api.global-wheat.com {
 		max_size 15MB
 	}
 
+	# The row route carries an address, not an image: `{"dataset":"gwfss","row":12}` is about forty
+	# bytes, and what it *does* carry beyond that is a query string the application caps at 2 KB.
+	# Without this line a 15 MB body reaches the JSON parser before any model is looked up, because
+	# parsing happens before the handler: a body of six million integers cost a quarter second of the
+	# single worker's event loop and ~150 MB of objects, to be answered `400`. The upload route is a
+	# different path and keeps the 15 MB above.
+	@row path /models/*/predict
+	request_body @row {
+		max_size 4KB
+	}
+
 	# Every answer carries HSTS, so a browser that has seen this host once will not ask it for plain
 	# HTTP again. That matters for the two pages a key is typed into: the first request a reader
 	# makes is the one a network between here and them could answer itself, and the redirect on 80
@@ -44,12 +55,15 @@ api.global-wheat.com {
 	reverse_proxy 127.0.0.1:8000
 
 	# A refusal in the contract's own shape, because a participant reads one decoder. Caddy would
-	# otherwise answer an empty `413`, which is indistinguishable from a proxy failure.
+	# otherwise answer an empty `413`, which is indistinguishable from a proxy failure. One message
+	# covers both limits — the upload's 15 MB and the row route's 4 KB — because the reader is a
+	# participant holding one client, and a body that names a number the other route enforces would
+	# send them looking in the wrong place.
 	handle_errors 413 {
 		header Content-Type application/json
 		# Error routes are their own route group, so the site-level header above does not reach
 		# this one; a refusal is still an answer a browser should remember the scheme of.
 		header Strict-Transport-Security "max-age=86400"
-		respond `{"error":{"code":"payload_too_large","message":"the image is over the 15 MB limit; resize it to about 1008 px — the model runs no larger — and send it again"}}` 413
+		respond `{"error":{"code":"payload_too_large","message":"the request body is over this route's limit: an image upload is capped at 15 MB — resize it to about 1008 px, the model runs no larger — and a row prediction carries an address, not an image"}}` 413
 	}
 }
