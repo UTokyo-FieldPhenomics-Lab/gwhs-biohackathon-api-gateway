@@ -321,12 +321,18 @@ class ResultCache:
         -----
         An existing entry is replaced rather than refused: two callers that miss the same question
         at once both compute it, and the later write is as true as the earlier one.
+
+        The connection is taken before the lock, because opening one takes that same lock: a thread
+        writing without a prior successful read would otherwise wait for a lock it is holding. This
+        includes a read that missed because opening failed. The write and counts move under the
+        lock, so a replacement is counted once however many threads store the same key.
         """
         if not self._enabled or self._closed:
             return
+        connection: sqlite3.Connection | None = None
         try:
+            connection = self._connection()
             with self._lock:
-                connection = self._connection()
                 previous = connection.execute(
                     "SELECT bytes FROM answers WHERE key = ?", (key,)
                 ).fetchone()
@@ -342,6 +348,7 @@ class ResultCache:
                 else:
                     self._stored_bytes += len(body) - previous[0]
         except (OSError, sqlite3.Error) as error:
+            _discard(connection)
             logger.warning("could not store a cached answer: %s", error)
             return
         if self._count_write() % PRUNE_EVERY_WRITES == 0:
@@ -364,9 +371,10 @@ class ResultCache:
         """
         if not self._enabled or self._closed:
             return
+        connection: sqlite3.Connection | None = None
         try:
+            connection = self._connection()
             with self._lock:
-                connection = self._connection()
                 previous = connection.execute(
                     "SELECT bytes FROM answers WHERE key = ?", (key,)
                 ).fetchone()
@@ -376,6 +384,7 @@ class ResultCache:
                     self._entries -= 1
                     self._stored_bytes -= previous[0]
         except (OSError, sqlite3.Error) as error:
+            _discard(connection)
             logger.warning("could not drop a cached answer: %s", error)
 
     def stats(self) -> CacheStats:
@@ -429,18 +438,23 @@ class ResultCache:
         Ordered by `computed_at`, then by key so that two answers stored inside the same clock tick
         are dropped in a fixed order. Whole entries are dropped rather than trimmed: half an answer
         is no answer.
+
+        The connection is taken before the lock for the reason :meth:`put` gives: this method runs
+        at startup and from a thread that stored the answer that filled the store, and opening a
+        connection takes the lock it would otherwise already hold.
         """
         if not self._enabled or self._closed:
             return
+        connection: sqlite3.Connection | None = None
+        doomed: list[tuple[str]] = []
         try:
+            connection = self._connection()
             with self._lock:
                 stored = self._stored_bytes
                 if stored <= self._max_bytes:
                     return
-                connection = self._connection()
                 excess = stored - self._max_bytes
                 freed = 0
-                doomed: list[tuple[str]] = []
                 oldest = connection.execute(
                     "SELECT key, bytes FROM answers ORDER BY computed_at, key"
                 ).fetchall()
@@ -454,6 +468,7 @@ class ResultCache:
                 self._entries -= len(doomed)
                 self._stored_bytes -= freed
         except (OSError, sqlite3.Error) as error:
+            _discard(connection)
             logger.warning("could not prune the cache: %s", error)
             return
         logger.info("cache pruned %d entries to stay under %d bytes", len(doomed), self._max_bytes)
@@ -480,6 +495,11 @@ class ResultCache:
         -------
         sqlite3.Connection
             The connection belonging to the calling thread.
+
+        Notes
+        -----
+        A connection that failed to open is kept nowhere, so the next call on this thread tries
+        again rather than answering every request as a miss until the process restarts.
         """
         connection: sqlite3.Connection | None = getattr(self._local, "connection", None)
         if connection is None:
@@ -532,6 +552,30 @@ class ResultCache:
         with self._lock:
             self._writes += 1
             return self._writes
+
+
+def _discard(connection: sqlite3.Connection | None) -> None:
+    """Abandon a write whose commit did not succeed, so a later commit cannot store it uncounted.
+
+    Parameters
+    ----------
+    connection : sqlite3.Connection or None
+        The connection the failed write used, or `None` when the connection itself could not be
+        obtained and there is nothing to abandon.
+
+    Notes
+    -----
+    SQLite leaves the transaction open when a commit fails, so without this the next statement on
+    the same thread joins that transaction and its commit stores both rows while the counts kept
+    beside them describe one. A best-effort rollback: it is the failure path already, and a cache
+    that cannot roll back still has to answer.
+    """
+    if connection is None:
+        return
+    try:
+        connection.rollback()
+    except sqlite3.Error as error:
+        logger.warning("could not roll back a cache write: %s", error)
 
 
 def _switched_off() -> bool:

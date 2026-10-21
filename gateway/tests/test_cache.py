@@ -25,7 +25,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from biohack_gateway.app import create_app
-from biohack_gateway.cache import ResultCache, cache_key, canonical_request
+from biohack_gateway.cache import CacheStats, ResultCache, cache_key, canonical_request
 from biohack_gateway.models import Reply
 from biohack_gateway.tokens import TokenPool
 
@@ -444,6 +444,234 @@ def test_pruning_respects_the_cap_and_keeps_the_newest(tmp_path: Path) -> None:
     assert stats.bytes <= 250
     assert stats.entries == 2, "the prune kept more than the cap allows"
     assert kept == [False, False, False, True, True], "the newest answers were not the ones kept"
+
+
+def _join_within(thread: threading.Thread, *, seconds: float = 5.0) -> None:
+    """Wait for a thread, and fail the test instead of hanging the suite when it never finishes.
+
+    Parameters
+    ----------
+    thread : threading.Thread
+        The thread under test.
+    seconds : float, optional
+        How long to wait. A deadlock is what these tests are about, and an unbounded join would hang
+        the test process rather than report it.
+    """
+    thread.join(seconds)
+    assert not thread.is_alive(), f"{thread.name} did not finish within {seconds}s"
+
+
+def _close_when_idle(cache: ResultCache, worker: threading.Thread) -> None:
+    """Close a store unless the thread under test is still stuck holding it.
+
+    Parameters
+    ----------
+    cache : ResultCache
+        The store this test built.
+    worker : threading.Thread
+        The thread whose completion was asserted.
+
+    Notes
+    -----
+    A deadlocked writer still holds the lock `close` needs, so closing after a failed join would
+    turn a reported regression into a suite that cannot finish. The worker is a daemon thread, so
+    skipping the close costs nothing beyond the descriptor it holds until the process ends.
+    """
+    if worker.is_alive():
+        return
+    cache.close()
+
+
+def test_a_first_write_from_a_pool_thread_returns(tmp_path: Path) -> None:
+    """A thread that has never touched the store writes without waiting on a lock it already holds.
+
+    The predict handlers run in FastAPI's thread pool, so a first `put` on a pool thread is the
+    common case: each thread opens its own connection, and opening is not something the write may do
+    while holding the lock that opening needs.
+    """
+    cache = _cache(tmp_path)
+    failures: list[BaseException] = []
+
+    def write() -> None:
+        try:
+            cache.put("a", "req", b"x" * 10)
+        except BaseException as error:  # reported by the assertion, not swallowed
+            failures.append(error)
+
+    worker = threading.Thread(target=write, name="first-put", daemon=True)
+    worker.start()
+    try:
+        _join_within(worker)
+        assert failures == []
+        answer = cache.get("a")
+        assert answer is not None and answer.body == b"x" * 10
+        assert (cache.stats().entries, cache.stats().bytes) == (1, 10)
+    finally:
+        _close_when_idle(cache, worker)
+
+
+@pytest.mark.parametrize("method", ["forget", "prune"])
+def test_a_first_forget_or_prune_from_a_pool_thread_returns(tmp_path: Path, method: str) -> None:
+    """`forget` and `prune` open a connection on a new thread too, and return when they have.
+
+    Both take the lock `put` takes, so both could wait for a lock they were holding: a stale answer
+    dropped from a pool thread, or the prune that follows a write, would wedge the store.
+    """
+    cache = ResultCache(tmp_path / "cache.sqlite", 150, enabled=True)
+    for row in range(3):
+        cache.put(f"k{row}", "req", b"x" * 100)
+        time.sleep(0.002)  # a distinct computed_at per entry, so "oldest" is decidable
+    assert cache.stats().bytes == 300
+
+    def drop() -> None:
+        """Drop one answer, one way or the other, on a thread that has no connection yet."""
+        if method == "forget":
+            cache.forget("k0")
+        else:
+            cache.prune()
+
+    worker = threading.Thread(target=drop, name=f"first-{method}", daemon=True)
+    worker.start()
+    try:
+        _join_within(worker)
+        # The forget drops one answer; the prune drops oldest-first until the bodies fit the cap.
+        assert cache.stats().bytes == (200 if method == "forget" else 100)
+    finally:
+        _close_when_idle(cache, worker)
+
+
+def test_a_failed_open_is_retried_by_the_next_call(tmp_path: Path) -> None:
+    """A store that could not be opened is not poisoned: the next call opens it and stores.
+
+    The volume is gone for a moment, or the directory is a file over it. A connection that failed to
+    open is cached nowhere, so the store recovers on the next write rather than staying a permanent
+    miss for the life of the process — and a write that recovers must not deadlock on its own open.
+    """
+    blocker = tmp_path / "volume"
+    blocker.write_text("not a directory", encoding="utf-8")
+    cache = ResultCache(blocker / "cache.sqlite", 10_000, enabled=True)
+    worker = threading.Thread(
+        target=lambda: cache.put("a", "req", b"x" * 10), name="recovering-put", daemon=True
+    )
+    try:
+        assert cache.get("a") is None, "a store that could not be opened must miss"
+        assert cache.stats().entries == 0
+
+        blocker.unlink()
+        blocker.mkdir()
+        worker.start()
+        _join_within(worker)
+
+        answer = cache.get("a")
+        assert answer is not None and answer.body == b"x" * 10
+        assert (cache.stats().entries, cache.stats().bytes) == (1, 10)
+    finally:
+        _close_when_idle(cache, worker)
+
+
+def test_stats_answers_while_another_thread_opens_a_connection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`/pool` is open to any key, so reading the counts may not wait on a connection being opened.
+
+    Opening takes the lock itself. A write path that took the lock first would deadlock against its
+    own open, and every reader behind it — `stats` among them — would wait for a lock nothing can
+    release.
+    """
+    cache = _cache(tmp_path)
+    opening = threading.Event()
+    release = threading.Event()
+    real_open = cache._open
+
+    def slow_open() -> sqlite3.Connection:
+        opening.set()
+        release.wait(5)  # bounded: a failed assertion below must not leave the thread waiting
+        return real_open()
+
+    monkeypatch.setattr(cache, "_open", slow_open)
+    observed: list[CacheStats] = []
+    worker = threading.Thread(
+        target=lambda: cache.put("a", "req", b"x"), name="slow-open", daemon=True
+    )
+
+    worker.start()
+    try:
+        assert opening.wait(5), "the write never reached the open"
+
+        reader = threading.Thread(target=lambda: observed.append(cache.stats()), name="stats")
+        reader.start()
+        _join_within(reader)
+
+        assert [stats.entries for stats in observed] == [0], "stats waited on another thread's open"
+
+        release.set()
+        _join_within(worker)
+        after = cache.stats()
+    finally:
+        release.set()  # the assertion above must not leave the open waiting on its timeout
+        _close_when_idle(cache, worker)
+
+    assert (after.entries, after.bytes) == (1, 1)
+
+
+class _CommitFailsOnce:
+    """A connection whose first commit fails, then delegates to the real one.
+
+    A disk that filled, a volume that went away: the write reached SQLite and the commit did not.
+    """
+
+    def __init__(self, connection: sqlite3.Connection) -> None:
+        """Wrap one real connection.
+
+        Parameters
+        ----------
+        connection : sqlite3.Connection
+            The connection to delegate to.
+        """
+        self._connection = connection
+        self.failures = 1
+
+    def execute(self, sql: str, parameters: tuple[Any, ...] = ()) -> sqlite3.Cursor:
+        """Delegate one statement."""
+        return self._connection.execute(sql, parameters)
+
+    def commit(self) -> None:
+        """Fail the first commit, then commit for real."""
+        if self.failures:
+            self.failures -= 1
+            raise sqlite3.OperationalError("disk I/O error")
+        self._connection.commit()
+
+    def rollback(self) -> None:
+        """Delegate the rollback."""
+        self._connection.rollback()
+
+
+def test_a_write_that_did_not_commit_is_neither_stored_nor_counted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A failed commit is rolled back, so a later commit cannot store a row nothing counted.
+
+    SQLite keeps the failed transaction open. Left alone, the next write's commit would persist both
+    rows while the kept counts describe one, and the figure `/pool` publishes would no longer
+    describe the file it claims to measure.
+    """
+    cache = ResultCache(tmp_path / "cache.sqlite", 10_000, enabled=True)
+    failing = _CommitFailsOnce(cache._connection())
+    monkeypatch.setattr(cache, "_connection", lambda: failing)
+    try:
+        with caplog.at_level(logging.WARNING, logger="biohack_gateway.cache"):
+            cache.put("a", "req", b"x" * 10)
+        assert cache.stats().entries == 0, "a write that never committed was counted"
+
+        cache.put("b", "req", b"y" * 20)
+        assert cache.get("a") is None, (
+            "the failed write was committed later by somebody else's commit"
+        )
+        assert cache.get("b") is not None
+        assert (cache.stats().entries, cache.stats().bytes) == (1, 20)
+    finally:
+        cache.close()
 
 
 def test_switching_the_cache_off_answers_every_call_from_the_backend(
