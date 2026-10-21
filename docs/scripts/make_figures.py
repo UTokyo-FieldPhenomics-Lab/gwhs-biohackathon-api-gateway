@@ -3,8 +3,8 @@
     uv run --project docs --with pillow --with numpy --with requests \
         python docs/scripts/make_figures.py
 
-`requests` is there because the geometry is decoded by the client, and the client imports it
-for its HTTP half; nothing in this script makes a request with it.
+Set `GLOBAL_WHEAT_API_KEY` before running: the client reads the dataset's published palette.
+Images are public downloads and carry no key. Both geometry decoders come from the client.
 
 Every figure is built from real published data: row 0 of `gwhd` and `gwfss`, and row 0 of the
 instance dataset whose schema `gwhs` will publish. The images are fetched from
@@ -22,11 +22,12 @@ from __future__ import annotations
 import json
 import sys
 import tempfile
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from urllib.request import urlretrieve
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageColor, ImageDraw, ImageFont
 
 REPO = Path(__file__).resolve().parents[2]
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -36,6 +37,9 @@ RECORD = REPO / "clients/fixtures/example-prediction.json"
 PREDICTION = FIXTURES / "gwfss-row4-prediction.json"
 CLIENT_PYTHON = REPO / "clients/python"
 PAGES = REPO / "docs/content"
+
+sys.path.insert(0, str(CLIENT_PYTHON))
+import global_wheat  # noqa: E402
 
 DATA = "https://data.global-wheat.com"
 
@@ -47,12 +51,6 @@ GRID = (120, 130, 145)
 INK = (32, 38, 48)
 PAPER = (255, 255, 255)
 
-CLASS_COLOURS = {               # the palette `GET /datasets/gwfss` publishes
-    "background": (0, 0, 0),
-    "head": (50, 255, 132),
-    "stem": (50, 132, 255),
-    "leaf": (214, 255, 50),
-}
 STROKES = (                     # one outline colour per object, cycled, on top of the category fills
     (255, 255, 255),
     (255, 0, 229),
@@ -135,10 +133,7 @@ def boundary(mask: np.ndarray, width: int = 2) -> np.ndarray:
 
 def rle_mask(counts: str, height: int, width: int) -> np.ndarray:
     """Decode one object's geometry with the client, which is the only decoder there is."""
-    sys.path.insert(0, str(CLIENT_PYTHON))
-    from global_wheat import rle_decode
-
-    return rle_decode(counts, (height, width))
+    return global_wheat.rle_decode(counts, (height, width))
 
 
 def download(work: Path) -> dict[str, Image.Image]:
@@ -162,6 +157,8 @@ def download(work: Path) -> dict[str, Image.Image]:
 
 
 def main() -> None:
+    """Draw figures using recorded geometry and the dataset's current palette declaration."""
+    classes = global_wheat.Client().describe("gwfss")["classes"]
     geometry = json.loads((FIXTURES / "row-geometry.json").read_text())
     boxes = geometry["gwhd_row0"]                    # 144 wheat heads, row 0 of gwhd
     objects = geometry["instance_row0"]["objects"]   # 24 objects, row 0 of the instance dataset
@@ -170,8 +167,8 @@ def main() -> None:
         images = download(Path(work))
         draw_gwhd(images["gwhd"], boxes)
         draw_bbox_diagram()
-        draw_gwfss(images["gwfss"], images["gwfss_mask"])
-        draw_prediction(images["gwfss4"], images["gwfss4_mask"])
+        draw_gwfss(images["gwfss"], images["gwfss_mask"], classes)
+        draw_prediction(images["gwfss4"], images["gwfss4_mask"], classes)
         draw_instance(images["instance"], objects, rles)
     draw_known_good()
 
@@ -224,14 +221,15 @@ def draw_bbox_diagram() -> None:
     save(template, DATASETS / "bbox-diagram.png")
 
 
-def draw_gwfss(image: Image.Image, mask: Image.Image) -> None:
+def draw_gwfss(
+    image: Image.Image, mask: Image.Image, classes: Sequence[Mapping[str, str]]
+) -> None:
     """The semantic dataset: the image, the mask, and what one call returns for both."""
     save(image, DATASETS / "gwfss-row0-image.jpg")
     save(mask, DATASETS / "gwfss-row0-mask.png")
 
     mask_array = np.asarray(mask)
-    labels = {name: np.all(mask_array == np.array(colour, dtype=np.uint8), axis=-1)
-              for name, colour in CLASS_COLOURS.items()}
+    labels = global_wheat.label_masks(mask_array, classes)
     tile_side, strip, gap = 420, 46, 14
     tiles = Image.new("RGB", (2 * tile_side + gap + 32, 2 * (tile_side + strip) + gap + 32), PAPER)
     for index, (name, boolean) in enumerate(labels.items()):
@@ -250,7 +248,9 @@ def draw_gwfss(image: Image.Image, mask: Image.Image) -> None:
     save(mask, DATASETS / "mask-input.png")
 
 
-def draw_prediction(image: Image.Image, truth_mask: Image.Image) -> None:
+def draw_prediction(
+    image: Image.Image, truth_mask: Image.Image, classes: Sequence[Mapping[str, str]]
+) -> None:
     """The model's classes beside the dataset's own mask, on the row the demo uses.
 
     Both panels are tinted the same way — the colour over the photograph, so the organ is still
@@ -259,11 +259,12 @@ def draw_prediction(image: Image.Image, truth_mask: Image.Image) -> None:
     """
     prediction = json.loads(PREDICTION.read_text(encoding="utf-8"))
     base = np.asarray(image).astype(np.float32)
+    colours = {entry["name"]: ImageColor.getrgb(entry["color"]) for entry in classes}
 
     def tint(masks: dict[str, np.ndarray]) -> Image.Image:
         canvas = base.copy()
         for name, mask in masks.items():
-            colour = np.array(CLASS_COLOURS[name], dtype=np.float32)
+            colour = np.array(colours[name], dtype=np.float32)
             canvas[mask] = 0.55 * colour + 0.45 * base[mask]
         return Image.fromarray(canvas.astype(np.uint8))
 
@@ -274,11 +275,8 @@ def draw_prediction(image: Image.Image, truth_mask: Image.Image) -> None:
         for obj in prediction["objects"]
     }
     truth = np.asarray(truth_mask)
-    measured = {
-        name: np.all(truth == np.array(colour, dtype=np.uint8), axis=-1)
-        for name, colour in CLASS_COLOURS.items()
-        if name != "background"
-    }
+    measured = global_wheat.label_masks(truth, classes)
+    measured.pop("background", None)
     save(
         figure(
             (panel(tint(predicted), 420, 420), "gwfss-segformer-b4"),
