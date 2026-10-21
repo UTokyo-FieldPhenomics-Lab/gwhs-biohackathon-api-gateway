@@ -454,7 +454,8 @@ class PoolResponse(BaseModel):
     link : PoolLink
         The shared link's figures, stated once.
     cache : CacheStats
-        What the row cache holds and how often it answered.
+        What the row cache holds and how often it answered. `bytes` is body bytes — the number the
+        budget is counted in — not the size of the file those answers live in.
     """
 
     machines: list[MachineSummary] = Field(default_factory=list)

@@ -107,7 +107,9 @@ class CacheStats:
     Attributes
     ----------
     entries, bytes : int
-        How many answers are stored and how much they weigh.
+        How many answers are stored and how much their bodies weigh. `bytes` is the figure the
+        budget is counted in — body bytes only — so the database file is larger: it also holds the
+        request each entry is keyed by and SQLite's own pages.
     hits, misses : int
         Lookups answered from the store and lookups that found nothing, since the process started.
     """
@@ -206,6 +208,15 @@ class ResultCache:
     max_bytes : int or None, optional
         The cap on the stored bodies. `None` takes :data:`CACHE_MAX_BYTES_ENV`, or
         :data:`DEFAULT_CACHE_MAX_BYTES`.
+
+        Bodies, not bytes on disk: each entry also stores the canonical request it is keyed by —
+        this repository keeps no content hash, so the request text *is* the key — and SQLite keeps
+        its own pages beside the rows. The file is therefore larger than this number, by a factor
+        that depends on how small the answers are: a body of a few bytes against a query string of
+        up to
+        :data:`biohack_gateway.models.MAX_QUERY_BYTES` weighs some hundreds of times what it is
+        accounted at. Treat the setting as a bound on what is served from memory and replayed, not
+        as a disk quota; watch the file itself if disk is the thing that matters.
     enabled : bool or None, optional
         Whether anything is stored at all. `None` reads :data:`CACHE_ENV`, which switches the cache
         off when it names one of ``off``, ``0``, ``false``, ``no``. An explicit value wins over the
