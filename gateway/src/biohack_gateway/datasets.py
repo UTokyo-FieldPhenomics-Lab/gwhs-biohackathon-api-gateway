@@ -33,6 +33,16 @@ DEFAULT_PAGE_SIZE = 100
 MAX_PAGE_SIZE = 1000
 """The largest page the surface will build. There is no dataset-dump endpoint."""
 
+MAX_FILTERS = 32
+"""How many distinct conditions one list request may carry.
+
+`select` tests every row against every condition, so the work is rows times conditions and a query
+string is the one part of a request a client controls without limit: a thousand copies of one
+condition measured 104 times the work of one, for the same answer. The cap is a number no honest
+page needs — a dataset publishes a handful of columns — and it is checked after duplicates are
+dropped, so repeating a condition costs nothing rather than counting towards it.
+"""
+
 
 class ClassEntry(BaseModel):
     """One class of a dataset's palette, as the description publishes it.
@@ -802,7 +812,7 @@ def _cursor_offset(cursor: str | None) -> int:
 
 
 def _filter_pairs(pairs: Sequence[tuple[str, str]]) -> Sequence[tuple[str, str]]:
-    """Keep only the pairs that are filters, not paging.
+    """Turn a raw query into the distinct conditions a dataset answers, in arrival order.
 
     Parameters
     ----------
@@ -812,6 +822,35 @@ def _filter_pairs(pairs: Sequence[tuple[str, str]]) -> Sequence[tuple[str, str]]
     Returns
     -------
     sequence of tuple
-        The pairs a dataset answers, in the order they arrived.
+        Each condition once, with `limit` and `cursor` removed. Order is arrival order, so the
+        result reads the way the client wrote it.
+
+    Raises
+    ------
+    HTTPException
+        More than :data:`MAX_FILTERS` distinct conditions. ``400`` rather than an empty page: a
+        query cut down to fit would answer a different question than the one asked.
+
+    Notes
+    -----
+    A repeated condition is the same condition — `all(...)` over it answers what one copy answers —
+    but `select` pays for it per row, so it is dropped here rather than there. Dropping is what
+    keeps a legitimate `?split=train&split=train` (a form, a filler, a client that appends) from
+    being charged, or counted against the cap, as if it asked twice.
     """
-    return [(key, value) for key, value in pairs if key not in ("limit", "cursor")]
+    seen: set[tuple[str, str]] = set()
+    filters: list[tuple[str, str]] = []
+    for key, value in pairs:
+        if key in ("limit", "cursor"):
+            continue
+        pair = (key, value)
+        if pair in seen:
+            continue
+        seen.add(pair)
+        filters.append(pair)
+    if len(filters) > MAX_FILTERS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"at most {MAX_FILTERS} filters may be given; this request gives {len(filters)}",
+        )
+    return filters

@@ -11,6 +11,7 @@ from conftest import GENERATED_AT, REVISION
 from fastapi.testclient import TestClient
 
 from biohack_gateway.app import create_app
+from biohack_gateway.datasets import MAX_FILTERS
 from biohack_gateway.tokens import TokenPool
 
 TEAM = "gw-01"
@@ -193,6 +194,29 @@ def test_a_filter_key_the_dataset_does_not_have_is_an_empty_page(client: TestCli
 
     assert response.status_code == 200
     assert response.json() == {"dataset": "gwfss", "count": 0, "next_cursor": None, "images": []}
+
+
+def test_a_repeated_filter_is_one_condition(client: TestClient) -> None:
+    """`?split=train&split=train` asks what one copy asks, and costs what one copy costs.
+
+    Selection is rows times conditions, and the query string is the one part of a request a client
+    sets without limit: a thousand copies of one condition measured 104 times the work of one, for
+    exactly the same page.
+    """
+    once = client.get("/datasets/gwhs-temp/images?split=train", headers=KEY).json()
+    twice = client.get("/datasets/gwhs-temp/images?split=train&split=train", headers=KEY).json()
+
+    assert twice == once
+
+
+def test_more_filters_than_the_surface_answers_are_refused(client: TestClient) -> None:
+    """Distinct conditions are capped, so a long query cannot buy unbounded work per row."""
+    query = "&".join(f"tags=v{index}" for index in range(MAX_FILTERS + 1))
+    response = client.get(f"/datasets/gwhs-temp/images?{query}", headers=KEY)
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "invalid_request"
+    assert str(MAX_FILTERS) in response.json()["error"]["message"]
 
 
 def test_limit_and_cursor_walk_the_page(client: TestClient) -> None:
