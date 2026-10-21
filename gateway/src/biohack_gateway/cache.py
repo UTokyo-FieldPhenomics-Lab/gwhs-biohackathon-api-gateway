@@ -260,8 +260,13 @@ class ResultCache:
         self._hits = 0
         self._misses = 0
         self._writes = 0
+        self._entries = 0
+        self._stored_bytes = 0
         self._closed = False
         if self._enabled:
+            # Read once, here: after this the counts are kept as answers are written and dropped, so
+            # `/pool` — which any key may call — never scans a file that may be gigabytes.
+            self._recount()
             # At startup rather than on the first answer: a host restarted after a week of traffic
             # should come back within its cap, not prune in the middle of serving.
             self.prune()
@@ -320,13 +325,22 @@ class ResultCache:
         if not self._enabled or self._closed:
             return
         try:
-            connection = self._connection()
-            connection.execute(
-                "INSERT OR REPLACE INTO answers (key, request, body, computed_at, bytes)"
-                " VALUES (?, ?, ?, ?, ?)",
-                (key, request, body, datetime.now(UTC).isoformat(), len(body)),
-            )
-            connection.commit()
+            with self._lock:
+                connection = self._connection()
+                previous = connection.execute(
+                    "SELECT bytes FROM answers WHERE key = ?", (key,)
+                ).fetchone()
+                connection.execute(
+                    "INSERT OR REPLACE INTO answers (key, request, body, computed_at, bytes)"
+                    " VALUES (?, ?, ?, ?, ?)",
+                    (key, request, body, datetime.now(UTC).isoformat(), len(body)),
+                )
+                connection.commit()
+                if previous is None:
+                    self._entries += 1
+                    self._stored_bytes += len(body)
+                else:
+                    self._stored_bytes += len(body) - previous[0]
         except (OSError, sqlite3.Error) as error:
             logger.warning("could not store a cached answer: %s", error)
             return
@@ -351,9 +365,16 @@ class ResultCache:
         if not self._enabled or self._closed:
             return
         try:
-            connection = self._connection()
-            connection.execute("DELETE FROM answers WHERE key = ?", (key,))
-            connection.commit()
+            with self._lock:
+                connection = self._connection()
+                previous = connection.execute(
+                    "SELECT bytes FROM answers WHERE key = ?", (key,)
+                ).fetchone()
+                connection.execute("DELETE FROM answers WHERE key = ?", (key,))
+                connection.commit()
+                if previous is not None:
+                    self._entries -= 1
+                    self._stored_bytes -= previous[0]
         except (OSError, sqlite3.Error) as error:
             logger.warning("could not drop a cached answer: %s", error)
 
@@ -365,11 +386,30 @@ class ResultCache:
         CacheStats
             Counts of entries, stored bytes, hits and misses. A disabled or unreadable cache reports
             zero entries, which is what it holds.
+
+        Notes
+        -----
+        The two stored figures are kept as answers are written and dropped, not measured here: this
+        route is open to any participant key, and the file it describes can be gigabytes. The price
+        is that they describe what *this process* has stored — one process serves, so that is the
+        file — and that a write which lost its commit is not counted.
         """
         with self._lock:
             hits, misses = self._hits, self._misses
+            entries, stored = self._entries, self._stored_bytes
         if not self._enabled or self._closed:
             return CacheStats(entries=0, bytes=0, hits=hits, misses=misses)
+        return CacheStats(entries=entries, bytes=stored, hits=hits, misses=misses)
+
+    def _recount(self) -> None:
+        """Read the store's totals once, so the rest of the process can count instead of scan.
+
+        Notes
+        -----
+        Called when the store is opened, before anything serves. A file that cannot be read leaves
+        the counts at zero, which is what a cache that only misses is worth; the first write that
+        succeeds starts counting from there.
+        """
         try:
             record = (
                 self._connection()
@@ -378,8 +418,8 @@ class ResultCache:
             )
         except (OSError, sqlite3.Error) as error:
             logger.warning("could not measure the cache: %s", error)
-            return CacheStats(entries=0, bytes=0, hits=hits, misses=misses)
-        return CacheStats(entries=record[0], bytes=record[1], hits=hits, misses=misses)
+            return
+        self._entries, self._stored_bytes = record[0], record[1]
 
     def prune(self) -> None:
         """Drop the oldest answers until the stored bodies fit under the cap.
@@ -393,23 +433,26 @@ class ResultCache:
         if not self._enabled or self._closed:
             return
         try:
-            connection = self._connection()
-            stored = connection.execute("SELECT COALESCE(SUM(bytes), 0) FROM answers").fetchone()[0]
-            if stored <= self._max_bytes:
-                return
-            excess = stored - self._max_bytes
-            freed = 0
-            doomed: list[tuple[str]] = []
-            oldest = connection.execute(
-                "SELECT key, bytes FROM answers ORDER BY computed_at, key"
-            ).fetchall()
-            for key, size in oldest:
-                if freed >= excess:
-                    break
-                doomed.append((key,))
-                freed += size
-            connection.executemany("DELETE FROM answers WHERE key = ?", doomed)
-            connection.commit()
+            with self._lock:
+                stored = self._stored_bytes
+                if stored <= self._max_bytes:
+                    return
+                connection = self._connection()
+                excess = stored - self._max_bytes
+                freed = 0
+                doomed: list[tuple[str]] = []
+                oldest = connection.execute(
+                    "SELECT key, bytes FROM answers ORDER BY computed_at, key"
+                ).fetchall()
+                for key, size in oldest:
+                    if freed >= excess:
+                        break
+                    doomed.append((key,))
+                    freed += size
+                connection.executemany("DELETE FROM answers WHERE key = ?", doomed)
+                connection.commit()
+                self._entries -= len(doomed)
+                self._stored_bytes -= freed
         except (OSError, sqlite3.Error) as error:
             logger.warning("could not prune the cache: %s", error)
             return

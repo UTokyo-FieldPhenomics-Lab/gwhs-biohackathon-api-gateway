@@ -388,6 +388,40 @@ def test_a_hit_answers_while_every_lane_is_busy(tmp_path: Path, index_dir: Path)
         next(served, None)
 
 
+def test_stats_counts_entries_and_bytes_as_they_are_written_and_dropped(tmp_path: Path) -> None:
+    """The figures `/pool` publishes are kept, not measured: the file can be gigabytes.
+
+    Any participant key may call that route, so the alternative — a `SUM` over every stored body —
+    turns a status read into a cold scan of the whole store.
+    """
+    cache = ResultCache(tmp_path / "cache.sqlite", 10_000, enabled=True)
+    try:
+        cache.put("a", "req", b"x" * 100)
+        cache.put("b", "req", b"x" * 50)
+        cache.put("a", "req", b"x" * 10)  # a replacement, not a second entry
+        assert (cache.stats().entries, cache.stats().bytes) == (2, 60)
+
+        cache.forget("a")
+        assert (cache.stats().entries, cache.stats().bytes) == (1, 50)
+    finally:
+        cache.close()
+
+
+def test_a_reopened_store_counts_what_was_already_there(tmp_path: Path) -> None:
+    """The totals survive a restart because they are read from the file once, at open."""
+    path = tmp_path / "cache.sqlite"
+    first = ResultCache(path, 10_000, enabled=True)
+    first.put("a", "req", b"x" * 40)
+    first.put("b", "req", b"x" * 60)
+    first.close()
+
+    again = ResultCache(path, 10_000, enabled=True)
+    try:
+        assert (again.stats().entries, again.stats().bytes) == (2, 100)
+    finally:
+        again.close()
+
+
 def test_pruning_respects_the_cap_and_keeps_the_newest(tmp_path: Path) -> None:
     """Pruning drops the oldest answers until the store fits, and keeps the newest whole."""
     cache = ResultCache(tmp_path / "cache.sqlite", 250, enabled=True)
