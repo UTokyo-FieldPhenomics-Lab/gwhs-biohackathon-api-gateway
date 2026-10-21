@@ -13,11 +13,15 @@ Nothing here encodes geometry, holds a weight, or knows what a mask is. :class:`
 definition of the same body is the one thing this surface must not grow, and `gateway.md` asks for
 exactly one object shape across the two surfaces so a participant writes one decoder.
 
-Routing is the whole algorithm — try a model's backends in order of expected wait, mark a failed one
-unhealthy for at least as long as the failure cost, move on. There is no circuit breaker and no
-weighted choice, which are for a pool larger than this one, and no health loop, which is what
-`gateway.md` forbids: the gateway learns a backend is gone from a real request's failure, and
-:data:`RESPONSE_TIMEOUT_SECONDS` is what that costs.
+Routing is the whole algorithm — try a model's backends in order of expected wait, pass over the one
+that is gone for at least as long as the failure cost, move on. What counts as gone is narrow on
+purpose: a machine that did not answer, one that answered as a proxy which cannot reach its model,
+and a run of `500`s that says the application is failing rather than this request. A request a
+backend could not handle is answered and does not take the pool with it, and a timeout while a body
+was still going out is charged to the link rather than to the machine. There is no circuit breaker
+and no weighted choice, which are for a pool larger than this one. Availability is probed on a clock
+of its own (:data:`PROBE_INTERVAL_SECONDS`), because what a request observes is a sample, and
+:data:`RESPONSE_TIMEOUT_SECONDS` is what a dead backend costs a caller.
 
 **Control parameters come from the model, not from here.** A model declares what it accepts — the
 prompt it can be given, the boxes and points it can be aimed with, the threshold it applies, the
@@ -127,6 +131,33 @@ what every dead backend here has actually done.
 assert UNHEALTHY_SECONDS >= RESPONSE_TIMEOUT_SECONDS, (
     "a failed backend must be passed over for at least as long as the failure it remembers cost"
 )
+
+MIN_SEND_BYTES_PER_SECOND = 250_000.0
+"""The slowest path an upload's send may finish on before it counts as a failure.
+
+The send and the answer are bounded separately because different things limit them: the answer is
+the machine working, which has a measured ceiling, while the send is this host's route to the
+machine, whose rate belongs to the network of the day. Fifteen megabytes at this floor is a minute,
+which is generous on purpose — a body already accepted from a participant is worth delivering, and a
+send that is merely slow must not be recorded as a machine that failed.
+"""
+
+MACHINE_STATUSES = frozenset({502, 503, 504})
+"""Answers that say the machine is not serving, rather than that one request failed.
+
+A proxy in front of the model — or the model's own gateway — answers these when it cannot reach what
+it fronts, so they are what a machine that is gone looks like. `500` is deliberately not here: it is
+one request the backend could not handle, and the next request may be fine.
+"""
+
+MAX_CONSECUTIVE_SERVER_ERRORS = 3
+"""`5xx` answers in a row after which the machine is passed over anyway.
+
+Two things are true at once about a `500`: one crashing request must not take a whole model off the
+pool, and a container that answers `500` to everything must not keep taking traffic forever. A short
+run of them is the line between the two — the probe cannot see this case, because a backend whose
+application fails still answers `/health` with `200`.
+"""
 
 DECLARATION_RETRY_SECONDS = 30.0
 """How long before a backend that did not answer at all is asked again.
@@ -416,11 +447,20 @@ class Reply:
     timed_out : bool
         Whether the failure was the clock rather than the backend, which decides the error code the
         caller sees.
+    stage : str or None
+        Which half of the exchange the clock ended, when it did: ``"send"`` while the body was still
+        going out, ``"read"`` while waiting for an answer. `None` otherwise.
+
+        The two are different facts about different things. A slow send is this host's path to the
+        machine — a 15 MB body over a degraded link — and a send the clock ended says nothing about
+        whether the machine is serving, so treating it as a failed backend shut a healthy one out of
+        the pool and repeated the same slow send against the next.
     """
 
     status: int
     body: bytes
     timed_out: bool = False
+    stage: Literal["send", "read"] | None = None
 
 
 Transport = Callable[[str, str, Mapping[str, str], bytes | None, float], Reply]
@@ -563,6 +603,13 @@ def http_transport(
     connection the peer has already closed is **retried once on a fresh one**: a keep-alive window
     running out is not a failed backend, and without that retry pooling would turn a saving into the
     first request after every quiet period failing.
+
+    The budget is applied to the socket, not to the `HTTPConnection`: the object reads its timeout
+    only when it creates a socket, and a connection taken from the pool already has one — the
+    probe's own, three seconds. A reused connection therefore has its socket's timeout set twice per
+    call, once to the send budget and once to the response budget, which is what keeps a slow upload
+    from timing out an inference that never started and an inference from being mistaken for a slow
+    upload.
     """
     parsed = urllib.parse.urlsplit(url)
     factory = _CONNECTIONS.get(parsed.scheme)
@@ -574,15 +621,29 @@ def http_transport(
     target = parsed.path or "/"
     if parsed.query:
         target = f"{target}?{parsed.query}"
+    send_timeout = max(timeout, len(body) / MIN_SEND_BYTES_PER_SECOND) if body else timeout
 
     for attempt in (0, 1):
         connection = _checkout(key) if attempt == 0 else None
         reused = connection is not None
         if connection is None:
             connection = factory(parsed.hostname, parsed.port, timeout=timeout)
-        connection.timeout = timeout
+        # The socket carries the send budget while the body goes out and the response budget once
+        # it has, because the two are limited by different things (see
+        # :data:`MIN_SEND_BYTES_PER_SECOND`). `timeout` is read when a socket is *created*, not
+        # after: assigning the attribute alone leaves a kept connection on the budget it was made
+        # with, and the probe makes its own with :data:`DECLARATION_TIMEOUT_SECONDS` — which is how
+        # a predict that reused one timed out at three seconds.
+        connection.timeout = send_timeout
+        if connection.sock is not None:
+            connection.sock.settimeout(send_timeout)
+        stage: Literal["send", "read"] = "send"
         try:
             connection.request(method, target, body=body, headers=dict(headers))
+            stage = "read"
+            connection.timeout = timeout
+            if connection.sock is not None:
+                connection.sock.settimeout(timeout)
             response = connection.getresponse()
             try:
                 payload = response.read()
@@ -590,7 +651,7 @@ def http_transport(
                 response.close()
         except TimeoutError:
             connection.close()
-            return Reply(status=0, body=b"", timed_out=True)
+            return Reply(status=0, body=b"", timed_out=True, stage=stage)
         except ConnectionError as error:
             # `RemoteDisconnected` is a `ConnectionResetError`, and a reset or a broken pipe here is
             # the peer having closed a connection we were keeping. Retried once, never twice, and
@@ -691,6 +752,12 @@ class Backend:
         Attempts this gateway currently has running against this backend. Read when choosing which
         backend to try, so that a request arriving while another is in flight to one that is in fact
         dead does not queue behind that backend's own timeout.
+    server_errors : int
+        Consecutive answers in the `5xx` range, reset by any success. A `500` is one request the
+        backend could not handle rather than a machine that is gone, so it takes
+        :data:`MAX_CONSECUTIVE_SERVER_ERRORS` of them before the machine is passed over: the first
+        one must not shut a healthy backend out of the pool, and a container that answers `500` to
+        everything must not keep taking traffic.
     """
 
     url: str
@@ -704,6 +771,7 @@ class Backend:
     probed_at: float = 0.0
     rtt_seconds: float = 0.0
     in_flight: int = 0
+    server_errors: int = 0
     declared: bool = False
     """Whether this backend has answered what it serves, ever. Once true it is never asked again."""
     answered: bool = False
@@ -857,8 +925,8 @@ class ModelRegistry:
         -----
         A backend answers this without a token, because ``/health`` is for a human and the deploy
         script and carries no data. A backend that does not answer is logged and left undeclared:
-        its address still routes, and a later request asks it again, so a container that was still
-        loading its weights when the gateway started describes itself once it is up.
+        its address still routes, and the probe asks it again, so a container that was still loading
+        its weights when the gateway started describes itself once it is up.
         """
         backend.tried_at = time.monotonic()
         reply = self._ask(backend)
@@ -930,10 +998,16 @@ class ModelRegistry:
         that answers is logged when it starts answering and when it stops — never on each pass,
         because a machine that is off for an afternoon would otherwise write a line every
         :data:`PROBE_INTERVAL_SECONDS`.
+
+        A backend that never declared anything **is** asked again here, on this same clock: the
+        gateway and a container start independently, and the retry belongs to the probe rather than
+        to a request, so a page load never waits three seconds on a machine that is switched off.
         """
         for backends in self._backends.values():
             for backend in backends:
                 self._probe(backend)
+        for model, backends in self._backends.items():
+            self._refresh_undeclared(model, backends)
 
     def _probe(self, backend: Backend) -> None:
         """Ask one backend, and log the answer only where it differs from the last one."""
@@ -974,11 +1048,18 @@ class ModelRegistry:
         HTTPException
             No model has that id. The name is not repeated in the message, so nothing a caller sent
             is echoed back.
+
+        Notes
+        -----
+        Nothing is asked of a backend here. Describing is what a page does on every load and what a
+        predict does before it can even route, so the answer is what the probe last saw — an
+        undeclared backend is asked again by :meth:`probe`, on its own clock. Asking from this path
+        meant that one switched-off backend made a request wait three seconds, once per retry
+        window, on every model that had it.
         """
         backends = self._backends.get(model)
         if backends is None:
             raise HTTPException(status_code=404, detail="no such model")
-        self._refresh_undeclared(model, backends)
         now = time.monotonic()
         live = [
             backend for backend in backends if backend.alive and not backend.is_passed_over(now)
@@ -1256,15 +1337,16 @@ class ModelRegistry:
             configured none for this model; or when every backend that was tried failed, reported as
             an upstream failure with the status the last one gave.
         """
-        backends, ahead, machine_ahead = self._begin(model, path)
         if not self._token:
             # Fail closed and say whose fault it is. Without a token every backend would answer 401,
             # which the surface maps to a client error — a misconfigured gateway reported as a bad
-            # request, which sends the reader looking in the wrong place.
+            # request, which sends the reader looking in the wrong place. Asked before the
+            # reservation: a machine that is never called must not keep a lane counted against it.
             raise HTTPException(
                 status_code=503,
                 detail="the gateway is not configured to reach models",
             )
+        backends, ahead, machine_ahead = self._begin(model, path)
         if not backends:
             raise HTTPException(
                 status_code=503,
@@ -1311,6 +1393,7 @@ class ModelRegistry:
             )
             if 200 <= reply.status < 300:
                 backend.unhealthy_until = 0.0
+                backend.server_errors = 0
                 return reply
             if 400 <= reply.status < 500:
                 # The request's fault, so it is the client's answer and no other backend is asked:
@@ -1324,7 +1407,20 @@ class ModelRegistry:
                         status_code=503,
                         detail="the gateway cannot authenticate to a backend right now",
                     )
-                raise HTTPException(status_code=reply.status, detail=_refusal(reply))
+                raise HTTPException(
+                    status_code=_refusal_status(reply.status),
+                    detail=_refusal_detail(reply),
+                )
+            if reply.timed_out and reply.stage == "send":
+                # The body was still going out when the clock ended: that is this host's path to
+                # the machine, not the machine. It is neither passed over nor retried — the same
+                # body would spend the same send on the next link — so the caller is told what
+                # happened and the pool is left alone.
+                logger.warning("sending to %s timed out; the link, not the backend", backend.url)
+                raise HTTPException(
+                    status_code=504,
+                    detail="the upload could not be sent to the model in time",
+                )
             # The cause is named rather than reduced to a status: `0` covers a refused connection,
             # no route and an unreadable name, and none of them is a timeout — a log line reading
             # "timeout" would send an operator to the wrong knob. The transport logs the operating
@@ -1336,9 +1432,29 @@ class ModelRegistry:
                 if reply.status
                 else "unreachable"
             )
-            logger.warning("backend %s failed a %s: %s", backend.url, model, cause)
-            backend.unhealthy_until = time.monotonic() + UNHEALTHY_SECONDS
-            failures.append(reply)
+            backend.server_errors += 1
+            if (
+                reply.status == 0
+                or reply.status in MACHINE_STATUSES
+                or backend.server_errors >= MAX_CONSECUTIVE_SERVER_ERRORS
+            ):
+                logger.warning("backend %s failed a %s: %s", backend.url, model, cause)
+                backend.unhealthy_until = time.monotonic() + UNHEALTHY_SECONDS
+                failures.append(reply)
+                continue
+            # One request the backend could not handle. Retrying it elsewhere would spread whatever
+            # it is, so it is answered here and the machine stays in the pool.
+            logger.warning(
+                "backend %s could not handle a %s (%s, %d in a row); still serving",
+                backend.url,
+                model,
+                cause,
+                backend.server_errors,
+            )
+            raise HTTPException(
+                status_code=502,
+                detail="the model could not handle this request",
+            )
 
         last = failures[-1]
         if last.timed_out:
@@ -2006,9 +2122,11 @@ def create_model_router(
                 headers={"Retry-After": str(refused.retry_after_seconds)},
             ) from None
         started = time.monotonic()
-        # At least the body has crossed; the answer's bytes are added once there is one, so a
-        # failed forward is still recorded as having used the link for what it did send.
-        completed = len(payload)
+        # Nothing has crossed until the transport says it did. A refused connection, or a send the
+        # clock ended, carried no bytes to the backend; counting the body anyway would book it as an
+        # instant transfer, raise the measured rate, and widen admission exactly when the path is at
+        # its worst.
+        completed = 0
         try:
             reply = registry.forward(
                 model,
@@ -2017,12 +2135,55 @@ def create_model_router(
                 body=payload,
                 content_type=media_type,
             )
-            completed += len(reply.body)
+            completed = len(payload) + len(reply.body)
         finally:
             uploads.release(team, len(payload), time.monotonic() - started, completed)
         return _prediction(reply, model)
 
     return router
+
+
+def _refusal_status(status: int) -> int:
+    """Map a backend's refusal into a status this contract publishes.
+
+    Parameters
+    ----------
+    status : int
+        The backend's own `4xx`.
+
+    Returns
+    -------
+    int
+        ``400`` for a refusal that is about the request — including the ``422`` a framework answers
+        with, which this contract never does — and ``502`` for the ones that are about how the
+        gateway is configured: a backend that does not serve this model, or that refuses the shape
+        the gateway sends. A participant reading ``502`` knows to tell the operator rather than to
+        edit a request that was already valid here.
+    """
+    return 400 if status in (400, 422) else 502
+
+
+def _refusal_detail(reply: Reply) -> str:
+    """Word a backend's refusal as this contract's message.
+
+    Parameters
+    ----------
+    reply : Reply
+        The refusal.
+
+    Returns
+    -------
+    str
+        The backend's own words **only** where it is complaining about the request's parameters,
+        which is the one case where its sentence is what the participant needs. Otherwise a
+        sentence of this contract's: an internal address or a traceback in a backend's body is not
+        something a participant should be reading.
+    """
+    if reply.status in (400, 422):
+        return _refusal(reply)
+    if reply.status == 404:
+        return "the backend does not serve this model"
+    return "the backend could not serve this request"
 
 
 def _refusal(reply: Reply) -> str:

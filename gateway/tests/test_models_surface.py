@@ -9,6 +9,7 @@ a failure was. What a model actually computes is the container's business and is
 from __future__ import annotations
 
 import asyncio
+import http.client
 import json
 import logging
 import socket
@@ -25,6 +26,7 @@ from unittest import mock
 import httpx
 import pytest
 import uvicorn
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from biohack_gateway.app import create_app, occupies_lane
@@ -36,6 +38,7 @@ from biohack_gateway.models import (
     ModelRegistry,
     Reply,
     _BoundedHTTPConnection,
+    _checkin,
     http_transport,
     watch_pool,
 )
@@ -461,8 +464,8 @@ def test_a_row_that_does_not_exist_is_refused(client: TestClient) -> None:
 def test_a_failed_backend_is_passed_over_and_the_next_one_answers(
     tmp_path: Path, index_dir: Path
 ) -> None:
-    """A machine that just failed is not asked again for thirty seconds."""
-    backends = FakeBackends(replies={FIRST: [Reply(status=500, body=b"boom")]})
+    """A machine that answered as a proxy that cannot reach its model is not asked again."""
+    backends = FakeBackends(replies={FIRST: [Reply(status=502, body=b"boom")]})
     client = next(build_client(tmp_path, index_dir, backends))
 
     first = client.post(f"/models/{MODEL}/predict", headers=KEY, json={"dataset": "gwhd", "row": 0})
@@ -478,6 +481,121 @@ def test_a_failed_backend_is_passed_over_and_the_next_one_answers(
         f"{SECOND}/models/{MODEL}/predict",
         f"{SECOND}/models/{MODEL}/predict",
     ]
+
+
+def test_one_server_error_is_answered_without_passing_the_machine_over() -> None:
+    """A `500` is one request the backend could not handle, not a machine that is gone.
+
+    Passing the backend over on the first one let a single crashing request take a model off the
+    pool for thirty seconds — and retrying that same body on the next machine is how the crash
+    spread. The caller is told, and the machine keeps its place.
+    """
+    backends = FakeBackends(replies={FIRST: [Reply(status=500, body=b"boom")]})
+    with _no_round_trip():
+        registry = ModelRegistry({MODEL: [FIRST, SECOND]}, BACKEND_TOKEN, backends)
+
+    with pytest.raises(HTTPException) as refused:
+        registry.forward(MODEL, "predict", "", b"{}", "application/json")
+
+    backend = registry._backends[MODEL][0]  # noqa: SLF001 — the assertion is the counter
+    assert refused.value.status_code == 502
+    assert backend.unhealthy_until == 0.0
+    assert [url for _, url, _, _ in backends.predict_calls()] == [f"{FIRST}/models/{MODEL}/predict"]
+
+
+def test_three_server_errors_in_a_row_pass_the_machine_over() -> None:
+    """A container that answers `500` to everything is a machine that is gone, eventually.
+
+    The probe cannot see this: an application that fails still answers `/health` with `200`. A short
+    run of `5xx` is the line between one bad request and a backend that should be passed over.
+    """
+    backends = FakeBackends(replies={FIRST: [Reply(status=500, body=b"boom")]})
+    with _no_round_trip():
+        registry = ModelRegistry({MODEL: [FIRST, SECOND]}, BACKEND_TOKEN, backends)
+
+    outcomes: list[int] = []
+    for _ in range(3):
+        try:
+            outcomes.append(
+                registry.forward(MODEL, "predict", "", b"{}", "application/json").status
+            )
+        except HTTPException as refused:
+            outcomes.append(refused.status_code)
+
+    backend = registry._backends[MODEL][0]  # noqa: SLF001 — the assertion is the counter
+    assert outcomes == [502, 502, 200], "the third answer should have come from the second machine"
+    assert backend.unhealthy_until > 0.0
+
+
+def test_a_send_that_times_out_is_not_a_backend_failure() -> None:
+    """The upload's link belongs to this host, so the machine keeps its place and gets no re-send.
+
+    A fifteen-megabyte body on a degraded path ended on the clock before the backend saw a request.
+    Treating that as the backend's fault shut a healthy machine out of the pool and spent the same
+    send again on the next one.
+    """
+    backends = FakeBackends(
+        replies={FIRST: [Reply(status=0, body=b"", timed_out=True, stage="send")]}
+    )
+    with _no_round_trip():
+        registry = ModelRegistry({MODEL: [FIRST, SECOND]}, BACKEND_TOKEN, backends)
+
+    for _ in range(2):
+        with pytest.raises(HTTPException) as refused:
+            registry.forward(MODEL, "predict/upload", "", b"\x89PNG", "image/png")
+        assert refused.value.status_code == 504
+
+    backend = registry._backends[MODEL][0]  # noqa: SLF001 — the assertion is the counter
+    assert backend.unhealthy_until == 0.0
+    assert [url for _, url, _, _ in backends.predict_calls()] == [
+        f"{FIRST}/models/{MODEL}/predict/upload",
+        f"{FIRST}/models/{MODEL}/predict/upload",
+    ], "the body was re-sent to another machine"
+
+
+def test_a_backend_refusal_is_rewritten_into_this_contract() -> None:
+    """A backend's status and words are its own; a participant reads one contract.
+
+    `422` would break the promise that a bad request is `400`; a `404` from a backend means the
+    gateway is misconfigured, which is `502` rather than the caller's mistake; and only a complaint
+    about the parameters is worth passing on, because anything else may name an address inside the
+    pool.
+    """
+    backends = FakeBackends(
+        replies={
+            FIRST: [
+                Reply(status=422, body=b'{"detail": "prompt is too long"}'),
+                Reply(status=404, body=b'{"detail": "http://192.0.2.10:8000/internal"}'),
+            ]
+        }
+    )
+    with _no_round_trip():
+        registry = ModelRegistry({MODEL: [FIRST]}, BACKEND_TOKEN, backends)
+
+    with pytest.raises(HTTPException) as unprocessable:
+        registry.forward(MODEL, "predict", "prompt=x", b"{}", "application/json")
+    with pytest.raises(HTTPException) as missing:
+        registry.forward(MODEL, "predict", "", b"{}", "application/json")
+
+    assert unprocessable.value.status_code == 400
+    assert "prompt is too long" in unprocessable.value.detail
+    assert missing.value.status_code == 502
+    assert "192.0.2.10" not in missing.value.detail
+
+
+def test_a_gateway_without_a_token_leaves_no_lane_counted() -> None:
+    """The refusal is decided before a machine is reserved, so no count is stranded."""
+    backends = FakeBackends()
+    with _no_round_trip():
+        registry = ModelRegistry({MODEL: [FIRST]}, "", backends)
+
+    with pytest.raises(HTTPException) as refused:
+        registry.forward(MODEL, "predict", "", b"{}", "application/json")
+
+    backend = registry._backends[MODEL][0]  # noqa: SLF001 — the assertion is the counter
+    assert refused.value.status_code == 503
+    assert backend.in_flight == 0
+    assert registry._machine_in_flight == {}  # noqa: SLF001 — same counter, per machine
 
 
 def _inference_lines(caplog: pytest.LogCaptureFixture) -> list[str]:
@@ -537,7 +655,7 @@ def test_a_fallback_attempt_says_which_backend_it_reached(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A second machine tried in the same request logs `attempt=1` against that machine."""
-    backends = FakeBackends(replies={FIRST: [Reply(status=500, body=b"boom")]})
+    backends = FakeBackends(replies={FIRST: [Reply(status=502, body=b"boom")]})
     with _no_round_trip():
         registry = ModelRegistry({MODEL: [FIRST, SECOND]}, BACKEND_TOKEN, backends)
 
@@ -547,7 +665,7 @@ def test_a_fallback_attempt_says_which_backend_it_reached(
     assert reply.status == 200
     fields = [_fields(line) for line in _inference_lines(caplog)]
     assert [(entry["attempt"], entry["backend"], entry["status"]) for entry in fields] == [
-        ("0", FIRST, "500"),
+        ("0", FIRST, "502"),
         ("1", SECOND, "200"),
     ]
     assert [entry["mode"] for entry in fields] == ["predict/upload", "predict/upload"]
@@ -871,8 +989,9 @@ def test_a_container_still_loading_describes_itself_once_it_is_up(
     """The gateway and a container start independently, so a refusal must not be permanent.
 
     This is the ordinary boot race: the gateway is up first, the container is still loading its
-    weights and answers ``503``, and nobody is going to restart the gateway afterwards. The registry
-    asks again, which is what makes the second describe the whole truth.
+    weights and answers ``503``, and nobody is going to restart the gateway afterwards. The probe
+    asks again — on its own clock, not a request's — which is what makes the next describe the whole
+    truth.
     """
     monkeypatch.setattr("biohack_gateway.models.DECLARATION_LOADING_RETRY_SECONDS", 0.0)
     loading = Reply(status=503, body=b'{"ready": false}')
@@ -880,25 +999,31 @@ def test_a_container_still_loading_describes_itself_once_it_is_up(
     backends = FakeBackends(health=[loading, ready])
     registry = ModelRegistry({MODEL: [FIRST]}, BACKEND_TOKEN, backends)
 
+    registry.probe()
+
     described = registry.describe(MODEL)
 
     assert described.resolution == 1008
     assert [parameter.name for parameter in described.parameters] == WEIGHTS
 
 
-def test_a_backend_that_declared_nothing_is_not_asked_on_every_request(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The retry is bounded: a machine that is off is asked once per window, not once per call."""
-    monkeypatch.setattr("biohack_gateway.models.DECLARATION_RETRY_SECONDS", 3600.0)
+def test_describing_a_model_asks_no_backend() -> None:
+    """A page load must not wait on a machine that is switched off.
+
+    The retry for an undeclared backend belongs to the probe. Asking from `describe` made a request
+    for any model with one dead backend wait the declaration budget, once per retry window — which
+    is the clock `gateway.md` says only the probe owns.
+    """
     backends = FakeBackends(health=[Reply(status=0, body=b"")])
     registry = ModelRegistry({MODEL: [FIRST]}, BACKEND_TOKEN, backends)
+    asked_at_startup = len(backends.asked)
 
     registry.describe(MODEL)
     registry.describe(MODEL)
     registry.directory()
 
-    assert len(backends.asked) == 1
+    assert asked_at_startup == 1, "the startup declaration is the one call this test expects"
+    assert len(backends.asked) == asked_at_startup
 
 
 def test_the_failure_memory_outlives_the_failure_it_remembers() -> None:
@@ -1038,6 +1163,83 @@ def test_a_refused_connection_is_not_reported_as_a_timeout() -> None:
 
     assert reply.status == 0
     assert reply.timed_out is False
+
+
+def test_a_reused_connection_takes_the_budget_of_the_call_that_took_it() -> None:
+    """The pool's most likely hand-me-down is the probe's connection, and the probe is in a hurry.
+
+    ``HTTPConnection.timeout`` is read when a socket is *created*, not afterwards, so a kept
+    connection carries the budget it was made with — and the probe makes its own with
+    :data:`DECLARATION_TIMEOUT_SECONDS`. A predict that took one from the pool without setting the
+    socket's timeout failed any inference longer than three seconds, on a backend that was fine.
+    """
+
+    class Slow(BaseHTTPRequestHandler):
+        """A backend that answers slowly enough to outlast the probe's budget."""
+
+        protocol_version = "HTTP/1.1"
+
+        def do_GET(self) -> None:
+            """Answer the probe at once, so its connection is what the pool keeps."""
+            body = b'{"ok": true}'
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_POST(self) -> None:
+            """Read the body, think for longer than the probe's budget, and answer."""
+            self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            time.sleep(0.35)
+            body = b'{"ok": true}'
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args: Any) -> None:
+            """Keep the request log off the test's stderr."""
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Slow)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    port = server.server_address[1]
+    try:
+        probe = http.client.HTTPConnection("127.0.0.1", port, timeout=0.05)
+        probe.request("GET", "/health")
+        probe.getresponse().read()
+        _checkin(("http", "127.0.0.1", port), probe)
+
+        reply = http_transport(
+            "POST", f"http://127.0.0.1:{port}/models/{MODEL}/predict", {}, b"{}", 5.0
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert reply.status == 200
+    assert reply.timed_out is False
+
+
+def test_a_send_the_clock_ended_is_marked_as_the_send() -> None:
+    """The phase decides what the failure means: the link, or the machine.
+
+    A body large enough to fill the socket buffers against a peer that never reads is the shape of a
+    degraded path. Without the phase, `forward` read that as a backend that had failed and shut a
+    healthy machine out of the pool.
+    """
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    port = listener.getsockname()[1]
+    try:
+        with mock.patch("biohack_gateway.models.MIN_SEND_BYTES_PER_SECOND", 100_000_000.0):
+            reply = http_transport("POST", f"http://127.0.0.1:{port}/x", {}, b"x" * 8_000_000, 0.2)
+    finally:
+        listener.close()
+
+    assert reply.status == 0
+    assert reply.timed_out is True
+    assert reply.stage == "send"
 
 
 def test_choosing_a_backend_and_reserving_it_are_one_step() -> None:

@@ -95,11 +95,12 @@ Every refusal is one body, whichever route produced it:
 | `404` | `not_found` | no such dataset or model |
 | `413` | `payload_too_large` | an upload over 15 MB — [resize it](#resizing-before-you-send) first |
 | `429` | `quota_exceeded` | three inferences in flight already from this key, or the upload link has no room for this body; nothing was queued, and `Retry-After` says when to come back |
+| `502` | `upstream_error` | a machine answered that it could not serve this request, or every machine for the model failed. Worth another call; one that keeps failing is worth reporting |
 | `503` | `unavailable` | no machine is answering this model. Safe to retry |
-| `504` | `upstream_timeout` | the model took too long. Safe to retry |
+| `504` | `upstream_timeout` | the model took too long, or an upload could not be delivered to it in time. Safe to retry |
 
-Nothing is retried for you. `503` and `504` are worth another call, `400` never is, and a client that
-guessed would hide which of the two happened.
+Nothing is retried for you. `502`, `503` and `504` are worth one more call, `400` never is, and a
+client that guessed would hide which of the two happened.
 
 ## Model parameters
 

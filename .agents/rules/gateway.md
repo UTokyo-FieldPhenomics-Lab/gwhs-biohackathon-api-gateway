@@ -75,13 +75,22 @@ here.
 - **The model surface is four routes, and its error mapping decides what a caller retries.** `GET
   /models` and `GET /models/{model}` answer what the pool holds; `POST /models/{model}/predict` takes
   an address and `POST /models/{model}/predict/upload` takes bytes, because one handler branching on a
-  content type would have two jobs. A backend's `4xx` is the request's fault: it is re-worded into this
-  contract's error shape and never retried. A backend's `5xx` or a timeout is the backend's fault: mark
-  it unhealthy for at least as long as the attempt's own budget and try the next, so a caller never
-  learns there was more than one
-  machine. A backend refusing the gateway's own token is neither — it is this side's misconfiguration
-  and answers `unavailable`, because telling a participant their key is wrong sends them to look in
-  the wrong place.
+  content type would have two jobs. A backend's `4xx` is the request's fault and is never retried —
+  but it is **mapped**, not forwarded: `400` and `422` become `400` carrying the backend's own
+  sentence, because that sentence is the parameter complaint the caller needs, while anything else
+  becomes `502`, because a backend that does not serve this model is a deployment mistake rather than
+  the caller's. A refusal's body is passed on only for the parameters; anything else is re-worded
+  here, since it may name an address inside the pool. **A `500` is not the machine failing**: it is
+  one request the backend could not handle, so it is answered `502` once — not retried elsewhere and
+  not passed over — because retrying that body is how a crash spreads; three in a row do pass the
+  machine over, since an application that fails still answers `/health` and the probe cannot see it.
+  Everything that means the machine is gone — no connection, a timeout, `502`/`503`/`504` — is passed
+  over for at least the attempt's own budget and the next machine is tried, so a caller never learns
+  there was more than one machine. **A timeout while the body is still going out is the link, not the
+  machine**: the send has a budget of its own (a fifteen-megabyte body may take a minute), the
+  machine keeps its place, and the body is not re-sent to another one. A backend refusing the
+  gateway's own token is neither — it is this side's misconfiguration and answers `unavailable`,
+  because telling a participant their key is wrong sends them to look in the wrong place.
 - **A model's control parameters are the model's, never the gateway's.** The container declares what
   it accepts, with types, defaults and bounds, in its own `/health`; the gateway repeats that
   declaration from `GET /models`, validates a request against it, and forwards the values verbatim.

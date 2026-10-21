@@ -262,7 +262,7 @@ no such row
 ```
 <!-- /output -->
 
-Nothing is retried for you: `503` and `504` are worth another call, `400` never is.
+Nothing is retried for you: `502`, `503` and `504` are worth another call, `400` never is.
 
 ## Next
 
