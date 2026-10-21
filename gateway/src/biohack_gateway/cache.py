@@ -5,11 +5,14 @@ the row was published at — nothing about it belongs to the caller or the sessi
 participant to ask therefore has no reason to occupy a GPU, and the pool is the one scarce thing
 this gateway holds.
 
-**The key is the whole answer's provenance.** The dataset's published `revision` is part of it, so a
-republish changes every key and the cache goes cold by itself rather than serving an answer about an
-image that has moved. The query is taken literally and only ordered by parameter name: two spellings
-of the same number (`0.7` and `0.70`) are two entries, which is a miss that costs one inference and
-never a wrong answer.
+**The key is the whole answer's provenance, and it is readable.** A stored answer is filed under the
+canonical question itself — dataset, published `revision`, row, model and query as compact JSON — so
+an operator reading the file sees what each entry answers, and no digest stands between a question
+and its entry. Changing the published `revision` changes its keys and makes those entries cold;
+republishing the same revision retains valid answers, because the revision identifies the row.
+The query is taken literally and only ordered by parameter name: two spellings of the same number
+(`0.7` and `0.70`) are two entries, which is a miss that costs one inference and never a wrong
+answer.
 
 **Only a `200` is ever stored**, by the caller: a refusal is about this request, and caching one
 would hand it to a caller who asked something else.
@@ -26,7 +29,6 @@ read while another thread writes, without a lock around the whole store.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import os
@@ -80,7 +82,10 @@ CREATE TABLE IF NOT EXISTS answers (
     bytes       INTEGER NOT NULL
 )
 """
-"""One row per answer. `request` is the canonical question kept for an operator reading the file."""
+"""One row per answer. `key` is the canonical question itself, and `request` repeats that text: the
+columns are kept as they were so a store filled before the key was readable still opens, cold-misses
+and ages out under pruning instead of needing a migration.
+"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,7 +133,7 @@ def canonical_request(*, dataset: str, revision: str, row: int, model: str, quer
     dataset : str
         The dataset id the row belongs to.
     revision : str
-        The dataset's published revision, so a republish is a different question.
+        The dataset's published revision; changing it makes a different question.
     row : int
         The absolute row of that revision.
     model : str
@@ -139,15 +144,19 @@ def canonical_request(*, dataset: str, revision: str, row: int, model: str, quer
     Returns
     -------
     str
-        Compact JSON with sorted keys and the query's parameters in name order. It is what
-        :func:`cache_key` digests, and what is stored beside the body so an operator can read what
-        an entry is for.
+        Compact JSON with sorted keys and the query's parameters in name order. It *is* the cache
+        key: :class:`ResultCache` files an answer under exactly this text, so a reader of the file
+        sees what an entry answers.
 
     Notes
     -----
     Only the *order* of the parameters is normalized, never their spelling: sorting is what makes
     two clients that send the same parameters in a different order one entry, while ``0.70`` and
     ``0.7`` stay two — this module may not know which of a model's parameters are numbers.
+
+    The `revision` is part of the text rather than a detail beside it, so a key says which publish
+    of a dataset it answers: a republish that changes the revision invalidates every answer by
+    itself, and one that keeps the revision leaves them valid.
     """
     return json.dumps(
         {
@@ -160,23 +169,6 @@ def canonical_request(*, dataset: str, revision: str, row: int, model: str, quer
         sort_keys=True,
         separators=(",", ":"),
     )
-
-
-def cache_key(request: str) -> str:
-    """Digest a canonical question into the key an answer is stored under.
-
-    Parameters
-    ----------
-    request : str
-        A string from :func:`canonical_request`.
-
-    Returns
-    -------
-    str
-        The SHA-256 of its UTF-8 bytes, as lowercase hex — fixed width, so it is a usable primary
-        key and carries nothing a caller could read.
-    """
-    return hashlib.sha256(request.encode("utf-8")).hexdigest()
 
 
 def _sorted_query(query: str) -> str:
@@ -209,11 +201,10 @@ class ResultCache:
         The cap on the stored bodies. `None` takes :data:`CACHE_MAX_BYTES_ENV`, or
         :data:`DEFAULT_CACHE_MAX_BYTES`.
 
-        Bodies, not bytes on disk: each entry also stores the canonical request it is keyed by —
-        this repository keeps no content hash, so the request text *is* the key — and SQLite keeps
-        its own pages beside the rows. The file is therefore larger than this number, by a factor
-        that depends on how small the answers are: a body of a few bytes against a query string of
-        up to
+        Bodies, not bytes on disk: each entry also stores the canonical request twice — once as the
+        key and once in the `request` column the existing schema keeps — and SQLite keeps its own
+        pages beside the rows. The file is therefore larger than this number, by a factor that
+        depends on how small the answers are: a body of a few bytes against a query string of up to
         :data:`biohack_gateway.models.MAX_QUERY_BYTES` weighs some hundreds of times what it is
         accounted at. Treat the setting as a bound on what is served from memory and replayed, not
         as a disk quota; watch the file itself if disk is the thing that matters.
@@ -271,13 +262,13 @@ class ResultCache:
             # should come back within its cap, not prune in the middle of serving.
             self.prune()
 
-    def get(self, key: str) -> CachedAnswer | None:
+    def get(self, request: str) -> CachedAnswer | None:
         """Look an answer up, or report that there is none.
 
         Parameters
         ----------
-        key : str
-            A string from :func:`cache_key`.
+        request : str
+            A string from :func:`canonical_request`: the question itself, which is the key.
 
         Returns
         -------
@@ -290,7 +281,7 @@ class ResultCache:
         try:
             record = (
                 self._connection()
-                .execute("SELECT body, computed_at FROM answers WHERE key = ?", (key,))
+                .execute("SELECT body, computed_at FROM answers WHERE key = ?", (request,))
                 .fetchone()
             )
         except (OSError, sqlite3.Error) as error:
@@ -304,15 +295,14 @@ class ResultCache:
         self._count(hit=True)
         return CachedAnswer(body=record[0], computed_at=datetime.fromisoformat(record[1]))
 
-    def put(self, key: str, request: str, body: bytes) -> None:
+    def put(self, request: str, body: bytes) -> None:
         """Store one backend's answer under the question it answers.
 
         Parameters
         ----------
-        key : str
-            A string from :func:`cache_key`.
         request : str
-            The canonical question, kept beside the body for whoever reads the file.
+            The canonical question from :func:`canonical_request`, used as the key and written to
+            the `request` column too, since the schema predates the key being readable.
         body : bytes
             The backend's own body. The caller stores a `200` and nothing else: a refusal belongs to
             the request that provoked it.
@@ -334,12 +324,12 @@ class ResultCache:
             connection = self._connection()
             with self._lock:
                 previous = connection.execute(
-                    "SELECT bytes FROM answers WHERE key = ?", (key,)
+                    "SELECT bytes FROM answers WHERE key = ?", (request,)
                 ).fetchone()
                 connection.execute(
                     "INSERT OR REPLACE INTO answers (key, request, body, computed_at, bytes)"
                     " VALUES (?, ?, ?, ?, ?)",
-                    (key, request, body, datetime.now(UTC).isoformat(), len(body)),
+                    (request, request, body, datetime.now(UTC).isoformat(), len(body)),
                 )
                 connection.commit()
                 if previous is None:
@@ -354,13 +344,13 @@ class ResultCache:
         if self._count_write() % PRUNE_EVERY_WRITES == 0:
             self.prune()
 
-    def forget(self, key: str) -> None:
+    def forget(self, request: str) -> None:
         """Drop one stored answer, so the next call for it asks a backend.
 
         Parameters
         ----------
-        key : str
-            A string from :func:`cache_key`.
+        request : str
+            The canonical question from :func:`canonical_request`, which is the key.
 
         Notes
         -----
@@ -376,9 +366,9 @@ class ResultCache:
             connection = self._connection()
             with self._lock:
                 previous = connection.execute(
-                    "SELECT bytes FROM answers WHERE key = ?", (key,)
+                    "SELECT bytes FROM answers WHERE key = ?", (request,)
                 ).fetchone()
-                connection.execute("DELETE FROM answers WHERE key = ?", (key,))
+                connection.execute("DELETE FROM answers WHERE key = ?", (request,))
                 connection.commit()
                 if previous is not None:
                     self._entries -= 1

@@ -53,7 +53,7 @@ from fastapi import APIRouter, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
 from biohack_gateway.admission import UploadQueue, UploadRefused
-from biohack_gateway.cache import CachedAnswer, ResultCache, cache_key, canonical_request
+from biohack_gateway.cache import CachedAnswer, ResultCache, canonical_request
 from biohack_gateway.dataset_index import Dataset
 from biohack_gateway.datasets import ObjectOut, image_addresses
 from biohack_gateway.limits import ConcurrencyGate
@@ -2338,8 +2338,7 @@ def create_model_router(
             model=model,
             query=query,
         )
-        key = cache_key(asked)
-        answer = _replay(cache, key, cache.get(key), model)
+        answer = _replay(cache, asked, cache.get(asked), model)
         if answer is None:
             with slots.hold(_team(request), f"POST {request.url.path}"):
                 reply = registry.forward(
@@ -2353,7 +2352,7 @@ def create_model_router(
                 # backend, and storing it would hand that 502 to every later caller of the key.
                 answer = _prediction(reply, model)
                 if reply.status == 200:
-                    cache.put(key, asked, reply.body)
+                    cache.put(asked, reply.body)
             verdict = "miss"
         else:
             verdict = "hit"
@@ -2400,7 +2399,8 @@ def create_model_router(
             The incoming request, whose query string is the model's own parameters. They are
             validated against the declaration and then forwarded verbatim.
         file : UploadFile
-            The image. Read into memory and forwarded; never written to disk.
+            The image, temporarily spooled by the multipart parser. Read into payload memory only
+            after link admission, forwarded, and never retained as a published object.
 
         Returns
         -------

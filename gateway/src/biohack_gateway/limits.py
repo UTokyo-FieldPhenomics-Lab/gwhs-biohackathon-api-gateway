@@ -41,7 +41,7 @@ from contextlib import contextmanager
 logger = logging.getLogger(__name__)
 
 Limit = int | Callable[[], int]
-"""A fixed ceiling, or one read at each request from whoever knows the pool's width."""
+"""A fixed ceiling or an injectable policy provider; the app uses a fixed default."""
 
 DEFAULT_MAX_CONCURRENT_PER_TOKEN = 3
 """How many inferences one key may have in flight when the host sets no override.
@@ -71,10 +71,9 @@ class ConcurrencyGate:
     Parameters
     ----------
     limit : int or callable
-        The ceiling per team. A callable is consulted on every request, which is how the cap
-        follows the pool as backends come up and go down; a number is fixed for the life of the
-        process. Zero or less disables the gate entirely, which is deliberate rather than
-        defensive: a load test needs one key to carry more than the pool's width.
+        The ceiling per team. An injected callable is consulted on every request; the application
+        passes a fixed policy number for the life of the process. Zero disables the gate for a
+        measurement; an explicitly negative number is a configuration error.
 
     Notes
     -----

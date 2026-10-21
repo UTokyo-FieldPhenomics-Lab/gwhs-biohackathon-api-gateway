@@ -84,11 +84,9 @@ is not, and both are read from here rather than written out again.
 CONCURRENCY_ENV = "BIOHACK_MAX_CONCURRENT_PER_TOKEN"
 """The environment variable that overrides the per-token concurrency cap.
 
-Unset is the normal state: the cap is then the pool's own width, read from the declarations
-`GET /models` sums. It exists for one purpose — a load test from a single key, which the pool's
-width would refuse after three inferences — so raising it is a deliberate act on the host and needs
-a restart to take effect. A value of `0` disables the cap, and a value that is not a number is
-ignored with a log line rather than silently becoming zero.
+Unset uses `DEFAULT_MAX_CONCURRENT_PER_TOKEN`, a fairness policy independent of the pool's
+published container capacity. An override supports load testing from one key and needs a restart.
+A value of `0` disables the cap; a non-number is logged and falls back to the policy default.
 """
 
 BACKEND_TOKEN_ENV = "BIOHACK_BACKEND_TOKEN"
@@ -558,7 +556,7 @@ def create_app(
         How the gateway reaches a backend. Injectable so a test can answer for one without starting
         one, which is what lets the surface's tests exercise the real gate and error contract.
     max_concurrent_per_token : int or None, optional
-        The cap on one token's requests in flight. `None` takes
+        The cap on one team's uncached inferences in flight. `None` takes
         :data:`biohack_gateway.limits.DEFAULT_MAX_CONCURRENT_PER_TOKEN`, `0` disables the cap, and a
         number fixes it — the last two only for measuring the pool from one key. It is a policy
         number and is deliberately not derived from the pool's published width.
@@ -1021,7 +1019,7 @@ def _env_concurrency() -> int | None:
     -------
     int or None
         The override, or `None` when the variable is unset, empty, or not a number — a host with a
-        typo in its environment should serve under the pool's own width rather than refuse every
+        typo in its environment should serve under the default policy rather than refuse every
         request after the first few.
     """
     raw = os.environ.get(CONCURRENCY_ENV, "").strip()
@@ -1030,7 +1028,7 @@ def _env_concurrency() -> int | None:
     try:
         return int(raw)
     except ValueError:
-        logger.warning("%s=%r is not a number; using the pool's width", CONCURRENCY_ENV, raw)
+        logger.warning("%s=%r is not a number; using the default cap", CONCURRENCY_ENV, raw)
         return None
 
 
@@ -1040,7 +1038,7 @@ app = create_app(
 )
 """The object uvicorn serves: ``uvicorn biohack_gateway.app:app``.
 
-The one setting read from the environment rather than passed in: the backend token is a secret, so
-it cannot live in a file this repository ships, and systemd supplies it from the host's environment.
-Nothing else about the host is read here — the paths have defaults and the tests pass their own.
+The host supplies the backend token and optional per-team cap override through its environment.
+The cache and upload admission constructors read their own documented environment settings.
+Dataset and token paths remain factory parameters with defaults; tests pass isolated state.
 """

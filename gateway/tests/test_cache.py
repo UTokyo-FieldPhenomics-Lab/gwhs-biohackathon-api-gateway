@@ -15,6 +15,7 @@ import threading
 import time
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +26,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from biohack_gateway.app import create_app
-from biohack_gateway.cache import CacheStats, ResultCache, cache_key, canonical_request
+from biohack_gateway.cache import CacheStats, ResultCache, canonical_request
 from biohack_gateway.models import Reply
 from biohack_gateway.tokens import TokenPool
 
@@ -308,7 +309,7 @@ def test_another_question_is_a_miss(tmp_path: Path, index_dir: Path, change: str
 
 
 def test_a_republished_dataset_is_a_miss(tmp_path: Path, index_dir: Path) -> None:
-    """The revision is part of the key, so a republish makes the store cold by itself.
+    """Changing the published revision makes the store cold after a gateway restart.
 
     The same app would never see a new revision — the index is read once — so this is what a
     restart after a publish does, with the same file on disk.
@@ -330,6 +331,64 @@ def test_a_republished_dataset_is_a_miss(tmp_path: Path, index_dir: Path) -> Non
 
     assert "cached" not in republished.json()
     assert len(backends.predictions()) == 2
+
+
+def test_the_key_persisted_is_the_canonical_question(tmp_path: Path, index_dir: Path) -> None:
+    """An answer is stored under the readable question itself, not under a digest of it.
+
+    Readable keys are what let an operator read the file, and every byte of provenance — dataset,
+    revision, row, model, query — is in the key rather than in a column beside it.
+    """
+    backends = FakeBackends()
+    path = tmp_path / "cache.sqlite"
+    with _client(tmp_path, index_dir, backends, ResultCache(path, 1 << 20, enabled=True)) as client:
+        assert _predict(client, row=0).status_code == 200
+
+    expected = canonical_request(dataset="gwhd", revision=REVISION, row=0, model=MODEL, query="")
+    connection = sqlite3.connect(path)
+    try:
+        keys = [record[0] for record in connection.execute("SELECT key FROM answers")]
+    finally:
+        connection.close()
+
+    assert keys == [expected], "the persisted key is not the canonical question text"
+    assert json.loads(keys[0])["revision"] == REVISION, "the revision left the key"
+
+
+def test_an_entry_keyed_by_an_old_digest_does_not_replay(tmp_path: Path, index_dir: Path) -> None:
+    """A file filled before the key was the question is cold, and fills again under the text.
+
+    The schema is unchanged, so the old rows are still readable: they simply answer no lookup, and
+    pruning ages them out. That is what lets this change ship without migrating or clearing a store.
+    """
+    backends = FakeBackends()
+    path = tmp_path / "cache.sqlite"
+    cache = ResultCache(path, 1 << 20, enabled=True)
+    asked = canonical_request(dataset="gwhd", revision=REVISION, row=0, model=MODEL, query="")
+    body = json.dumps(PREDICTION).encode()
+    old_key = "a" * 64
+    with _client(tmp_path, index_dir, backends, cache) as client:
+        connection = sqlite3.connect(path)
+        try:
+            connection.execute(
+                "INSERT INTO answers (key, request, body, computed_at, bytes)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (old_key, asked, body, datetime.now(UTC).isoformat(), len(body)),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        answer = _predict(client, row=0)
+
+    assert len(backends.predictions()) == 1, "an answer keyed by a digest was replayed"
+    assert "cached" not in answer.json()
+    connection = sqlite3.connect(path)
+    try:
+        keys = {record[0] for record in connection.execute("SELECT key FROM answers")}
+    finally:
+        connection.close()
+    assert asked in keys, "the miss was not stored under the canonical question"
 
 
 def test_a_hit_answers_while_every_lane_is_busy(tmp_path: Path, index_dir: Path) -> None:
@@ -396,9 +455,9 @@ def test_stats_counts_entries_and_bytes_as_they_are_written_and_dropped(tmp_path
     """
     cache = ResultCache(tmp_path / "cache.sqlite", 10_000, enabled=True)
     try:
-        cache.put("a", "req", b"x" * 100)
-        cache.put("b", "req", b"x" * 50)
-        cache.put("a", "req", b"x" * 10)  # a replacement, not a second entry
+        cache.put("a", b"x" * 100)
+        cache.put("b", b"x" * 50)
+        cache.put("a", b"x" * 10)  # a replacement, not a second entry
         assert (cache.stats().entries, cache.stats().bytes) == (2, 60)
 
         cache.forget("a")
@@ -411,8 +470,8 @@ def test_a_reopened_store_counts_what_was_already_there(tmp_path: Path) -> None:
     """The totals survive a restart because they are read from the file once, at open."""
     path = tmp_path / "cache.sqlite"
     first = ResultCache(path, 10_000, enabled=True)
-    first.put("a", "req", b"x" * 40)
-    first.put("b", "req", b"x" * 60)
+    first.put("a", b"x" * 40)
+    first.put("b", b"x" * 60)
     first.close()
 
     again = ResultCache(path, 10_000, enabled=True)
@@ -427,11 +486,8 @@ def test_pruning_respects_the_cap_and_keeps_the_newest(tmp_path: Path) -> None:
     cache = ResultCache(tmp_path / "cache.sqlite", 250, enabled=True)
     keys: list[str] = []
     for row in range(5):
-        request = canonical_request(
-            dataset="gwhd", revision=REVISION, row=row, model=MODEL, query=""
-        )
-        key = cache_key(request)
-        cache.put(key, request, b"x" * 100)
+        key = canonical_request(dataset="gwhd", revision=REVISION, row=row, model=MODEL, query="")
+        cache.put(key, b"x" * 100)
         keys.append(key)
         time.sleep(0.002)  # a distinct computed_at per entry, so "oldest" is decidable
     assert cache.stats().bytes == 500
@@ -494,7 +550,7 @@ def test_a_first_write_from_a_pool_thread_returns(tmp_path: Path) -> None:
 
     def write() -> None:
         try:
-            cache.put("a", "req", b"x" * 10)
+            cache.put("a", b"x" * 10)
         except BaseException as error:  # reported by the assertion, not swallowed
             failures.append(error)
 
@@ -519,7 +575,7 @@ def test_a_first_forget_or_prune_from_a_pool_thread_returns(tmp_path: Path, meth
     """
     cache = ResultCache(tmp_path / "cache.sqlite", 150, enabled=True)
     for row in range(3):
-        cache.put(f"k{row}", "req", b"x" * 100)
+        cache.put(f"k{row}", b"x" * 100)
         time.sleep(0.002)  # a distinct computed_at per entry, so "oldest" is decidable
     assert cache.stats().bytes == 300
 
@@ -551,7 +607,7 @@ def test_a_failed_open_is_retried_by_the_next_call(tmp_path: Path) -> None:
     blocker.write_text("not a directory", encoding="utf-8")
     cache = ResultCache(blocker / "cache.sqlite", 10_000, enabled=True)
     worker = threading.Thread(
-        target=lambda: cache.put("a", "req", b"x" * 10), name="recovering-put", daemon=True
+        target=lambda: cache.put("a", b"x" * 10), name="recovering-put", daemon=True
     )
     try:
         assert cache.get("a") is None, "a store that could not be opened must miss"
@@ -590,9 +646,7 @@ def test_stats_answers_while_another_thread_opens_a_connection(
 
     monkeypatch.setattr(cache, "_open", slow_open)
     observed: list[CacheStats] = []
-    worker = threading.Thread(
-        target=lambda: cache.put("a", "req", b"x"), name="slow-open", daemon=True
-    )
+    worker = threading.Thread(target=lambda: cache.put("a", b"x"), name="slow-open", daemon=True)
 
     worker.start()
     try:
@@ -661,10 +715,10 @@ def test_a_write_that_did_not_commit_is_neither_stored_nor_counted(
     monkeypatch.setattr(cache, "_connection", lambda: failing)
     try:
         with caplog.at_level(logging.WARNING, logger="biohack_gateway.cache"):
-            cache.put("a", "req", b"x" * 10)
+            cache.put("a", b"x" * 10)
         assert cache.stats().entries == 0, "a write that never committed was counted"
 
-        cache.put("b", "req", b"y" * 20)
+        cache.put("b", b"y" * 20)
         assert cache.get("a") is None, (
             "the failed write was committed later by somebody else's commit"
         )
