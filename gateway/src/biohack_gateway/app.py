@@ -24,6 +24,7 @@ from importlib.metadata import version as installed_version
 from pathlib import Path
 from typing import Any, Literal
 
+import anyio.to_thread
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.docs import get_swagger_ui_html
@@ -179,6 +180,19 @@ middleware can charge it before the bytes are read — which is where a refusal 
 Before either route was distinguished from the rest, the middleware counted every request, which
 refused a page's own load (a dataset listing, a row's detail, the model directory) on a pool whose
 `max_in_flight` was one.
+"""
+
+THREAD_POOL_TOKENS = 200
+"""How many worker threads the blocking surface may occupy at once.
+
+FastAPI runs a `def` handler — every route here but `/health`, `/docs` and `/play` — in a worker
+thread, and AnyIO's default pool is 40. This surface can legitimately park more than that: an upload
+waits for the link inside its handler for up to
+:data:`biohack_gateway.admission.DEFAULT_WAIT_SECONDS`, and the designed burst is 50 teams holding 3
+lanes each. At 40, a dozen teams uploading at once occupied every worker, and a dataset listing
+queued behind a photograph: the complaint the byte budget exists to prevent, arriving from a
+resource nobody was counting. What gates the work is the byte budget and the per-key lane; this
+number only decides how much waiting the process holds while it waits.
 """
 
 
@@ -585,6 +599,10 @@ def create_app(
         checkpointed rather than left for the next process to recover.
         """
         watching = asyncio.create_task(watch_pool(registry))
+        # Sized here, before the first request: a `def` handler runs in one of these threads, and
+        # the pool's default is smaller than the burst this surface accepts. See
+        # :data:`THREAD_POOL_TOKENS`.
+        anyio.to_thread.current_default_thread_limiter().total_tokens = THREAD_POOL_TOKENS
         try:
             yield
         finally:
