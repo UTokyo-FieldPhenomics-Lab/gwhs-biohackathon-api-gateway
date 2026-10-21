@@ -24,7 +24,10 @@ globalThis.apiKeyStore = (() => {
     try {
       return localStorage.getItem(KEY);
     } catch (error) {
-      return null; // private mode, a blocked frame, storage switched off
+      // `undefined`, not `null`: "this browser will not tell me" and "there is nothing stored" are
+      // different answers, and the difference is what Forget depends on. A `null` for both let a
+      // page that had just been told the key was cleared fall back to the copy it still held.
+      return undefined;
     }
   };
 
@@ -47,7 +50,11 @@ globalThis.apiKeyStore = (() => {
   window.addEventListener("storage", (event) => {
     if (event.key !== null && event.key !== KEY) return; // null is a whole-storage clear
     const stored = read();
-    announce(stored === null ? "" : stored);
+    if (stored === undefined) return; // nothing can be learned here, so nothing changes
+    // The held copy follows the store, including on a clear: this is the document that has to
+    // forget a key another page removed, and the in-memory copy is the only place it still exists.
+    held = stored === null ? "" : stored;
+    announce(held);
   });
 
   // A key left in Swagger UI's own entry by the version of the reference page that let it persist is
@@ -81,7 +88,10 @@ globalThis.apiKeyStore = (() => {
     /** The key in use, or an empty string when there is none. */
     get: () => {
       const stored = read();
-      return stored === null ? held : stored;
+      // Only a store that cannot be read is what the held copy stands in for. A store that answers
+      // "nothing" is an answer, and it is the one a cleared key leaves behind.
+      if (stored === undefined) return held;
+      return stored === null ? "" : stored;
     },
 
     /** Remember a key: for this browser where that is possible, for this page where it is not. */
