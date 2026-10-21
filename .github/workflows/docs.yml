@@ -1,18 +1,22 @@
-# The documentation site: build it with Zensical, publish the artifact to GitHub Pages.
+# The documentation site: build it with Zensical, publish the artifact to GitHub Pages, and keep the
+# committed notebook equal to the page it is generated from.
 #
 # The publishing source is this workflow rather than a branch, so Jekyll never sees the sources and no
 # CNAME file is committed — the custom domain lives in the repository's Pages settings. The hand steps
 # behind that domain, and what to do when the site is retired, are in deploy/README.md §6.
+#
+# Only `sync` may write the repository, and only for a run whose source is `main`. A pull request
+# builds the freshly generated notebook into its site but never commits it.
 
 name: docs
 
 on:
   push:
     branches: [main]
-    paths: ["docs/**", "zensical.toml", ".github/workflows/docs.yml"]
+    paths: ["docs/**", "clients/**", "zensical.toml", ".github/workflows/docs.yml"]
   # A pull request builds to prove the site still builds; only main publishes.
   pull_request:
-    paths: ["docs/**", "zensical.toml", ".github/workflows/docs.yml"]
+    paths: ["docs/**", "clients/**", "zensical.toml", ".github/workflows/docs.yml"]
   workflow_dispatch:
 
 permissions:
@@ -37,22 +41,23 @@ jobs:
           enable-cache: true
       # --locked: the site is built from docs/uv.lock, so no page can change because a dependency moved.
       - run: uv sync --locked --project docs
-      # The notebook is generated from `examples/notebook.md` before the build, so the build publishes
-      # it at the URL its page links to. It is committed as well as generated: Colab can only open a
-      # notebook that sits at a GitHub path.
+      # The notebook is generated from `examples/quickstart.md` before the build, so the build
+      # publishes it at the URL its page links to. On main the `sync` job commits the same generated
+      # file afterwards, but only if every check below passed; a pull request builds this fresh
+      # copy and writes nothing to the repository.
       - run: python3 docs/scripts/make_notebook.py
       # The parameter table on each model page is transcribed from a recorded `GET /models`, for the
       # same reason: what a container declares and what the page says cannot be allowed to drift.
       - run: python3 docs/scripts/make_models.py
       # --strict: a warning fails the build, which is what catches a link to a page that does not exist.
       - run: uv run --project docs zensical build --strict
-      # The build just regenerated the notebook. If that changed it, the committed copy is stale and
-      # Colab is serving a version the page no longer describes: fail, and let the author commit it.
-      - run: git diff --exit-code -- docs/content/examples/quickstart.ipynb
-      # The same check for the model pages: a container whose declaration moved and a table that did
-      # not is a page telling participants about a parameter the API no longer has.
+      # The model pages stay a hard diff: a container whose declaration moved and a table that did
+      # not is a page telling participants about a parameter the API no longer has. Generation uses
+      # the recorded declaration; refreshing that fixture needs a key and a live gateway. The notebook has no
+      # such check here: on main `sync` writes the regenerated one back, and a pull request builds the
+      # regenerated one above, so a tracked copy that is one commit behind cannot fail either.
       - run: git diff --exit-code -- docs/content/models/
-      # The three client files are downloaded from the site, so they are put into the build output
+      # The five client files are downloaded from the site, so they are put into the build output
       # beside the page that links to them — after the build, because a build overwrites `site/`, and
       # never into `docs/content/`, because a copy of a source file in the source tree is a copy
       # somebody edits by mistake. There is one source: `clients/`.
@@ -61,10 +66,71 @@ jobs:
       - uses: actions/upload-pages-artifact@v5
         with:
           path: site
+      # The verified notebook leaves this job so `sync` commits exactly what the build published,
+      # rather than regenerating it from a checkout that may have moved underneath the run.
+      - uses: actions/upload-artifact@v7
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        with:
+          name: quickstart-notebook
+          path: docs/content/examples/quickstart.ipynb
+          if-no-files-found: error
+          retention-days: 1
+
+  # The one job allowed to write repository contents. No pull request reaches it: the condition below
+  # is false for `refs/pull/*`, which is also why no `pull_request_target` and no PAT are needed.
+  sync:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The commit the artifact was built from, not whatever main is at now.
+          ref: ${{ github.sha }}
+          # The push is a fast-forward from this commit, and the guard below fetches main itself.
+          fetch-depth: 1
+      - uses: actions/download-artifact@v8
+        with:
+          name: quickstart-notebook
+          path: ${{ runner.temp }}/quickstart-notebook
+      - name: Put the verified notebook back where it is tracked
+        run: cp "${{ runner.temp }}/quickstart-notebook/quickstart.ipynb" docs/content/examples/quickstart.ipynb
+      # A fast-forward would still be refused by the push below, but only after the commit; failing
+      # here says why, and guarantees this run never commits a notebook generated from older sources.
+      - name: Refuse to write an artifact from a source main has moved past
+        run: |
+          git fetch --no-tags origin main
+          if [ "$(git rev-parse origin/main)" != "${GITHUB_SHA}" ]; then
+            echo "::error::main moved since this run started, so the notebook built from ${GITHUB_SHA} is not committed; re-run on the new main"
+            exit 1
+          fi
+      - name: Commit only the generated notebook
+        id: commit
+        run: |
+          if git diff --quiet -- docs/content/examples/quickstart.ipynb; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "the committed notebook already matches its page"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- docs/content/examples/quickstart.ipynb
+          git commit -m "docs(quickstart): regenerate notebook from its page" -- docs/content/examples/quickstart.ipynb
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+      # A normal push, never a force push: if branch protection refuses it, this run fails and the
+      # deploy below does not publish a site whose notebook commit did not land.
+      - name: Push the notebook to main
+        if: steps.commit.outputs.changed == 'true'
+        run: git push origin HEAD:main
 
   deploy:
+    # The pages artifact is the one this run built and checked; the GITHUB_TOKEN push in `sync`
+    # starts no second workflow, so the notebook is already in that artifact and this is the only
+    # publication the commit gets.
     if: github.ref == 'refs/heads/main'
-    needs: build
+    needs: [build, sync]
     runs-on: ubuntu-latest
     environment:
       name: github-pages

@@ -4,8 +4,8 @@
 The table is mechanical — it is the model's own declaration, laid out — so it is generated rather
 than transcribed. ``docs/scripts/fixtures/model-directory.json`` is a real answer from the live API,
 recorded once; this script rewrites the block between two markers in the page, and CI re-runs it and
-fails on a diff, exactly as it does for the quickstart notebook. That is what keeps the page from
-saying one thing while the container declares another.
+fails on a model-page diff. Unlike the automatically synchronized notebook, these tables must be
+reviewed and committed with their recorded declaration.
 
 Generation instead of execution at build time is deliberate: the API answers ``GET /models`` only
 with a key, and a docs build that held one would make a participant-facing site depend on a secret
@@ -204,9 +204,8 @@ def main() -> int:
     Returns
     -------
     int
-        `0` once the page is current. CI runs this and then `git diff --exit-code`, the same stale
-        check the quickstart notebook gets, so a container whose declaration moved and a page that
-        did not are a failing build rather than a quiet lie.
+        `0` once the page is current. CI runs this and then checks the model-page diff, refusing
+        an uncommitted table change rather than automatically accepting a changed declaration.
     """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(

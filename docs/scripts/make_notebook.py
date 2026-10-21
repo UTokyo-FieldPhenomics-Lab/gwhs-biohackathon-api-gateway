@@ -4,8 +4,8 @@ The page a reader scrolls and the notebook they download have to be the same doc
 two hand-kept copies drift, and the one nobody builds is the one that rots. So `examples/quickstart.md`
 is the source and `examples/quickstart.ipynb` beside it is generated from it — before the build, so
 the build publishes the fresh one, and committed, because Colab can only open a notebook that sits at
-a GitHub path. `git diff --exit-code` in the workflow is what notices a `.ipynb` that was not
-regenerated and committed with the page that changed.
+a GitHub path. After successful validation on main, the workflow commits only this generated file
+back to main; pull requests build the regenerated copy without writing to the repository.
 
 The page also shows what each cell printed. Those results are written onto it by
 `docs/scripts/record_notebook.py` from one real run, and they never travel into the notebook.
