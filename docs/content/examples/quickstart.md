@@ -28,8 +28,7 @@ curl -sSO https://docs.global-wheat.com/clients/global_wheat.py
 ```python
 import global_wheat
 
-client = global_wheat.Client()
-print(type(client).__name__)
+print(global_wheat.Client.__name__)
 ```
 
 <!-- output -->
@@ -38,8 +37,7 @@ Client
 ```
 <!-- /output -->
 
-`Client()` reads the key from the environment, so nothing is pasted into a cell that gets saved or
-shared.
+Importing the client needs no key. Construct it after collecting your key in the next step.
 
 ## 2. Get a key
 
@@ -50,8 +48,10 @@ listing or a row is not counted. This asks for the key once, in memory:
 import getpass
 import os
 
-if "GLOBAL_WHEAT_API_KEY" not in os.environ:
+if not os.environ.get("GLOBAL_WHEAT_API_KEY"):
     os.environ["GLOBAL_WHEAT_API_KEY"] = getpass.getpass("your team's key: ")
+
+client = global_wheat.Client()
 ```
 
 ## 3. What is there
