@@ -262,7 +262,8 @@ no such row
 ```
 <!-- /output -->
 
-Nothing is retried for you: `502`, `503` and `504` are worth another call, `400` never is.
+The client does not retry a failed call automatically: `502`, `503` and `504` are worth another
+call; `400` requires correcting the request. The gateway may already have tried another backend.
 
 ## Next
 

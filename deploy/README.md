@@ -230,6 +230,15 @@ when it holds nothing — a missing state file must fail the start, not let the 
 — and the setting it holds today is `BIOHACK_BACKEND_TOKEN`, below. The names, never the values, are
 recorded in [`../gateway/.env.example`](../gateway/.env.example).
 
+Uploads have two separate resource limits. `BIOHACK_UPLOAD_SLOTS` defaults to **8** simultaneous
+uploads across the process, including multipart parsing; an excess upload is refused immediately
+with `429` and `Retry-After`. `BIOHACK_UPLOAD_BYTES` caps the link budget at **24,000,000 bytes**,
+and `BIOHACK_UPLOAD_WAIT_SECONDS` defaults to **20 seconds**. The parsed file size is admitted before
+the full payload is read. Leave these unset on this host unless a measurement justifies changing
+them: its `/tmp` is tmpfs, and spooled uploads consume RAM as well as their later payload copies.
+These limits assume the single worker and Caddy's 15 MB request ceiling; adding workers multiplies
+the receive allowance. Increasing the shared thread pool does not replace either upload limit.
+
 The directory holds four things, and which of them the gateway can read is the point:
 
 ```
@@ -806,4 +815,3 @@ The site is disposable by rule. **Settings → Pages → Unpublish** takes it do
 `CNAME` at お名前.com: that is what closes the takeover path. If the domain was verified (§6.1), the
 `TXT` record alone keeps the name protected and the `CNAME` could stay, but a record pointing at
 nothing is worth deleting on a site whose whole point is that it can be removed.
-

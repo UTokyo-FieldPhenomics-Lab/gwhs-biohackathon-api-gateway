@@ -94,13 +94,14 @@ Every refusal is one body, whichever route produced it:
 | `401` | `invalid_key` | the key is wrong, or missing |
 | `404` | `not_found` | no such dataset or model |
 | `413` | `payload_too_large` | an upload over 15 MB — [resize it](#resizing-before-you-send) first |
-| `429` | `quota_exceeded` | three inferences in flight already from this key, or the upload link has no room for this body; nothing was queued, and `Retry-After` says when to come back |
+| `429` | `quota_exceeded` | this key already holds its inference lanes, the gateway is receiving too many uploads, or the upload link stayed full. This call was not forwarded for inference; when present, `Retry-After` says when to come back |
 | `502` | `upstream_error` | a machine answered that it could not serve this request, or every machine for the model failed. Worth another call; one that keeps failing is worth reporting |
 | `503` | `unavailable` | no machine is answering this model. Safe to retry |
 | `504` | `upstream_timeout` | the model took too long, or an upload could not be delivered to it in time. Safe to retry |
 
-Nothing is retried for you. `502`, `503` and `504` are worth one more call, `400` never is, and a
-client that guessed would hide which of the two happened.
+The clients do not automatically retry a failed call. The gateway may try another backend within
+the same request before returning an error. `502`, `503` and `504` are worth one more call; `400`
+requires correcting the request.
 
 ## Model parameters
 
@@ -153,8 +154,10 @@ says so, and `resolution_used` tells you the side that ran either way:
 | what | limit | over it |
 |---|---|---|
 | inferences in flight, per key | 3 | `429`, not a queue |
-| uploaded bytes in flight, the whole pool | about 24 MB | `429` with `Retry-After`, after waiting up to 20 s |
-| any other request | none | — |
+| uploads being received at once, the whole host | 8 | `429` with `Retry-After`, immediately |
+| uploaded bytes in flight, the whole pool | up to 24 MB, following measured link capacity | `429` with `Retry-After`, after waiting up to 20 s |
+| row-prediction JSON body | 4 KB | `413` |
+| a backend response body | 16 MiB | discarded; `502` if no backend returns a valid answer |
 | an uploaded image | 15 MB | `413` |
 | an uploaded image, decoded | 50 megapixels | `400` |
 

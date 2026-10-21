@@ -44,14 +44,20 @@ here.
   declares. Counting per container would tell a request for the third model that the card is free
   while two inferences run on it. A container that declares no machine is counted alone, and ties
   within one machine go to the container whose own lock is free.
-- **Uploads are admitted by bytes, because the link is the scarce thing they hold.** The gateway
-  keeps at most one link's worth of bodies in flight — about 24 MB, `BIOHACK_UPLOAD_BYTES` — queues
+- **Uploads reserve receive capacity before multipart parsing, then link bytes before reading.**
+  A process-wide, non-waiting upload limit bounds temporary files and payload memory independently
+  of the per-team inference lanes. A full receiver returns `429` with `Retry-After` before consuming
+  the body; every exit releases its receive slot. The host's `/tmp` may be tmpfs, so spooling is not
+  evidence that an upload costs no RAM. The parsed file's size, not a client-supplied header, decides
+  link admission, and the full payload is read only after that admission succeeds.
+- **Forwarded uploads are admitted by bytes, because the link is the scarce thing they hold.** The gateway
+  keeps at most one link's worth of bodies in flight — capped at 24 MB by `BIOHACK_UPLOAD_BYTES` — queues
   the rest in `(team_in_flight, arrival)` order so a team with nothing running goes before a team
   with two, and refuses with `429` plus `Retry-After` after 20 s rather than letting a request sit
   until a client gives up. The capacity behind that budget is measured from completed uploads
   (bytes over busy seconds, seeded at 1.5 MB/s), because a bad night on the link is a fact only the
   traffic can report. Rows are not queued: they carry no bytes and the thread pool already bounds
-  them.
+  them. Raising the shared worker limit is not a substitute for bounding received uploads.
 - **A cached answer is not a request, and it does not hide which machine answered.** The cache is
   keyed by the published revision, so a republish is a cold start; it stores only row predictions,
   serves them with `cached: true` and the original `computed_by`, and takes no lane on the way out.
@@ -91,6 +97,11 @@ here.
   machine keeps its place, and the body is not re-sent to another one. A backend refusing the
   gateway's own token is neither — it is this side's misconfiguration and answers `unavailable`,
   because telling a participant their key is wrong sends them to look in the wrong place.
+- **A connect timeout is not an upload-send timeout.** Establishing a connection must be identified
+  separately, so a backend that cannot be reached does not prevent trying a healthy alternative.
+  Socket inactivity timeouts do not bound a whole response: transport also enforces an elapsed-time
+  deadline and a response-byte ceiling, closes incomplete exchanges, and never caches them. Retries
+  share the request's remaining time rather than each receiving an unlimited fresh budget.
 - **A model's control parameters are the model's, never the gateway's.** The container declares what
   it accepts, with types, defaults and bounds, in its own `/health`; the gateway repeats that
   declaration from `GET /models`, validates a request against it, and forwards the values verbatim.

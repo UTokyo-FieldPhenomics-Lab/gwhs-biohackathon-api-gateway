@@ -91,8 +91,8 @@ Rules state what must hold and why — never history, measurements, or anecdotes
   quota: a count needs persistence, a lifetime, and a top-up path, and its only effect is a human
   round-trip at the moment a team is blocked. The trigger for a count: a backend billed per request,
   or a fairness complaint between teams. The trigger for a rate: observed bursts that a cap of three
-  in flight does not contain. What is deliberately absent *before* a measurement — a global admission
-  gate, a per-model cap, a per-card memory ledger — is planned in
+  in flight does not contain. What is deliberately absent *before* a measurement — a global inference
+  admission gate, a per-model cap, a per-card memory ledger — is planned in
   [`../plans/202610171908_fifty-teams-and-more-models.md`](../plans/202610171908_fifty-teams-and-more-models.md),
   together with the trigger that starts it.
 

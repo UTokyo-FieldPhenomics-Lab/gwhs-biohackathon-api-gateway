@@ -1,5 +1,12 @@
 # The pool survives a slow link, one bad request and fourteen teams uploading
 
+> Correction from the subsequent [re-audit](2026102104_gateway-performance-reaudit.md):
+> the upload handler reads the entire spooled file into a heap `bytes` object before admission,
+> and the development host's `/tmp` is tmpfs. The memory conclusion and the recommendation to
+> raise the worker limit below were incorrect. The cache-counter change also introduced a
+> connection-initialization lock re-entry, and connect timeouts were misclassified as sends.
+> This record is historical evidence, not approval to deploy that revision.
+
 2026-10-21. A second, wider audit (three parallel passes over the gateway, the model proxy, the
 dataset surface, the publisher, the clients, deploy and CI) found one bug already on the request
 path and a failure policy that turned a single bad request into a model-wide outage. Both were
