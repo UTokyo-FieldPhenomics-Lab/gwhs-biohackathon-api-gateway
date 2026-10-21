@@ -230,6 +230,14 @@ when it holds nothing — a missing state file must fail the start, not let the 
 — and the setting it holds today is `BIOHACK_BACKEND_TOKEN`, below. The names, never the values, are
 recorded in [`../gateway/.env.example`](../gateway/.env.example).
 
+The optional `BIOHACK_MAX_CONCURRENT_PER_TOKEN` changes the default policy cap of **3** inferences
+per team; `0` disables it for a measurement. It does not follow the number of models or backends.
+Row-cache hits and metadata reads take no inference lane. `BIOHACK_CACHE=off` disables row caching;
+`BIOHACK_CACHE_PATH` changes the default `cache.sqlite` location, and `BIOHACK_CACHE_MAX_BYTES`
+changes the default 2 GiB stored-answer-body budget (not a database-file size quota). Existing
+digest-keyed cache entries are not migrated: after the switch to canonical request keys they miss
+and remain disposable until normal pruning.
+
 Uploads have two separate resource limits. `BIOHACK_UPLOAD_SLOTS` defaults to **8** simultaneous
 uploads across the process, including multipart parsing; an excess upload is refused immediately
 with `429` and `Retry-After`. `BIOHACK_UPLOAD_BYTES` caps the link budget at **24,000,000 bytes**,
@@ -239,16 +247,16 @@ them: its `/tmp` is tmpfs, and spooled uploads consume RAM as well as their late
 These limits assume the single worker and Caddy's 15 MB request ceiling; adding workers multiplies
 the receive allowance. Increasing the shared thread pool does not replace either upload limit.
 
-The directory holds four things, and which of them the gateway can read is the point:
+Host state is separate from the checkout; the publisher's credential is excluded from the service:
 
 ```
 ~/.config/biohack-gateway/          0700, owned by the user the service runs as
 ├── env                             systemd EnvironmentFile=; must exist; 0600
-│                                   one setting, BIOHACK_BACKEND_TOKEN — the credential the gateway
-│                                   presents to a GPU backend (below)
+│                                   BIOHACK_BACKEND_TOKEN plus optional runtime overrides (below)
 ├── tokens.json                     participant token pool; 0600
-├── models.json                     one entry per model, its backend URLs in the order they are
-│                                   tried; 0600 — absent means the model surface serves no models
+├── models.json                     one entry per model, its backend URL candidates; 0600
+│                                   routing scores live candidates — absent means no models
+├── cache.sqlite                    disposable row answers; SQLite may create -wal and -shm files
 ├── index/                          <dataset>.db per published dataset; read by the gateway
 └── publish/                        0700; excluded from the service as a whole directory
     ├── env                         BIOHACK_BUCKET, AWS_REGION, BIOHACK_ACCESS_KEYS_CSV; 0600
@@ -257,14 +265,15 @@ The directory holds four things, and which of them the gateway can read is the p
 
 `setup-gateway.sh` creates the directory, `publish/`, and `env`, and nothing else: `tokens.json`
 appears with the first issued token, `models.json` with the first backend written into it, `index/`
-with the first publish, and `publish/` is filled in §5. Both of the first two are edited by hand, and
-neither is in the repository; the model-to-backend list and the token it pairs with are documented in
+with the first publish, and `publish/` is filled in §5. The token CLI owns `tokens.json`; the model
+list is edited by the operator. Neither is in the repository; the model-to-backend list and its
+backend credential are documented in
 [`gpu-backends.md`](gpu-backends.md) §4, and the machines they name are
 [`../.agents/rules/backend-pool.md`](../.agents/rules/backend-pool.md).
 
-**The one setting the gateway reads from its environment is the backend token.** It is the credential
+**The required inference credential is `BIOHACK_BACKEND_TOKEN`.** It is the credential
 it presents to a GPU backend, it has to match what that backend was started with, and it is unset by
-default: a gateway without it answers every inference with `503` rather than letting a backend reply
+default: a gateway without it answers uncached inference with `503` rather than letting a backend reply
 `401`, because that reply would read to a participant as their own key being wrong. Rotating it means
 changing **every** end — this file and a restart of every backend on every model's list, not one
 container, because a backend left on the old value answers `401` and takes its whole model down with
@@ -678,10 +687,10 @@ first key in the console. Replacing the instance means the same three steps on t
 
 # 6. The documentation site
 
-The curated documentation is a static site: Zensical builds it, GitHub Pages serves it, and nobody runs
-a server for it. It is independent of §1 and §2 by construction, and `api.global-wheat.com/docs`
-remains FastAPI's own Swagger UI — the site links to it, and it links back. The record below and the
-Pages settings are made by hand, once, like the bucket and the distribution.
+The documentation is a static site: Zensical builds it and GitHub Pages serves it independently
+of the API host and image bucket. It frames the API's `/docs` and `/play` pages and distributes
+the clients; `/play` loads its decoder from this site. These consumers make retirement a coordinated
+operation (§6.4). The DNS record and Pages settings below are created by hand once.
 
 | | |
 |---|---|
@@ -689,12 +698,12 @@ Pages settings are made by hand, once, like the bucket and the distribution.
 | Publishing source | GitHub Actions: an artifact is uploaded and deployed, so Jekyll is not involved and no `CNAME` file is committed |
 | DNS record | `CNAME` `docs` → `utokyo-fieldphenomics-lab.github.io` — no repository name — TTL 3600, at お名前.com |
 | Certificate | issued by GitHub for the custom domain; nothing here requests or renews it, and we cannot reissue it |
-| Publication | any push to `main` touching `docs/**` or `zensical.toml`; a pull request builds with `--strict` and deploys nothing |
+| Publication | main changes to `docs/**`, `clients/**`, `zensical.toml` or the workflow; PRs build with `--strict` and do not deploy or write back |
 
 Three facts behind that:
 
 - **It must not share the image plane.** Objects under `data.*` are write-once and are never
-  invalidated, while this site is rewritten on every push: §2's long TTL is right for one and wrong
+  invalidated, while this site is replaced on relevant main builds: §2's long TTL is right for one and wrong
   for the other.
 - **It must not share the API's failure domain.** The gateway host is on demand, and one measured
   network cannot reach it at all
@@ -758,14 +767,16 @@ afterwards.
 Nothing here runs on a host, and nothing here is a secret: the workflow holds the deploy credential as
 its own short-lived token. It is also entirely repository-local — the organization can publish any
 number of Pages sites, each has its own settings, and `<organization>.github.io` is only the `CNAME`
-target they share. One custom domain serves one site at a time, which is why this is a subdomain of
-`global-wheat.com` rather than a path under the lab's existing site. Locally:
+target they share. One custom domain serves one site at a time. Local build and preview commands
+are in the [maintainer README](../README.md#documentation-site).
 
-```bash
-uv sync --locked --project docs
-uv run --project docs zensical build --strict     # exit 0; writes site/, which git ignores
-uv run --project docs zensical serve              # http://localhost:8000
-```
+The build job generates the notebook, checks model tables, builds strictly and copies client
+downloads. On main, a separate `sync` job with `contents: write` commits only the generated
+`docs/content/examples/quickstart.ipynb`, then the deploy job publishes the already-built artifact.
+PRs do not run the writer. The bot uses a normal push: if main moved or branch protection rejects
+the commit, synchronization fails and deployment does not proceed. Repository and organization
+settings must permit that generated-file commit; the workflow does not bypass protection or use
+a personal token. A bot push starts no second workflow, so this run performs publication too.
 
 `zensical.toml` sits at the repository root and its `docs_dir` and `site_dir` are resolved relative
 to that file, which is what makes `docs/content/` the content root and `site/` the output. The content
@@ -809,9 +820,10 @@ Then push one visible change to a page and watch it appear — that, and not the
 proves the workflow is wired to the domain. In a browser the padlock must be GitHub's certificate for
 `docs.global-wheat.com`.
 
-## 6.4 When the event is over
+## 6.4 Coordinated retirement
 
-The site is disposable by rule. **Settings → Pages → Unpublish** takes it down. Then remove the `docs`
-`CNAME` at お名前.com: that is what closes the takeover path. If the domain was verified (§6.1), the
-`TXT` record alone keeps the name protected and the `CNAME` could stay, but a record pointing at
-nothing is worth deleting on a site whose whole point is that it can be removed.
+First retire or replace the client download URLs, the quickstart's image links, Colab entry and
+the decoder loaded by `/play`. The API itself can still answer without this site, but its playground
+and participant workflows cannot be assumed independent. Only then use **Settings → Pages →
+Unpublish** and remove the `docs` `CNAME` at お名前.com to close the dangling-domain takeover path.
+Keep domain verification in place if the organization still uses it.

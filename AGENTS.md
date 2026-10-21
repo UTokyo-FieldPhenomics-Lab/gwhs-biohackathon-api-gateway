@@ -12,7 +12,7 @@ image and getting a model result are each a single HTTP call.
 
 ## Architecture
 
-Two planes joined only by a frozen contract, plus the compute the model surface routes to:
+The API contract joins the image, metadata and compute surfaces:
 
 - **Image plane** (live) — private S3 behind CloudFront. Image objects only, written once at publish
   by a PUT from the publishing host in the bucket's own region: no server to go down, and no mutable
@@ -20,7 +20,7 @@ Two planes joined only by a frozen contract, plus the compute the model surface 
 - **Metadata plane** (live) — the publisher generates one index per dataset from a pinned upstream
   revision; the gateway loads it at startup and serves it from memory, so a republish arrives as a
   restart. This is the one deliberate exception to static-first.
-- **Compute plane** (surface implemented and rehearsed against a real backend; **not deployed**) — the
+- **Compute plane** (implemented and deployed; see the [deployment record](.agents/references/2026102105_gateway-resource-bound-fixes.md)) — the
   same gateway on one EC2 host authenticates and routes inference work to GPU backends. Its region is
   environment configuration: the host runs in `eu-central-1`. A backend is any Docker-capable GPU resource reachable over an
   authenticated, non-public link — a lab machine, a GPU VPS, or a rented GPU container; the provider
@@ -31,9 +31,10 @@ Two planes joined only by a frozen contract, plus the compute the model surface 
 - **Contract plane** — this repository: the OpenAPI surface, the data layout, examples, and the
   participant-facing site at <https://docs.global-wheat.com>.
 
-The gateway never carries bytes: it answers with the public `data.*` URL of an object and resolves
-every address by lookup in its in-memory index, so no client input is ever concatenated into a key or
-a path. The three domains, and why they are separate distributions, are in [`README.md`](README.md).
+Dataset image and mask bytes bypass the gateway: it returns public `data.*` URLs by index lookup,
+never by concatenating client input into a key or path. Participant uploads are the exception:
+the gateway temporarily receives and forwards them, without publishing or retaining them. The
+architecture and three domains are in [`README.md`](README.md).
 
 The dataset ids are `gwhd`, `gwfss` and — once the full annotation is released — `gwhs`, plus
 `gwhs-temp` for development. Addresses are `(dataset, row)`, where the row is the absolute row number
@@ -61,10 +62,10 @@ of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-layout.md
 │       └── examples/      the live demo, and the notebook page the .ipynb is generated from
 ├── clients/               the API as a function, one directory per language; routes.json is shared
 │   ├── python/            global_wheat.py + its pyproject, lock, and the pytest checks
-│   ├── js/                global-wheat.js + package.json and node --test checks
+│   ├── js/                core + browser/Node entries, package.json and node --test checks
 │   └── java/              GlobalWheat.java + tests/Checks.java (a local HTTP server, no dependency)
-├── gateway/               FastAPI gateway: the request gate and the dataset surface
-│   └── src/biohack_gateway/  installed app package (app, auth, tokens, dataset surface, CLI)
+├── gateway/               FastAPI gateway: auth, datasets, model routing, cache and upload admission
+│   └── src/biohack_gateway/  installed app package, framed pages, and token CLI
 ├── datasets/              upstream parquet cache + publisher CLI: parquet → image objects in S3 + metadata index
 ├── models/                submodule: the private container repository the GPU backends run
 ├── deploy/                host bring-up, the dataset bucket and its CDN, bootstrap scripts
@@ -80,8 +81,9 @@ of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-layout.md
 - **Datasets**: pyarrow + Pillow + boto3, exposed as the `biohack-datasets` CLI.
 - **Docs**: Zensical (pinned) + markdown-exec, built from `docs/content/` and published to
   <https://docs.global-wheat.com> by `.github/workflows/docs.yml`.
-- **Clients**: one dependency-light file per language — Python (`numpy` + `requests`),
-  JavaScript (none), Java (the JDK) — downloaded from the site, never published to an index.
+- **Clients**: Python (`numpy`, `requests`, `Pillow`), Java (the JDK), and JavaScript (a
+  dependency-free core plus browser and Node entries; Node resizing uses `sharp`). These five
+  files are downloaded from the site, never published to an index.
 - **Quality gates**: `pytest` for tests, `mypy` (strict) for types, `ruff` for lint and
   format. Run each with `uv run` inside the subproject directory.
 
@@ -97,11 +99,9 @@ of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-layout.md
 
 ## Commits
 
-- **Check for a token or a private network address before every commit, not before every publish.**
-  A commit is the irreversible step; a publish can be changed, and a history cannot be taken back
-  from a clone. Test the *shape*, not a list of addresses we happen to know: a list of ours catches
-  only yesterday's leak — the gateway host's own Elastic IP was missing from the first version of
-  this rule. Both of these must come back empty:
+- **Check for a token or a private network address before every commit.** Test credential and
+  address shapes rather than a list of known values: committed secrets remain in other clones.
+  Both checks must come back empty; inspect excluded test fixtures separately for real credentials.
 
   ```sh
   # 1. any IPv4 that is a host address. A CIDR is not one (`198.51.100.0/24` names a subnet, not a
@@ -112,7 +112,7 @@ of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-layout.md
     | grep -vE '^(127\.0\.0\.1|0\.0\.0\.0|169\.254\.169\.254|192\.0\.2\.|198\.51\.100\.|203\.0\.113\.)'
 
   # 2. a literal handed to a credential-shaped name (tests hold constants, so they are skipped)
-  git diff --cached -U0 | grep -E '^\+' | grep -v '/tests/' \
+  git diff --cached -U0 -- . ':!**/tests/**' | grep -E '^\+' \
     | grep -iE "(key|token|secret|password)[[:space:]]*[=:][[:space:]]*[\"'][A-Za-z0-9_/+-]{16,}"
   ```
 
@@ -127,7 +127,7 @@ of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-layout.md
 
 - **`rules/` — constraints, and nothing else.** `project.md` holds repo-wide invariants,
   `design-philosophy.md` holds the process for deciding what to build, and one short file per
-  package (`gateway.md`, `datasets.md`, `docs.md`, `deploy.md`, `models.md`) holds package-specific
+  package (`gateway.md`, `datasets.md`, `clients.md`, `docs.md`, `deploy.md`, `models.md`) holds package-specific
   constraints. A rule states what must hold and why it was identified; it never contains
   history, log output, anecdotes, or "we tried X". If it cannot be stated in a few lines, it
   is a note, not a rule, and belongs in `references/`. `models.md` is the one file describing a
@@ -158,9 +158,8 @@ of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-layout.md
   by the alias its answers carry, and the alias-to-address map is `.agents/local/pool.md`: untracked,
   and a clone without it resolves no machine.
 - Execution records and lessons: [`.agents/references/`](.agents/references)
-- A host that answers from elsewhere but not from one network:
+- Host reachability troubleshooting:
   [`references/2026101513_host-unreachable-from-the-utokyo-network.md`](.agents/references/2026101513_host-unreachable-from-the-utokyo-network.md)
-  — it was never the network: an accepted tailnet route for the client /24 sent the host's replies
-  into the tunnel. Capture on the host and read `ip route get <client-ip>` before blaming a path.
+  — capture on the host and inspect `ip route get <client-ip>` before changing network policy.
 - Data layout contract: [`docs/data-layout.md`](docs/data-layout.md)
 - Architecture discussion and decision log (SiYuan note, external): "黑客松API服务架构设计"

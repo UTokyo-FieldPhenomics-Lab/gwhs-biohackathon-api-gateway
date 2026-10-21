@@ -19,7 +19,8 @@ GPU, so every one of them carries a key.
 
 - **Three datasets** — `gwhd` (head boxes), `gwfss` (organ masks), `gwhs` (one mask per spikelet) —
   addressed as `(dataset, row)`. → [Datasets](datasets/index.md)
-- **One model** — `sam3.1-meta`: text, box or point prompts, at one of four sizes, on three GPUs. →
+- **Two models** — `sam3.1-meta` for text, box or point prompts, and `gwfss-segformer-b4` for
+  semantic organ masks. →
   [Models](models/index.md)
 - **A client per language** — one file, downloaded rather than installed, which resolves an address,
   fetches the object, walks pages, and decodes masks. → [Clients](api/clients.md)

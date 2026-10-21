@@ -1,146 +1,91 @@
 # Project Rules
 
-Binding constraints for this repository. Keep them short; each rule exists because a specific
-failure mode was identified. If a rule blocks real work, change the rule in the same PR and explain
-why. How to decide *what* to build lives in [`design-philosophy.md`](design-philosophy.md); what a
-package may assume lives in [`gateway.md`](gateway.md), [`datasets.md`](datasets.md),
-[`docs.md`](docs.md), and [`deploy.md`](deploy.md).
+These constraints apply across packages. Change a blocking rule with the implementation and explain
+why. Rules contain constraints, short reasons and evidence links; history and measurements belong
+in `references/`. How to decide what to build is in [`design-philosophy.md`](design-philosophy.md).
 
-Rules state what must hold and why — never history, measurements, or anecdotes. Those belong in
-`.agents/references/`.
+## Architecture and identity
 
-## Architecture invariants
+- **Static image reads bypass the gateway.** Return a public `data.*` URL, not image bytes or a
+  per-request redirect, to keep bandwidth on the CDN. Participant uploads are the only exception:
+  temporary request spooling and forwarding are allowed, but no retained upload or dataset object.
+  [Architecture](../../README.md#architecture), [upload bounds](../references/2026102105_gateway-resource-bound-fixes.md).
+- **Dataset metadata is the named dynamic exception to static-first.** Load the publisher's pinned
+  index once into memory; serve metadata and annotation geometry without editing or re-deriving the
+  source artifact. Refresh by service restart, never by an assumed live reload. Images and raster
+  masks remain static objects. [Dataset surface](../references/2026101519_dataset-surface.md).
+- **Published paths are write-once.** Changed content requires a new path or dataset id, not a cache
+  invalidation or publisher overwrite. This avoids mutable copies of one identity.
+  [Data layout](../../docs/data-layout.md).
+- **An address is `(dataset, absolute row of pinned revision)`.** Row numbers repeat across datasets;
+  a filtered position is a cursor, never an id. Preliminary releases use their own dataset id to
+  avoid renumbering existing addresses. [Layout](../../docs/data-layout.md).
+- **The event contract has no version prefix and only additive changes.** Pydantic models and
+  `docs/data-layout.md` are the two handwritten contract sources; schema-shaped references and
+  examples project them rather than define a second schema. [Contract](../../docs/data-layout.md).
+- **Do not compute or maintain local content hashes or checksums.** Use canonical request text for
+  cache keys and upstream revisions, names, object versions or platform-issued tokens for identity.
+  Treat ETags as opaque; test doubles do not need hash implementations. Reconsider only against a
+  measured failure. [Reasoning](design-philosophy.md),
+  [removal](../references/2026102115_documentation-and-implementation-alignment.md).
+- **Reserve 1 GB of every workstation GPU for its desktop.** Admit against card capacity minus that
+  reserve, including hand-run containers, so inference does not claim the display's last memory.
+  [Pool constraints](backend-pool.md).
 
-- **Bytes never traverse the gateway on the read path.** The API answers with the public `data.*` URL
-  of a static object; it never serves bytes and never builds a per-request redirect. Inlining image
-  bytes pulls bandwidth back onto the gateway and voids the CDN and cost model. One exception: a
-  participant's **upload**, which is a single write from a single client that voids no CDN read. It is
-  never persisted and never becomes a dataset object, and the rule beside it does not move — a
-  client-supplied URL is parsed into an address, never fetched.
-- **Static before dynamic, with one named exception.** If data can be delivered as objects, do that.
-  Dataset metadata is the exception: the gateway serves it from memory, because a republish must take
-  effect immediately and because no client should have to hold a copy. The exception carries
-  annotation **geometry** too, returned on demand; images and masks that are bytes stay in the image
-  plane.
-- **Single source of truth.** The publisher generates the metadata index once from the pinned
-  upstream revision; the gateway loads it at startup and never edits, augments, or re-derives it.
-  Nothing hand-edited enters it.
-- **S3 is frozen at publish.** A path is written once and never overwritten; changed content means a
-  new path. With no version prefix, a change is a new path rather than an invalidation, and there is
-  no second copy to keep consistent.
-- **One dataset, one id space.** An address is the absolute row number of the pinned upstream
-  revision, and it is meaningless without its dataset because row numbers repeat across datasets. A
-  position inside a filtered result is a cursor, never an identifier.
-- **The contract is frozen for the event.** There is no version prefix, so no breaking change to a
-  published endpoint is possible — only additive ones.
-- **No hashing capability.** Nothing here computes or stores a content hash or checksum. Identity
-  comes from names, keys, and platform tokens (`ETag`, S3 native checksums, image digests, object
-  versions, upstream revisions). A content hash returns only against a measured failure.
-- **A container never claims a card's last gigabyte.** Admission is computed against the card minus
-  1 GB — 23 GB of a 24 GB card, 31 GB of a 32 GB — because these are workstations whose own desktop
-  draws on the same card. Stated here rather than left to the deploy script, because a hand-run
-  `docker run` bypasses the script while the person sitting at the machine still needs their screen.
+## Security and admission
 
-## Security
+- **Keep secrets and real machine coordinates out of tracked files and history.** Credentials,
+  bucket/account identifiers and deployment-specific addresses, node names, users and paths belong
+  in external host state or ignored `.agents/local/`. Documentation may use standard install-path
+  defaults and illustrative address ranges, never real connection details. Raw machine logs are not
+  committed. [Commit checks](../../AGENTS.md#commits).
+- **Use aliases as labels, not dialable addresses.** `backend-pool.md` is the explicit alias inventory;
+  `.agents/local/pool.md` alone resolves machines and routers to private coordinates. Stop with that
+  file's path if it is absent; never guess an alias-based URL.
+  [Inventory](backend-pool.md), [private-state constraints](deploy.md).
+- **Resolve inputs through the closed index, never concatenate paths or fetch participant URLs.**
+  Decode an accepted URL to an address before lookup, avoiding traversal and SSRF into backends.
+  [Gateway constraints](gateway.md).
+- **Backends require a non-public authenticated link and a service credential.** CloudFront never
+  forwards to them. Do not rewrite a shared overlay policy unilaterally; record the deviation from
+  tag isolation and retain the service token. Do not substitute caller-address allowlists for that
+  credential because NAT/proxy paths differ. [Private network](../../deploy/gpu-backends.md).
+- **Per-team inference allowance is a fixed policy, default three, not pool width.**
+  `BIOHACK_MAX_CONCURRENT_PER_TOKEN` is read at startup; `0` disables it for measurement. Excess work
+  is refused immediately with `429`. Uploads take a lane in middleware; rows only after a cache miss;
+  metadata and cache hits take none. Token revocation is supported and team ids provide attribution.
+  [Implementation and tests](../references/2026102115_documentation-and-implementation-alignment.md).
+- **Do not add request-rate or lifetime-count quotas without their triggers.** Rate limiting returns
+  for observed bursts not contained by inference admission; a persistent count returns for
+  per-request billing or measured inter-team unfairness. Global GPU admission, per-model caps and
+  per-card ledgers remain deferred until justified separately; upload resource gates are distinct.
+  [Deferred work](../plans/202610171908_fifty-teams-and-more-models.md).
 
-- **No secrets, ever, including git history.** Bucket names, account IDs, and keys arrive via SSM or
-  environment variables, never in the repository.
-- **A private *network* address is a secret of the same class, and the repository keeps the alias
-  instead.** A tailnet or LAN address, a router's node name, an ssh user, and a host path each name a
-  machine or a way into it; committed, they are permanent, because rewriting `main` reaches no clone,
-  fork, or archive that already has them. So a tracked file names a machine the way `computed_by`
-  already does — `lab-3090`, `lab-5090`, `homepc-4090` — and `.agents/local/pool.md` holds alias →
-  network address, ignored exactly as `.env` is. An agent that needs to reach a backend reads that
-  file; a reader of the repository gets a name that resolves nowhere, which is the point. **An alias
-  never stands where an address stood**: no `http://<alias>:port`, no alias in a cell a reader would
-  dial, and a script that needs the real address stops with the path to that file rather than
-  guessing one — a wrong guess routes work to the wrong card, a stopped run costs a minute. Raw log
-  output is not committed at all: it carries the addresses by the thousand and nothing a `.csv` does
-  not already say. (A row's address, below, is the other meaning of the word and is unrelated.)
-- **Resolve addresses, never concatenate them.** A row is a lookup key in the closed in-memory index,
-  so reaching an object key or a filesystem path is impossible by construction. This is the most
-  likely real vulnerability, and the boundary is on us.
-- **A client-supplied URL is parsed, never fetched.** It is decoded into `(dataset, row)` and then
-  resolved through the same lookup. Fetching it would turn the gateway into a proxy into the private
-  network, GPU backends included.
-- **The overlay is not assumed to be ours alone, and a network we share is not rewritten for us.** A
-  private network carries other people's devices, so the target is isolation by tag and access policy
-  with the per-service token as the second lock. Where that policy is one file for a network shared
-  with people outside the project, the deviation is **recorded rather than taken**: the tailnet keeps
-  its everything-reaches-everything policy and the per-service token is the *only* lock, which leaves a
-  peer able to reach an inference port and no key material exposed. A lock by address is not the
-  alternative it looks like — what a backend sees of its caller is a fact about the **path**, one
-  machine's rewriting hop cannot be removed by any router setting — so only a credential carried in the
-  request is the same on every path, and only a credential survives a rebuilt host. The record and the
-  per-path measurements are in [`../../deploy/README.md`](../../deploy/README.md) §1.3 and
-  [`../../deploy/gpu-backends.md`](../../deploy/gpu-backends.md).
-- **GPU backends are never publicly reachable.** The gateway reaches them over an authenticated,
-  non-public link and each requires its own token; CloudFront never forwards to them. The transport —
-  a VPN, a private network, or a provider tunnel — is an implementation detail, not a fixed route.
-- **Keys are revocable, and each one is capped at the pool's width — in inferences, not in
-  requests.** A token may have as many *inferences* in flight as the pool is wide — three against
-  three cards, never four: `ConcurrencyGate` counts per team in the request middleware and refuses the
-  next one with `429 quota_exceeded` immediately rather than queueing it. Only the two predict routes
-  take a slot, because a lane is GPU time and a metadata read queues behind no machine: counting the
-  dataset surface would let a page's own load be refused while every card was idle, which is the
-  complaint the cap exists to prevent. The ceiling is the pool's declared `max_in_flight` summed, the
-  same number `GET /models` publishes, so a cap that disagreed with the published capacity would be a
-  second source of truth about it; a fourth card raises it without a code change. Revocation removes
-  the team from the token pool, and attribution comes from the
-  team id in the request log. A per-key *request rate* is still absent, and so is a per-key *count*
-  quota: a count needs persistence, a lifetime, and a top-up path, and its only effect is a human
-  round-trip at the moment a team is blocked. The trigger for a count: a backend billed per request,
-  or a fairness complaint between teams. The trigger for a rate: observed bursts that a cap of three
-  in flight does not contain. What is deliberately absent *before* a measurement — a global inference
-  admission gate, a per-model cap, a per-card memory ledger — is planned in
-  [`../plans/202610171908_fifty-teams-and-more-models.md`](../plans/202610171908_fifty-teams-and-more-models.md),
-  together with the trigger that starts it.
+## Environments and publication
 
-## Scope discipline
+- **A second environment gets its own bucket and distribution, not a live-bucket prefix.** Until a
+  separate rehearsal environment is needed, use the development dataset in the existing environment.
+  Public distribution requires cleared licensing. [Publication](datasets.md).
+- **Host state stays outside the checkout.** Keep environment, tokens, indices, model configuration,
+  disposable cache and publisher credentials under `~/.config/biohack-gateway/`. Exclude the complete
+  `publish/` directory from the service with `InaccessiblePaths=`; file modes alone cannot separate
+  two processes running as the same user. [Host isolation](deploy.md).
+- **Make published content reproducible from pinned provenance and locked tooling.** Preserve
+  upstream image bytes instead of transcoding; machine-local state must not define the release.
+  [Determinism](datasets.md).
+- **Publish where the upstream cache is, in the bucket's region.** Read parquet serially and upload
+  row bytes directly; do not stage image objects or allocate scratch storage. A moved publisher
+  needs its cache rebuilt or transferred. Indices may travel separately; rerunning the pinned
+  publisher reconstructs them. [Streaming](../references/202610131500_data-plane-region-and-streaming.md).
 
-- **Deferred is not rejected.** Delay a component until its stated trigger appears, and record the
-  trigger instead of the wish.
-- **Two parallel interface paths usually mean one constraint should be deleted.** Prefer removing a
-  path over maintaining both.
-- **Do not add ASGI layers, caches, state machines, or health-probe loops ahead of need.** The stated
-  thresholds decide when they return. The request gate and `/health` are not that: authentication is
-  part of the contract rather than a cache in front of it, and a liveness route something else asks
-  is not a loop that polls.
+## Scope and guidance
 
-## Environment separation
-
-- **One bucket and one distribution per environment, and a dev pair never faces participants.**
-  Exactly one environment exists today, so there is no dev pair to keep apart; when the need for a
-  private place to rehearse appears, it becomes its own bucket and its own distribution, never a
-  prefix inside the live one. Until then the rehearsal target is the dev-only dataset `gwhs-temp`
-  (10 rows) published into the same bucket, and `gwhs` publishes only after its license is cleared
-  as `gwhd`'s and `gwfss`'s were. Host state — `env`, `tokens.json`, the index directory, and the
-  publisher's `publish/` with its `env` and the console's access-key CSV — lives under
-  `~/.config/biohack-gateway/`, outside the checkout; the unit excludes `publish/` with
-  `InaccessiblePaths=`, because the service and the publisher run as the same user and file modes
-  alone cannot separate them.
-- **Output is a deterministic function of the pinned revision**, not an artifact of the machine that
-  produced it. Pin interpreter and dependencies with `uv.lock`; write images verbatim rather than
-  decode-and-re-encode. With one environment this is what makes a republish reproducible rather than
-  merely repeated, and it is what a second environment would be compared against.
-- **Publishing runs where the cache is, in the bucket's region, and streams.** The cache is disposable
-  and rebuilt from the pinned revision, and the bucket sits in that host's region, so a publish reads
-  a row's bytes out of cached parquet and PUTs them in one request: nothing is staged on disk and no
-  scratch volume is involved. Moving a publish elsewhere means moving the cache with it. Only the
-  metadata index travels the other way. Republishing is a re-run of that same deterministic command,
-  which is the only rollback mechanism there is.
-
-## Contract sources
-
-- Only two handwritten *contract* sources exist: the Pydantic models in `gateway/` (API) and
-  `docs/data-layout.md` (data layout). Reference pages, policy prose, and examples are also written
-  by hand, but anything schema-shaped is a projection of those two.
-
-## Where guidance lives
-
-- **Guidance sits where the work happens, and links rather than repeats.** The commands for running
-  something are documented in the README section of the thing they run — the root README, one section
-  per subproject — and the operations that touch the host live in
-  [`../../deploy/README.md`](../../deploy/README.md). The runbook points at the command reference
-  instead of restating its flags, so a reader arriving from either direction gets the same answer and
-  every flag is described in one place.
+- **Defer until an observed need, recording its trigger.** Do not prebuild ASGI layers, caches,
+  state machines or health loops. Existing authentication, liveness, result caching and backend
+  probes have distinct measured responsibilities. [Decision process](design-philosophy.md).
+- **Prefer deleting a redundant interface to maintaining two.** Reuse platform and dependency
+  primitives before adding another source of truth. [Decision process](design-philosophy.md).
+- **The README is the maintainer entry and command reference, one section per subproject.**
+  Participant tutorials belong in `docs/content/`; host operations belong in `deploy/README.md`,
+  linking back to command descriptions instead of duplicating flags.
+  [Documentation alignment](../references/2026102115_documentation-and-implementation-alignment.md).

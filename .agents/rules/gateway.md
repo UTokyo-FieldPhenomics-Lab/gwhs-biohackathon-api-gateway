@@ -1,251 +1,125 @@
 # Gateway Rules
 
-Package: `gateway/`. Repo-wide invariants are in [`project.md`](project.md) and are not repeated
-here.
+Package: `gateway/`. Shared constraints are in [`project.md`](project.md).
 
-- **Stack**: FastAPI + uvicorn + Pydantic v2, deployed with systemd. Docker is an escape hatch for
-  hosted platforms only; the gateway does not run in a container.
-- **Packaged, not run from source.** The gateway is an installable package (`src/biohack_gateway`)
-  launched as `uvicorn biohack_gateway.app:app`; no code depends on the working directory.
-- **Every request is key-authenticated, and the gate is closed by default.** One middleware checks
-  `X-API-Key` against the token pool before routing, so an endpoint added later is protected by
-  existing rather than by remembering a decorator, and a path that does not exist is refused too. The
-  exceptions are named in the code — `/health`, the two pages the documentation site frames, and the
-  three files those pages load — because they carry no data and could not be opened in a browser if
-  the page itself needed a header.
-  An absent pool is a closed gateway rather than an open one, and a pool that has never parsed answers
-  `503 unavailable` until it does. A token may have three *inferences* in flight and no more — a
-  fairness number, not the pool's width — refused as `429 quota_exceeded` rather than queued;
-  `occupies_lane` is what decides which routes are counted, and it counts only the upload route,
-  because a row answer may come from the cache and hold no GPU. A per-key request *rate* is still
-  absent. [`project.md`](project.md) holds that decision and its triggers.
-- **Images reach clients through the public `data.*` plane**, so nothing has to be anonymous.
-- **Routing is a sequential retry over interchangeable backends, cheapest expected wait first.** Score
-  each live backend by its **measured round trip plus what the requests already in flight are likely
-  to cost**, and try the cheapest — a backend is only known to be unhealthy *after* an attempt fails,
-  so a burst arriving during the failure must not queue behind it, and a burst deeper than the pool
-  must not be answered by whichever backend the host listed first: three cards and 160 simultaneous
-  calls put 140 on one of them, so the pool ran at one card's rate
-  ([measurements](../references/2026101714_what-a-burst-does-to-the-pool.md)). **Both terms belong in
-  the sum and each is the same order as the other**: the link to the laboratory is ~0.26 s, and one
-  request queued ahead costs ~0.25 s in row mode
-  ([measurements](../references/202610192300_lane-width-and-the-score.md)). Ordering by "idle first"
-  alone prices one queued request as a whole service time and sends a burst across the ocean for a
-  wait it would never have paid; ordering by round trip alone piles the burst on the nearest machine.
-  Mark a failed one unhealthy, and move on. The window a failed backend is passed over for must be
-  **at least the response budget the failed attempt had**, and `models.py` asserts the invariant,
-  because a window shorter than the failure it remembers charges the same wait again for every
-  window. A backend is any Docker-capable GPU resource behind one uniform protocol; the gateway never
-  special-cases a provider. No circuit-breaker and no weighted routing: the answers are
-  interchangeable and a queue is not this layer's job.
-- **The queue is the machine's, not the container's.** A card carrying three models has three
-  containers and one GPU, so the depth the score multiplies is the requests in flight on that
-  machine, summed across every model it serves, keyed by the `computed_by.machine` each container
-  declares. Counting per container would tell a request for the third model that the card is free
-  while two inferences run on it. A container that declares no machine is counted alone, and ties
-  within one machine go to the container whose own lock is free.
-- **Uploads reserve receive capacity before multipart parsing, then link bytes before reading.**
-  A process-wide, non-waiting upload limit bounds temporary files and payload memory independently
-  of the per-team inference lanes. A full receiver returns `429` with `Retry-After` before consuming
-  the body; every exit releases its receive slot. The host's `/tmp` may be tmpfs, so spooling is not
-  evidence that an upload costs no RAM. The parsed file's size, not a client-supplied header, decides
-  link admission, and the full payload is read only after that admission succeeds.
-- **Forwarded uploads are admitted by bytes, because the link is the scarce thing they hold.** The gateway
-  keeps at most one link's worth of bodies in flight — capped at 24 MB by `BIOHACK_UPLOAD_BYTES` — queues
-  the rest in `(team_in_flight, arrival)` order so a team with nothing running goes before a team
-  with two, and refuses with `429` plus `Retry-After` after 20 s rather than letting a request sit
-  until a client gives up. The capacity behind that budget is measured from completed uploads
-  (bytes over busy seconds, seeded at 1.5 MB/s), because a bad night on the link is a fact only the
-  traffic can report. Rows are not queued: they carry no bytes and the thread pool already bounds
-  them. Raising the shared worker limit is not a substitute for bounding received uploads.
-- **A cached answer is not a request, and it does not hide which machine answered.** The cache is
-  keyed by the published revision, so a republish is a cold start; it stores only row predictions,
-  serves them with `cached: true` and the original `computed_by`, and takes no lane on the way out.
-  It is disposable: deleting the file is a cold start, never a loss. Nothing in it may be the only
-  copy of anything.
-- **A handler that reaches a backend is a plain `def`, never `async def`.** The transport is a
-  blocking socket call, so an async handler runs it on the event loop and holds every other route
-  for the round trip — an upload did exactly that, and `/health` answered in 11 s under six of them
-  ([the same measurements](../references/2026101714_what-a-burst-does-to-the-pool.md)). FastAPI runs
-  a `def` handler in its thread pool, which is the concurrency this surface wants; `predict_upload`
-  reads its body through `file.file` for that reason.
-- **The pool is probed on a clock of its own, and the count carries that clock.** One task asks every
-  backend's `/health` every `PROBE_INTERVAL_SECONDS`, off the request path, and `backends_up` counts
-  what that probe last saw — not "has not failed yet". Without it the count lies twice: a machine that
-  dies quietly stays up until somebody calls it, and a machine that was off when the process started is
-  published as up because nothing has failed against it. The age is published with the count
-  (`checked_seconds_ago`), because a verdict without its age is a promise about the past, and both
-  pages show it; the task is cancelled with the process, so a reload never leaves two tasks asking the
-  same machines. The probe asks *whether*, never *what*: a declaration is a specification, and one
-  that changes under a running process is a deployment that has not been restarted.
-- **The model surface is four routes, and its error mapping decides what a caller retries.** `GET
-  /models` and `GET /models/{model}` answer what the pool holds; `POST /models/{model}/predict` takes
-  an address and `POST /models/{model}/predict/upload` takes bytes, because one handler branching on a
-  content type would have two jobs. A backend's `4xx` is the request's fault and is never retried —
-  but it is **mapped**, not forwarded: `400` and `422` become `400` carrying the backend's own
-  sentence, because that sentence is the parameter complaint the caller needs, while anything else
-  becomes `502`, because a backend that does not serve this model is a deployment mistake rather than
-  the caller's. A refusal's body is passed on only for the parameters; anything else is re-worded
-  here, since it may name an address inside the pool. **A `500` is not the machine failing**: it is
-  one request the backend could not handle, so it is answered `502` once — not retried elsewhere and
-  not passed over — because retrying that body is how a crash spreads; three in a row do pass the
-  machine over, since an application that fails still answers `/health` and the probe cannot see it.
-  Everything that means the machine is gone — no connection, a timeout, `502`/`503`/`504` — is passed
-  over for at least the attempt's own budget and the next machine is tried, so a caller never learns
-  there was more than one machine. **A timeout while the body is still going out is the link, not the
-  machine**: the send has a budget of its own (a fifteen-megabyte body may take a minute), the
-  machine keeps its place, and the body is not re-sent to another one. A backend refusing the
-  gateway's own token is neither — it is this side's misconfiguration and answers `unavailable`,
-  because telling a participant their key is wrong sends them to look in the wrong place.
-- **A connect timeout is not an upload-send timeout.** Establishing a connection must be identified
-  separately, so a backend that cannot be reached does not prevent trying a healthy alternative.
-  Socket inactivity timeouts do not bound a whole response: transport also enforces an elapsed-time
-  deadline and a response-byte ceiling, closes incomplete exchanges, and never caches them. Retries
-  share the request's remaining time rather than each receiving an unlimited fresh budget.
-- **A model's control parameters are the model's, never the gateway's.** The container declares what
-  it accepts, with types, defaults and bounds, in its own `/health`; the gateway repeats that
-  declaration from `GET /models`, validates a request against it, and forwards the values verbatim.
-  Nothing here may name a parameter: a `prompt` written into this package would be a second place the
-  model's own contract lives, which is what keeps a new model to a configuration change. What the
-  gateway enforces is only what the declaration already answers — a name the model did not declare, a
-  value outside its type or bounds or set, a name sent twice, a combination its declaration rules out
-  — and it refuses those `400` before a machine is asked. Meaning stays the backend's: whether a
-  point lies on the image, what a negative label does, which values in the list actually produce a
-  good answer. The one place a value outside the declaration is forwarded is a ceiling marked
-  `clamp`, where the container answers at its ceiling and says so in the answer's `warnings`.
-- **A parameter may only be one that cannot raise the admitted memory peak.** Per-inference knobs are
-  the surface; deployment properties are not. `device` and `half` belong to the container's
-  deployment and never enter the contract. A resolution knob is exposed only with a declared ceiling
-  the container clamps to and reports, because a client-set size that could grow the peak would make
-  admission something that cannot be computed in advance — and a size in the list is a size that was
-  run, not one a stride formula implies.
-- **An undeclared model is not validated, and `declared` says which case it is.** A model whose
-  `/health` has never been read publishes an empty parameter list that means "nothing was said", not
-  "nothing is accepted". Validating against it would refuse a call that works — a container answering
-  a body the gateway could not parse is exactly that case — so validation is skipped only there, and
-  `GET /models` publishes the flag so a reader can tell the two apart.
-- **Two surfaces, one process.** The model surface does auth, gating, and routing; the dataset surface
-  serves metadata, facets, and addressing. They share the error contract, authentication, and
-  configuration. The dataset surface owns no bytes and calls no backend.
-- **The dataset surface is read-only and index-backed.** Metadata is loaded from the publisher's
-  SQLite index at startup, and a republish is followed by a restart — that is the whole refresh
-  mechanism. Facets are a deterministic projection of that index computed once, never a second store.
-- **A dataset's shape is read off the index, not configured.** Which filter keys exist, whether
-  geometry is RLE or boxes, whether a mask exists, and which row fields a response carries are facts
-  about the published artifact, so a new dataset needs no gateway change and no dataset is
-  special-cased in code. A response field is present when the index holds one — one model family with
-  `response_model_exclude_unset=True`, never a model per dataset. The surface's two settings — the
-  index directory and the base URL images are addressed from — are `create_app` defaults, not host
-  environment; moving either is a code change.
-- **One geometry encoding across both surfaces.** The model surface returns the same object shape and
-  the same COCO RLE for masks as the dataset surface (`{bbox, category?, score?, rle?}`), so a
-  participant writes one decoder that serves ground truth and model output alike.
-- **Normalisation happens in the backend's image, never in the gateway.** Each model container turns
-  that model's native output — SAM 3's raster or compressed raster among them — into that shape
-  before it reaches the gateway. The gateway keeps zero ML dependencies and does no encoding.
-- **A list carries statistics, never the per-image annotation.** List endpoints return counts and
-  presence sets; the annotation itself is one row at a time from the detail endpoint.
-- **Addresses are resolved, never concatenated.** A row is a lookup key in the closed index; a
-  client-supplied URL is parsed into `(dataset, row)` and never fetched.
-- **No bulk endpoints.** The largest page is 1000 rows, and there is no dataset-dump endpoint — a
-  client that wants everything reads the index artifact. Batch inference stays deferred until a real
-  multi-image loop appears as a need.
-- **The reference is usable with a key, and the key stays on the API's origin.** The contract declares
-  the scheme the gate enforces and requires it on every operation but `/health`, without which
-  Swagger UI carries no credential and every Try it out answers `401`. The page arms Swagger with the
-  key and asks the framework **not** to remember it (`persistAuthorization` is false): remembering is
-  the shared store's job, because a browser that holds two copies of a secret cannot clear them
-  together. What the field collects is typed into the API's page and never reaches the documentation
-  site, which frames the page and does nothing else — which is also why only that site may frame it
-  (`frame-ancestors`, configured per app), since a field for a secret in a page anything may embed is
-  a field anything may overlay.
-- **One key, one place: `assets/api_key.js` is the store both framed pages read and write.** The
-  reference and the model page are served by this host, so they are same-origin and see one
-  `localStorage` entry — a key entered on either is the key the other uses, and `Forget` on either
-  clears it for both, which is why both rows offer the same two actions. Nothing else persists a key
-  on this origin, and the store adopts and drops Swagger's old entry the first time it runs. Where
-  storage is unavailable — private mode, a blocked or partitioned third-party frame — the key is held
-  for that page's lifetime instead, and every caller already handles that: the store never throws and
-  never reports which of the two happened.
-- **A page that runs a call is served by the API too, and framed the same way.** `/play` is served
-  from here because that makes it same-origin with the API: no CORS is involved anywhere, and the key
-  it uses is the one the store holds, typed into one of the API's own pages and never into the site.
-  It joins `OPEN_PATHS` and carries `frame-ancestors {DOCS_PARENT_ORIGIN}` for the reference's reason:
-  it carries no data of its own, and it is where a reader's key goes. Its controls are built from the
-  model's own declaration in `GET /models` and nothing else — a model the page cannot render is an
-  incomplete declaration, not a page that is not clever enough — with one exception: a table of view
-  defaults may key a model id to which layers are *shown* first (masks, boxes, legend, watermark),
-  because a first view is presentation rather than the contract. An id that table does not name takes
-  the base view — which is also what a renamed model gets — and nothing in it decides what is sent.
-  It draws with the documentation
-  site's published `clients/global-wheat.js`, loaded by URL, since a copy here would be a second
-  decoder to keep true. That file decodes row-major, so this page copies a pixel rather than mapping
-  an index; a page that transposes a mask again is the bug, not the fix. It previews the image an address resolves to as soon as the address is
-  complete, because a row that does not exist should say so before a model is asked to fetch it.
-- **A mask's colour is the dataset's to declare.** A category the picture's dataset publishes in
-  `GET /datasets/<id>` is tinted with that palette, so the demo and the dataset's own page show one
-  class in one colour; a category the dataset does not declare is an instance of something rather
-  than a class of the picture — the words a detector was given — and those are coloured per object,
-  because two neighbours of one category still have to differ. A class list or a colour literal here
-  would be a second answer, and the two would go stale apart.
-- **The result is shown whole, and what is drawn on it is text over the raster.** The pane holding
-  the photograph has a fixed height and fits the image inside it; nothing inside a picture is ever
-  scrolled. A box and its score are placed as elements in the image's own fractions rather than
-  painted into the bitmap: the pane shows a photograph at whatever size fits it, so a score burned
-  into the bitmap is a smudge on a tall strip and a billboard on a wide crop, while text is the same
-  size in both and stays on its object. The height is in `rem` and never `vh` — this page reports its
-  own height to the frame that holds it, so a viewport-relative height would be a fraction of its own
-  content.
-- **What the page would send is published, and the key never is.** Every value the controls describe
-  is also shown as the `curl` command that sends it, built from those same controls and the page's own
-  origin, so nothing about the surface is written down twice. The key is left as `$KEY`: the one thing
-  a page holding a secret must not do is print it into its own DOM, where a screenshot or a command
-  line pasted into a chat would carry a team's token.
-- **Page material lives in `assets/`, one language to a file.** The markup, scripts, and stylesheets
-  this package injects are read from beside the modules at import and inlined into the answer; nothing
-  is mounted, so what the host serves is a page the application carries rather than a directory whose
-  contents anything may fetch by guessing a name, and no code depends on the working directory. One
-  file is one language: a page edited as JavaScript is not a string inside a Python module. The frame
-  reporter and the model page are each one copy, shared by both framed pages, and the key store is
-  one file inlined into both because it is one key they share.
-- **The reference reads as one document.** Its field wears Swagger UI's own controls and lives in the
-  strip the framework keeps for page-wide settings, between the description and the calls, rather than
-  in styling of our own. Its groups come out in the order of the paths in the document, which is why
-  `/health` is declared before the dataset surface: the one call that needs no key is the one a reader
-  can try first. The padlock a call carries means what the reader expects of it — closed until their
-  key is in, open once it is, in words as well as in the glyph — rather than what Swagger UI means by
-  its own icons.
-- **Liveness is a route, not a probe loop.** `/health` answers without a key so a monitor and the
-  deploy script can ask it, and it says only that this process is serving, with the version — which is
-  how a host running stale code is noticed. The one thing on a clock here is the pool probe above: it
-  asks backends about themselves, never about this host, and nothing asks a backend on the request
-  path.
-- **The package configures the root logger once, on import.** uvicorn configures loggers of its own
-  and never the root one, so without it every line this package writes is discarded before journalctl
-  sees it — including the team id each request is attributed to, which is what stands in for a counted
-  quota. `basicConfig` leaves an existing root configuration alone, so a deployment's own
-  `--log-config` still wins.
-- **Contract source is the Pydantic models.** Invalid input answers `400`, never FastAPI's default
-  `422`; error bodies keep one shape. Every refusal goes through one helper, the framework's own `404`
-  and `405` and an unhandled exception included, and a crash answers `internal_error` with nothing of
-  the exception in the body — the traceback reaches the log through the server that re-raises it, so
-  the handler does not log it a second time.
-- **No ML dependencies.** `torch` and friends belong to the model repository; CI splits by path so
-  gateway checks stay fast.
-- **The token pool is a file this package owns.** `biohack-gateway tokens list|add|remove --id` is a
-  subcommand of the same installed package, so the writer and the reader share one Pydantic model and
-  one file format rather than two definitions of it. It edits
-  `~/.config/biohack-gateway/tokens.json` — a flat `{team_id: token}` map, tokens verbatim, since
-  hashing is a capability this repository does not have — and nothing else: no HTTP surface, no
-  `systemctl` call, no absolute host path, so it runs on a laptop against a copy too. `list` prints
-  team ids and never tokens, which is what makes it safe to paste anywhere.
-- **A pool change applies without a restart, and an index change does not.** The pool's stamp —
-  modification time, size, inode — is compared before every request and the file re-read when it
-  differs, so issuing, rotating or revoking takes effect on the next request; revocation is the case
-  that decides this, because a leaked key has to stop working without a human remembering a command.
-  An edit that does not parse never displaces the last pool that did, so a typo cannot lock
-  participants out, and one log line names the file. The dataset index keeps the other bargain,
-  restart, because a publish is deliberate and large.
-- **Stay small.** A second reader of the same index tables, or a second definition of a response body,
-  is a signal to stop and reconsider: the surface is two modules on top of a shared index reader, and
-  their length is mostly the required NumPy docstrings.
+## Process, authentication and state
+
+- **Use FastAPI, uvicorn and Pydantic v2 as an installed package.** Launch
+  `uvicorn biohack_gateway.app:app` under systemd; no working-directory dependency. Docker is
+  reserved for a future hosted-platform requirement. [Deployment](../../deploy/README.md).
+- **Authenticate by default in middleware.** Check `X-API-Key` before routing, including unknown
+  paths. Only explicitly named `OPEN_PATHS` are anonymous; absent state never opens the gate, and
+  an unreadable initial pool answers `503`. [Authentication](../references/2026101415_first-live-endpoints.md).
+- **Cap teams at three inferences by policy, independent of pool width.**
+  `BIOHACK_MAX_CONCURRENT_PER_TOKEN` overrides the startup default; `0` disables it. Refuse excess
+  work immediately with `429`: upload lanes are acquired in middleware, row lanes only after a
+  cache miss in the handler. Metadata and cached answers take no lane.
+  [Decision and tests](../references/2026102115_documentation-and-implementation-alignment.md).
+- **The token CLI owns one flat `{team_id: token}` file.** `tokens list|add|remove` shares the
+  reader's model and defaults to `~/.config/biohack-gateway/tokens.json`; `--file` supports copies.
+  No HTTP administration, service control, hashing or fixed host path; `list` never prints tokens.
+  [CLI](../plans/2026101414_✅token-command-line.md).
+- **Reload tokens on file-stamp changes, but indices only on restart.** Compare mtime, size and
+  inode before authenticated requests. An invalid edit keeps the last parsed pool and logs once;
+  revocation must not depend on restarting. [Hot reload](../references/2026101416_token-pool-hot-reload.md).
+- **Liveness reports this process and installed version, without a key.** `/health` does not probe
+  dependencies. Configure the root logger once with `basicConfig`, respecting an existing logging
+  configuration; request logs attribute work to teams. [Host operation](../../deploy/README.md).
+- **Use one error helper and Pydantic contract.** Invalid input is `400`, not `422`; framework
+  `404`/`405` and unexpected errors use the same body. An unexpected error exposes no exception
+  text and is not logged twice. [Error contract](../references/2026101415_first-live-endpoints.md).
+
+## Routing and resources
+
+- **Route interchangeable backends by expected wait, then retry sequentially.** Score round-trip
+  latency plus queued work; reserve depth atomically, summed across models by declared
+  `computed_by.machine`. Missing machine names stay separate; same-machine ties prefer a free
+  container. No provider special-casing, weighted routing or separate circuit-breaker layer.
+  [Burst](../references/2026101714_what-a-burst-does-to-the-pool.md),
+  [score](../references/202610192300_lane-width-and-the-score.md).
+- **Probe backend health off the request path.** One cancellable task uses
+  `PROBE_INTERVAL_SECONDS`; publish `backends_up` and `checked_seconds_ago`. Retry undeclared
+  containers on that clock; once read, a declaration requires a restart to change.
+  [Freshness](../references/2026101711_pool-freshness.md).
+- **Separate request failures from machine failures.** Map backend `400`/`422` to `400` with its
+  parameter complaint; other `4xx` become `502` with safe wording, except a rejected backend
+  credential becomes `503 unavailable`. Do not retry them. A `500` becomes `502` without retry;
+  three consecutive application failures pass the backend over. Connection failures, read timeouts
+  and `502`/`503`/`504` allow failover; the exclusion window covers at least the failed attempt's
+  response budget. [Failure policy](../references/2026102115_availability-and-failure-policy.md).
+- **Distinguish connect, send and read budgets.** A send timeout does not condemn the machine or
+  resend its upload. Retries share one elapsed-time deadline; limit response bytes and close
+  incomplete exchanges rather than pooling or caching them.
+  [Transport bounds](../references/2026102105_gateway-resource-bound-fixes.md).
+- **Keep blocking backend handlers synchronous.** A plain `def` runs in the framework worker pool;
+  blocking socket calls must not occupy the event loop. Read admitted upload payloads through
+  `file.file`. [Evidence](../references/2026101714_what-a-burst-does-to-the-pool.md).
+- **Reserve upload receive capacity before multipart parsing.** A full process-wide receiver refuses
+  immediately with `429` and `Retry-After`. Temporary spools may consume RAM on tmpfs. Admit parsed
+  file size before reading the full payload and release every reservation on every exit.
+  [Resource bounds](../references/2026102105_gateway-resource-bound-fixes.md).
+- **Queue forwarded uploads by link bytes, not worker count.** Order by `(team_in_flight, arrival)`;
+  derive capacity from completed bytes over busy seconds. Defaults seed 1.5 MB/s, cap the budget
+  at 24 MB and wait at most 20 s; `BIOHACK_UPLOAD_BYTES` and `BIOHACK_UPLOAD_WAIT_SECONDS` override
+  the last two. Refusals include `Retry-After`. Rows bypass this queue; increasing workers does not
+  replace admission. [Admission](../references/2026102105_gateway-resource-bound-fixes.md).
+- **Cache only successful published-row predictions.** Key by canonical dataset, revision, row,
+  model and query text, never a digest. Only a changed revision changes revision-based cache keys;
+  a hit preserves original `computed_by`, adds cache provenance and takes no lane. Uploads are not
+  cached. The store is disposable; failure is a miss, and old keys need no migration.
+  [Cache](../references/2026102115_documentation-and-implementation-alignment.md).
+
+## Data and model contract
+
+- **Use separate address and upload predict routes plus model list/detail routes.** Metadata and
+  model surfaces share one process, auth, configuration and error contract; datasets call no GPU.
+  [Contract](../../docs/data-layout.md).
+- **Serve dataset metadata from the publisher's startup index, without another store.** Derive facets
+  once; infer filters, geometry, masks and optional fields from the index, never dataset-specific
+  configuration. Use one response family with `response_model_exclude_unset=True`; index directory
+  and data base URL are `create_app` defaults, not environment settings.
+  [Dataset surface](../references/2026101519_dataset-surface.md).
+- **Return public image URLs by lookup; never fetch a participant URL.** Lists expose statistics,
+  not per-image annotations. Detail returns one row's geometry; pages stop at 1000 rows. No dump or
+  bulk-inference endpoints before a demonstrated need. Index artifacts remain internal, not a
+  participant download surface. [Layout](../../docs/data-layout.md).
+- **The container owns model parameters.** Publish its declaration and validate names, duplicates,
+  types, bounds, choices and declared combinations before forwarding values verbatim. Skip
+  declaration-based validation only when `declared` is false; empty declared parameters mean none
+  are accepted. Semantics remain the backend's; declared `clamp` ceilings may be forwarded and
+  must produce warnings. [Parameters](../references/2026101811_model-parameter-validation.md).
+- **Do not expose knobs that can increase the admitted memory peak.** Device and precision are
+  deployment properties. Resolution choices require measured values and a declared clamp ceiling,
+  not inferred stride ranges. [Parameter design](../plans/2026101811_✅model-parameter-contract.md).
+- **Use one object/COCO RLE shape for annotations and predictions.** Backend containers normalize
+  native outputs; the gateway has no ML dependency or geometry encoder. Reuse the shared index
+  reader and response models instead of adding parallel definitions.
+  [Layout](../../docs/data-layout.md), [model rules](models.md).
+
+## Framed pages
+
+- **Keep key entry and live calls on the API origin.** `/docs` and `/play` are anonymous shells
+  restricted by `frame-ancestors` to the configured docs origin. The docs site frames them and
+  receives no key; no CORS is needed. Swagger's scheme must match the gate, with authorization
+  persistence disabled. [Reference](../references/2026101522_interactive-key-in-the-reference.md).
+- **Use only `assets/api_key.js` to remember keys.** Both pages share one localStorage entry and
+  Forget action; migrate/drop Swagger's legacy entry. If storage is unavailable, retain the key
+  only for the page lifetime without throwing. [Shared store](../references/2026101617_one-key-for-both-pages.md).
+- **Keep page material beside the package, one language per file.** Inline application assets;
+  serve only the three named vendored Swagger files, never an asset-directory mount. Both pages
+  reuse the frame reporter and key store; paths must not depend on cwd.
+  [Key-page isolation](../references/2026102103_key-page-csp-and-hsts.md).
+- **Build playground controls and sample curl from the same model declaration and state.** Only
+  presentation defaults may depend on model id; unknown ids use the base view. Preview a resolved
+  image before inference. Print `$KEY`, never a token, in the generated command.
+  [Playground](../references/2026101622_play-page-layout-annotations-and-curl.md).
+- **Reuse the site's client module for decoding and dataset declarations for class colour.** Copy
+  row-major masks without another transpose; categories without a dataset palette are coloured per
+  object. No parallel decoder or hardcoded class palette.
+  [Client rules](clients.md), [colour](../references/2026101918_play-one-colour-for-every-class.md).
+- **Fit the whole image in a fixed-height pane.** Use `rem`, not `vh`, in a height-reporting frame;
+  draw boxes and labels as image-relative elements over the raster. No scrolling within an image.
+  [Layout](../references/2026101622_play-page-layout-annotations-and-curl.md).
+- **Make the reference read in contract order.** Put key controls in Swagger's page-settings strip;
+  declare `/health` first and make padlocks mean closed before authorization, open after, in words
+  and glyphs. [Reference controls](../references/2026101522_interactive-key-in-the-reference.md).

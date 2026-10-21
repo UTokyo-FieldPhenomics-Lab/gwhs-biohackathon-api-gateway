@@ -1,244 +1,200 @@
 # Global Wheat BioHackathon API Gateway
 
-Dataset and model API for the global wheat BioHackathon (Göttingen, 2026-12-07 to 12-11).
+Dataset and model API for the global wheat BioHackathon (Göttingen, 7–11 December 2026).
+Participants fetch images and run segmentation models without downloading a dataset, deploying
+containers or owning a GPU.
 
-## What this is
-
-Participants should be able to build an agricultural application **without downloading the
-dataset, deploying a model, or owning a GPU**. Two things carry the whole experience, and
-each is a single HTTP call:
-
-- fetch one image,
-- get one model result.
-
-Everything else — documentation, examples, a task pool, cost accounting — is supporting
-material. The project is deliberately small and static-first: it delays any component until
-a concrete need for it appears, and records the trigger rather than building ahead of it.
+This README is for maintainers. Participants start at **<https://docs.global-wheat.com>**.
+Host provisioning and operations are in [`deploy/README.md`](deploy/README.md); backend operations
+are in [`deploy/gpu-backends.md`](deploy/gpu-backends.md). Agents start at [`AGENTS.md`](AGENTS.md).
 
 ## Architecture
 
-Two planes joined only by a frozen contract:
-
-| Plane | What it does | How |
+| Surface | Responsibility | Implementation |
 |---|---|---|
-| Image | Serves images (and masks) | S3 (private, `eu-central-1`) behind CloudFront with OAC — written once at publish, no server, never down, and nothing mutable: a change is a new path, not an invalidation |
-| Metadata | Serves metadata, annotations, facets, and addressing | The publisher generates one index per dataset from a pinned upstream revision; the gateway loads it at startup and answers from memory |
-| Compute | Authenticates today, and serves the dataset surface; routes inference work to GPU backends once the model surface is written | One FastAPI gateway on an EC2 host (region per environment) routing to Docker-capable GPU backends over an authenticated, non-public link — a lab machine, a GPU VPS, or a rented GPU container |
-| Contract | Defines the API surface and the data layout | This repository: OpenAPI models, `docs/data-layout.md`, examples, skills |
+| Images | Public image and mask bytes | Private S3 in `eu-central-1`, served through CloudFront with OAC; write-once object paths |
+| Metadata | Dataset discovery, facets, annotations and row addressing | Publisher-built SQLite indices loaded into gateway memory at startup |
+| Compute | Authentication, inference routing, row-result caching and upload admission | FastAPI on one EC2 host, reaching private Docker GPU backends |
+| Contract | API schema, data layout, clients and participant documentation | Pydantic models, [`docs/data-layout.md`](docs/data-layout.md), this repository and its documentation site |
 
-Metadata is the one deliberate exception to static-first: it lives in the gateway's memory so a
-republish takes effect immediately and no client has to hold a copy.
+The dataset and model surfaces are implemented and deployed. Deployment evidence and measurements
+are [execution records](.agents/references/2026102105_gateway-resource-bound-fixes.md), not a promise
+that every backend is online now.
 
-The compute plane's containers live in a private repository that this one links as the submodule at
-`models/`, so the containers and the weights they load stay private while the contract stays public.
-A clone without access to that repository still succeeds and simply finds `models/` empty; what the
-link may and may not do is in [`.agents/rules/models.md`](.agents/rules/models.md).
-
-The bucket and the host that publishes into it share a region, so the publisher reads a row's bytes
-out of its cached parquet and PUTs them in one request: nothing is staged on disk, and a publish
-moves no bytes between regions. How the bucket, the distribution, the certificate, and the domain
-are built is in [`deploy/README.md`](deploy/README.md).
-
-Three domains, deliberately separate:
-
-```
-data.global-wheat.com  → CloudFront → S3         static images, no auth, long cache
-api.global-wheat.com   → gateway    → backends   dynamic requests, always requires a key
-docs.global-wheat.com  → GitHub Pages            the documentation site, static, disposable
+```text
+data.global-wheat.com  → CloudFront → S3         public image and mask objects
+api.global-wheat.com   → gateway    → backends   authenticated data and inference calls
+docs.global-wheat.com  → GitHub Pages            guides, downloads and framed API pages
 ```
 
-The first two are ours to run; the third is GitHub's, which is why the documentation stays readable
-while the host is stopped. `api.global-wheat.com/docs` remains the interactive reference, and the site
-frames that page rather than copying it.
+Dataset bytes bypass the gateway: it returns public URLs resolved from the index. Upload inference
+is the exception: multipart bodies are temporarily spooled and forwarded, never published or kept
+as dataset objects. The gateway resolves `(dataset, row)` by lookup, not by building paths from
+client input. A row is absolute within a pinned upstream revision; filtered positions are cursors.
+Dataset ids are `gwhd`, `gwfss`, development sample `gwhs-temp`, and `gwhs` when its full release is
+pinned. Replacing an index requires a gateway restart; changing the token pool does not.
 
-The gateway **never carries bytes**: it answers with the public `data.*` URL of an object, which
-is what clients display, so bandwidth stays on the CDN and off the gateway. Every address is
-resolved by lookup in the in-memory index, never assembled from client input.
+Model containers and weights belong to the private `models/` submodule. A public clone skips it,
+and this repository builds and tests without it. See [the submodule rules](.agents/rules/models.md).
+The documentation site also serves client files used by `/play`; retire those consumers together,
+not by deleting the site independently.
 
-Addresses are `(dataset, row)` — the absolute row number of the pinned upstream revision, which is
-meaningless without its dataset. Dataset ids are `gwhd`, `gwfss`, and — once the full annotation
-is released — `gwhs`; `gwhs-temp` is a development-only sample.
+## Local development
 
-## Repository layout
-
-The tree, file by file, is in [`AGENTS.md`](AGENTS.md#directory-structure). Three Python subprojects
-— `gateway/`, `datasets/`, `docs/` — each with its own `pyproject.toml` and `uv.lock` and no root
-package, plus `deploy/` for the host. Deeper notes and constraints live under [`.agents/`](.agents/).
-
-## Getting started
-
-Work through [`deploy/README.md`](deploy/README.md) once, when the host, its API surface, or the
-dataset bucket does not exist yet: that is where the machine, the checkout, and the data plane are
-created, and the checkout lands at a fixed path. Every session afterwards starts in it — if you are not
-sure where the repository is, that path is the default:
-
-```bash
-export CHECKOUT=/opt/gwhs-biohackathon-api-gateway   # the checkout: prepare-host.sh clones it here
-cd "$CHECKOUT"
-```
-
-Then work inside the subproject you need rather than at the root — `cd gateway`, `cd datasets`, and so
-on. Each is independent, with its own environment, and
-[uv](https://docs.astral.sh/uv/) fetches Python 3.12+ automatically if it is missing.
+Use your local clone, not the deployment checkout. Python 3.12+ and dependencies are managed with
+[uv](https://docs.astral.sh/uv/). There is no root Python package: `gateway/`, `datasets/`, `docs/`
+and `clients/python/` have independent environments and lock files. The directory map is in
+[`AGENTS.md`](AGENTS.md#directory-structure).
 
 ### Gateway
 
+From the repository root:
+
 ```bash
 cd gateway
-uv sync                                          # create .venv, install deps + this package
-uv run pytest                                    # tests
-uv run mypy .                                    # strict type check
-uv run ruff check . && uv run ruff format .      # lint and format
+uv sync --locked
+uv run pytest
+uv run mypy
+uv run ruff check .
+uv run ruff format --check .
 ```
 
-Serve it. This one stays in the foreground until you stop it, so it wants its own terminal:
+Start the app from `gateway/` in its own terminal:
 
 ```bash
+cd gateway
 uv run uvicorn biohack_gateway.app:app --reload
 ```
 
-`/health` and the documentation pages answer without a key; everything else needs a participant token,
-so issue one. The pool lives at the same path on every machine, host and laptop alike, which is what
-keeps the two behaving the same. The three verbs:
+`/health`, `/docs`, `/play`, `/openapi.json` and the reference's named assets are public. Other paths
+require a participant token, including unknown paths. In another terminal, from `gateway/`:
 
 ```bash
-uv run biohack-gateway tokens add --id dev       # issue; the token goes to stdout, once
-uv run biohack-gateway tokens list               # team ids only, never the tokens, so it is safe to paste
-uv run biohack-gateway tokens remove --id dev    # revoke
+uv run biohack-gateway tokens add --id dev       # prints the token once
+uv run biohack-gateway tokens list              # team ids only
+curl -s localhost:8000/health
+curl -s -H "X-API-Key: <token>" localhost:8000/datasets
 ```
 
-Now call it:
+`tokens add --force --id dev` rotates a token; `tokens remove --id dev` revokes it. All verbs accept
+`--file` for an isolated pool. The default is `~/.config/biohack-gateway/tokens.json`, re-read on
+change. An empty dataset or model directory is expected until local state is supplied:
 
-```bash
-curl -s localhost:8000/health                    # {"status":"ok","version":"0.1.0"}
-curl -s localhost:8000/                          # 401 invalid_key
-curl -s -H "X-API-Key: <token>" localhost:8000/  # 404 not_found, which means the key was accepted
-```
+- Dataset indices: `~/.config/biohack-gateway/index/<dataset>.db`.
+- Backend candidates: `~/.config/biohack-gateway/models.json`; the format and private connection
+  procedure are in [`deploy/gpu-backends.md`](deploy/gpu-backends.md#4-on-the-gateway-host-putting-it-in-a-models-list).
+- Backend credential: `BIOHACK_BACKEND_TOKEN`, matching the containers. Without it, uncached
+  inference cannot reach a backend.
 
-The gateway re-reads the pool whenever the file changes, so a token issued, rotated or revoked applies
-on the next request — there is nothing to restart. `--force` rotates an existing team's token without
-changing its id — what a leaked credential needs — and `--file` points any of the three verbs at a copy
-instead of the default pool: a laptop, or the copy kept off the host. The exact flags are in
-`biohack-gateway tokens --help`; issuing tokens on the host during the event, and keeping that copy
-fresh: [`deploy/README.md`](deploy/README.md).
-
-The dataset surface is part of that same process and needs a key like everything else. It loads
-`~/.config/biohack-gateway/index/<dataset>.db` at startup and answers from memory, so a republish
-takes effect by restarting the service rather than by an invalidation:
-
-```bash
-curl -s -H "X-API-Key: <token>" localhost:8000/datasets                      # the directory
-curl -s -H "X-API-Key: <token>" localhost:8000/datasets/gwhs-temp            # facets and palette
-curl -s -H "X-API-Key: <token>" 'localhost:8000/datasets/gwhs-temp/images?limit=2'
-curl -s -H "X-API-Key: <token>" localhost:8000/datasets/gwhs-temp/images/0   # one row's geometry
-```
-
-The gateway reads its index from the path above and addresses images at
-`https://data.global-wheat.com`; both are `create_app` defaults, and it reads no host environment.
-What the responses mean — the response fields themselves — is the [interactive API reference](https://api.global-wheat.com/docs); the internal contract behind them is `docs/data-layout.md`, which is not published on the site.
+Dataset state paths and the public data base URL are `create_app` parameters with defaults, not
+environment variables. Runtime overrides are described in the [host runbook](deploy/README.md):
+`BIOHACK_MAX_CONCURRENT_PER_TOKEN`, `BIOHACK_CACHE`, `BIOHACK_CACHE_PATH`,
+`BIOHACK_CACHE_MAX_BYTES`, `BIOHACK_UPLOAD_SLOTS`, `BIOHACK_UPLOAD_BYTES`, and
+`BIOHACK_UPLOAD_WAIT_SECONDS`. They are read at process startup. The default per-team cap is three
+inferences, independent of pool width; metadata and row-cache hits take no lane.
 
 ### Datasets
 
-The publisher produces both artifacts of a release in one run: image objects in S3, and one
-SQLite metadata index per dataset, which is the file the gateway loads at startup. It is one
-command with two subcommands — `fetch` fills the local upstream cache, `publish` runs
-build → validate → upload → verify — and a non-zero exit code is the only signal that stops the
-pipeline.
-
-Publishing writes into the dataset bucket and **the gateway never does** — it does not know the bucket
-name and has no S3 client — so the publisher carries its own credential, scoped to the dataset prefixes:
-an IAM user whose access-key CSV and environment live together in
-`~/.config/biohack-gateway/publish/`, a directory the gateway's service is configured not to be able to
-read. Preparing it once, in the console, is [`deploy/README.md`](deploy/README.md) §5; the variable
-names alone are recorded in [`datasets/.env.example`](datasets/.env.example).
-
-Upstream files are not committed and not shipped: they are fetched into a local, disposable cache
-by a separate step, which reads the pinned revisions in `sources.yaml` and downloads only the
-files each dataset selects — never the archives and cards sitting at the upstream root. Run it on
-the host that will publish, which is the host that holds the cache:
+The publisher reads pinned provenance from `datasets/sources.yaml`. `fetch` fills a disposable
+upstream cache; `publish` validates and builds an index, conditionally uploads images and masks,
+verifies new objects, and replaces the index only after success. It never overwrites an object.
+An interrupted full publish can be rerun: existing objects with matching size and owned headers are
+skipped under the same pinned source. This is not a byte-content comparison or deduplication pass.
+Header mismatches stop the run rather than being repaired automatically.
 
 ```bash
 cd datasets
-uv sync
-uv run biohack-datasets fetch --dry-run            # print the plan: files, sizes, what is cached
-uv run biohack-datasets fetch                      # fetch everything into datasets/.hf_cache/
-uv run biohack-datasets fetch --dataset gwhs-temp  # one dataset
+uv sync --locked
+uv run biohack-datasets fetch --dry-run
+uv run biohack-datasets fetch --dataset gwhs-temp
+uv run biohack-datasets publish --dataset gwhs-temp --dry-run
+uv run biohack-datasets publish --dataset gwhs-temp --index-dir ./build
+uv run biohack-datasets publish --dataset gwhs-temp --bucket s3://<bucket>
+uv run pytest
+uv run mypy
+uv run ruff check . && uv run ruff format --check .
+uv run pytest -m network                         # optional real upstream checks
 ```
 
-The cache is 1.88 GB for all three datasets, holds upstream bytes verbatim under
-`datasets/.hf_cache/<dataset_id>/`, and is rebuilt from the pinned revision rather than preserved.
-`HF_TOKEN` raises the Hub rate limits and is used when it is set; nothing needs it today.
+No bucket means a local index build, with no upload. `--limit 10` is available for rehearsals;
+use a separate `--index-dir` so a limited run does not replace a full index. Publishing never
+downloads and refuses incomplete shard selections. The normal index destination is host state,
+not the checkout. The operator restarts the gateway after installing indices.
 
-A mask dataset also pins the palette its annotation was painted with, and `fetch` downloads that one
-file too, into `datasets/.hf_cache/<dataset_id>/labels/`. A publish without it stops rather than
-building an index whose classes are silently empty.
+Publishing runs on the cache-holding host in the bucket's region and sends upstream image bytes
+verbatim. The publisher's write credential is separate from the gateway, scoped to dataset
+prefixes and excluded from the service. Its setup is in [`deploy/README.md`](deploy/README.md) §5;
+variable names are in [`datasets/.env.example`](datasets/.env.example).
+
+### Clients
+
+The site distributes five files from `clients/`: Python, Java, and a JavaScript core with browser
+and Node entries. Python uses NumPy, requests and Pillow; Java uses the JDK; Node resizing uses
+sharp. Responses remain native JSON containers; RLE and palette decoding are implemented here,
+not separately in tutorials or figure scripts.
 
 ```bash
-uv run biohack-datasets publish --dataset gwhs-temp --dry-run                # the plan, including the bucket
-uv run biohack-datasets publish --dataset gwhs-temp --index-dir ./build     # build locally, no upload
-uv run biohack-datasets publish --dataset gwhs-temp --bucket s3://<bucket>  # build → upload → verify
-uv run pytest && uv run mypy && uv run ruff check . && uv run ruff format --check .
-uv run pytest -m network                         # the Hub is reachable: pinned plan, real download
+uv run --project clients/python pytest
+uv run --project clients/python mypy
+uv run --project clients/python ruff check clients/python
+uv run --project clients/python ruff format --check clients/python
 ```
 
-A publish never downloads: it reads the cache `fetch` filled, and when that cache is missing it
-exits non-zero naming `biohack-datasets fetch`. A cache holding only part of a dataset is refused
-the same way, because a missing shard would give every later row an address that is not its own.
-The index is host state rather than checkout
-content — `~/.config/biohack-gateway/index/<dataset>.db`, override with `--index-dir` — and
-`gwhs-temp` is the rehearsal target the whole path is proven on. The publishing credential is
-[`deploy/README.md`](deploy/README.md) §5.
+From `clients/js/`, install the check dependencies with `pnpm install` and run `pnpm test`.
+Run the Java checks without writing class files into the checkout:
+
+```bash
+mkdir -p /tmp/opencode/global-wheat-java-checks
+javac -d /tmp/opencode/global-wheat-java-checks clients/java/GlobalWheat.java clients/java/tests/Checks.java
+java -ea -cp /tmp/opencode/global-wheat-java-checks Checks
+```
+
+`GLOBAL_WHEAT_LIVE=1` enables client live smoke tests and requires a participant key in
+`GLOBAL_WHEAT_API_KEY`. Ordinary checks use local fixtures or HTTP servers.
 
 ### Documentation site
 
-The curated documentation is live at <https://docs.global-wheat.com>, built by Zensical from
-`docs/content/` and published to GitHub Pages by [`.github/workflows/docs.yml`](.github/workflows/docs.yml)
-on every push to `main`. Six chapters, all written for a participant: `index.md` (three addresses and
-one call), `api/` (the contract, the clients as downloadable files in Python, JavaScript and Java, and
-FastAPI's own Swagger UI embedded in a frame), `datasets/` (what a row is, then one page per dataset),
-`models/` (the GPUs behind the API, then one page per model), and `examples/` (a live demo, and a
-notebook generated from its own page — that page is the only source). The internal contract,
-`data-layout.md`, is deliberately not published.
+`zensical.toml` builds `docs/content/` into the ignored `site/` directory. The workflow in
+[`.github/workflows/docs.yml`](.github/workflows/docs.yml) builds relevant documentation and client
+changes, and publishes main builds to GitHub Pages. Other package checks above are maintainer-run;
+the repository does not currently have a separate gateway or dataset test workflow.
 
 ```bash
-uv sync --locked --project docs                    # from the repository root
-uv run --project docs zensical build --strict      # a warning fails the build
-uv run --project docs zensical serve -a 127.0.0.1:8765
+uv sync --locked --project docs
+python3 docs/scripts/make_models.py
+uv run --project docs zensical build --strict
+python3 docs/scripts/sync_clients.py
+python3 -m http.server --directory site
 ```
 
-`site_dir` must stay outside `docs/content/`, and so must the virtualenv: a `.venv` anywhere under
-the content root silently stops the build putting `site/assets/` in the output, which serves an
-unstyled site. The hand steps behind the domain are [`deploy/README.md`](deploy/README.md) §6.
+`zensical serve` is useful for prose changes, but client downloads require `sync_clients.py` after
+a full build. Keep the environment and build output outside `docs/content/`.
 
-### GPU backends
+`examples/quickstart.md` is the notebook's only handwritten source. CI runs `make_notebook.py`
+before building, and after successful checks a trusted main run commits only the generated
+`docs/content/examples/quickstart.ipynb` back to main for Colab. PR builds never push. A protected
+branch must allow this narrow automation; the workflow does not force-push or bypass protection.
+`site/` is never committed. Model parameter tables still have a generated-file consistency check.
 
-Not a subproject of this repository: the model containers live in a private one, checked out here as
-`models/`. Every backend machine runs one container per model, named after the model id it serves, and
-a participant never touches one — the gateway does.
-
-On a machine you are sitting at, the whole lifecycle is four commands: `docker ps -a` to see it,
-`docker start|stop|restart <model>` to move it, `docker logs --tail 40 <model>` to see why it refused,
-and `docker rm -f <model>` followed by the run line when something it was *created* with has to change.
-Nothing has to be repeated to start it, because the card, the port and the backend token live in the
-container's own configuration rather than in the image — which is exactly why the full `docker run` line
-is written out, on both systems, in
-[`deploy/gpu-backends.md`](deploy/gpu-backends.md#32-the-run-line).
-
-## Changing dependencies
-
-Edit the subproject's `pyproject.toml`, then re-lock so CI stays reproducible:
+The quickstart's recorded outputs are a separate, authenticated real-run operation; CI generation
+does not execute notebook cells or refresh those outputs. Set `GLOBAL_WHEAT_API_KEY`, then record:
 
 ```bash
-cd gateway   # or datasets
-uv lock
+uv run --project docs --with nbconvert --with ipykernel --with requests --with numpy --with pillow python docs/scripts/record_notebook.py
 ```
 
-## Conventions
+Figure regeneration also uses the clients and requires that key for the published palette:
 
-- Project language is English: code, comments, docstrings, and docs.
-- Every module, function, and class carries a NumPy-style docstring.
-- Formatting, linting, and typing are enforced by `ruff` and `mypy --strict`; see
-  [`AGENTS.md`](AGENTS.md) and [`.agents/rules/project.md`](.agents/rules/project.md).
+```bash
+uv run --project docs --with pillow --with numpy --with requests python docs/scripts/make_figures.py
+```
+
+## Updating dependencies and conventions
+
+Edit the relevant `pyproject.toml`, then run `uv lock` in that subproject and commit its lock file.
+Project prose, code and comments are English. Python modules, classes and functions use NumPy-style
+docstrings; Ruff and strict mypy are the local quality gates. Keep constraints in
+[`.agents/rules/`](.agents/rules/) and execution records in [`.agents/references/`](.agents/references/).
 
 ## License
 
