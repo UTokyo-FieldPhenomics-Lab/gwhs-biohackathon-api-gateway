@@ -37,6 +37,10 @@ correctly and a caller would never see the number.
   to a multiple of 384 before tiling, so one attention cell is 1/24 of the *resized* frame: on a
   1024-pixel picture points land about 43 px apart. An earlier draft of the docs said 16 px, which
   was the tile's number and wrong for every real image.
+- **A count is floored at zero.** An exemplar drawn on something that is not the counted object pushed
+  the density sum to -1.55 on `gwhd` row 1, a picture of leaves; the body publishes `0`, which is what
+  the point selection already assumed. The docs and the container's README say it is the model's
+  arithmetic rather than a finding of fewer than none.
 - **`boxes` is the prompt and is required.** Extract-and-match has no negative exemplar, so a `0`
   label is a `400` rather than an ignored entry; accepting it silently would look like the model
   obeyed it.
