@@ -216,6 +216,32 @@ run of them is the line between the two — the probe cannot see this case, beca
 application fails still answers `/health` with `200`.
 """
 
+DEFINITIVE_FAILURES = frozenset({"refused", "unreachable", "oversized"})
+"""Failure kinds that establish something about this attempt, so one of them passes a backend over.
+
+A refusal is the machine answering with a reset: it is up and nothing listens on the port. An
+oversized answer is the machine answering with something it must not send. ``unreachable`` is a
+route or a name that is not there, or a connection the peer closed — after the transport's one retry
+on a fresh socket, which is what keeps a stale keep-alive out of this.
+
+A **timeout** is deliberately not here: it is the one kind a dropped packet produces, so it is the
+one that has to happen twice.
+"""
+
+AMBIGUOUS_FAILURES_BEFORE_PASSING_OVER = 2
+"""How many timeouts in a row it takes before a backend is passed over.
+
+A timeout looks identical whether the card is switched off or a packet was dropped, and on
+2026-10-29 from the laboratory LAN about 2% of TCP segments were being retransmitted to every
+off-campus destination while a 2 kB JSON call took 9.07 s. A single timeout is therefore evidence
+about the path. Charging it to the machine took a backend out of the pool for
+:data:`UNHEALTHY_SECONDS` exactly when the link was already slow, and the pool is what a participant
+is told to wait for.
+
+The second in a row is the line: a machine that is really gone fails every attempt, and the probe
+asks again every :data:`PROBE_INTERVAL_SECONDS` regardless, so nothing stays hidden for long.
+"""
+
 DECLARATION_RETRY_SECONDS = 30.0
 """How long before a backend that did not answer at all is asked again.
 
@@ -393,6 +419,24 @@ class MachineSummary(BaseModel):
     probed_seconds_ago : int or None
         How long ago its newest probe answered, to the nearest second. `None` where it has never
         been asked, because a verdict without its age is a promise about the past.
+    last_failure : str or None
+        The kind of the most recent failed attempt against it, with the phase for a timeout —
+        ``"timeout at connect"``, ``"refused"``, ``"status"``. `None` until something failed.
+
+        This is what `alive` cannot say. A machine that is alive *and* timed out a second ago is a
+        path problem; one that is not alive because it refused is a container that is not running.
+        Measured on 2026-10-29: the campus egress was dropping about 2% of TCP segments, and
+        without this an operator reading the pool saw a card disappear and had no way to tell it
+        from a power cut.
+    failed_seconds_ago : int or None
+        How long ago that was, to the nearest second. `None` where nothing has failed.
+    failures : int
+        Failed attempts since the process started, requests and probes together, summed across its
+        containers. The age says whether it is passing; this says how much of it there has been.
+    passed_over : bool
+        Whether every container on it is inside its thirty seconds of quiet, and so whether the
+        router is currently allowed to send it anything. `alive` and this disagree after a failure
+        that the probe has not yet contradicted.
     """
 
     machine: str
@@ -401,6 +445,10 @@ class MachineSummary(BaseModel):
     rtt_ms: float | None = None
     in_flight: int = 0
     probed_seconds_ago: int | None = None
+    last_failure: str | None = None
+    failed_seconds_ago: int | None = None
+    failures: int = 0
+    passed_over: bool = False
 
 
 class ComputedBy(BaseModel):
@@ -504,6 +552,15 @@ class Reply:
     timed_out : bool
         Whether the failure was the clock rather than the backend, which decides the error code the
         caller sees.
+    failure : str or None
+        What failed, where the transport can tell: ``"timeout"``, ``"refused"``,
+        ``"unreachable"`` or ``"oversized"``. `None` for an answer — a status, whatever it is —
+        because a `500` is the machine working, badly, and the classification of that one belongs
+        to whoever knows the status codes.
+
+        It is recorded rather than inferred from `status` because the difference decides two things
+        an operator needs: whether one attempt is enough to take a machine out of the pool, and
+        which of a dead machine and a lossy link a reader of `/pool` is looking at.
     stage : str or None
         Which half of the exchange the clock ended, when it did: ``"connect"`` while the socket was
         being opened, ``"send"`` while the body was still going out, ``"read"`` while waiting for an
@@ -523,6 +580,7 @@ class Reply:
     body: bytes
     timed_out: bool = False
     stage: Literal["connect", "send", "read"] | None = None
+    failure: str | None = None
 
 
 Transport = Callable[[str, str, Mapping[str, str], bytes | None, float], Reply]
@@ -861,7 +919,7 @@ def http_transport(
     factory = _CONNECTIONS.get(parsed.scheme)
     if factory is None or not parsed.hostname:
         logger.warning("backend url is not an http(s) address: %s", url)
-        return Reply(status=0, body=b"")
+        return Reply(status=0, body=b"", failure="unreachable")
 
     key = (parsed.scheme, parsed.hostname, parsed.port or 0)
     target = parsed.path or "/"
@@ -929,10 +987,10 @@ def http_transport(
                 parsed.hostname,
                 MAX_RESPONSE_BYTES,
             )
-            return Reply(status=0, body=b"")
+            return Reply(status=0, body=b"", failure="oversized")
         except TimeoutError:
             connection.close()
-            return Reply(status=0, body=b"", timed_out=True, stage=stage)
+            return Reply(status=0, body=b"", timed_out=True, stage=stage, failure="timeout")
         except ConnectionError as error:
             # `RemoteDisconnected` is a `ConnectionResetError`, and a reset or a broken pipe here is
             # the peer having closed a connection we were keeping. Retried once, never twice, and
@@ -941,21 +999,21 @@ def http_transport(
             connection.close()
             if watchdog is not None and watchdog.fired:
                 # A shutdown produced the reset; it is the request's clock, not a stale keep-alive.
-                return Reply(status=0, body=b"", timed_out=True, stage=stage)
+                return Reply(status=0, body=b"", timed_out=True, stage=stage, failure="timeout")
             if reused:
                 logger.info("a kept connection to %s had closed; asking again", parsed.hostname)
                 continue
             logger.warning("backend unreachable: %s (%s)", url, error)
-            return Reply(status=0, body=b"")
+            return Reply(status=0, body=b"", failure=_connection_failure(error))
         except (OSError, http.client.HTTPException) as error:
             # Connection refused, no route, DNS, a bad status line, a truncated answer — one outcome
             # for all of them. A ``TimeoutError`` is caught above; any other operating-system
             # failure here is not a timeout, unless the watchdog caused it.
             connection.close()
             if watchdog is not None and watchdog.fired:
-                return Reply(status=0, body=b"", timed_out=True, stage=stage)
+                return Reply(status=0, body=b"", timed_out=True, stage=stage, failure="timeout")
             logger.warning("backend unreachable: %s (%s)", url, error)
-            return Reply(status=0, body=b"")
+            return Reply(status=0, body=b"", failure=_connection_failure(error))
         finally:
             # Bound to the success path too: a fired watchdog means the socket was shut down and
             # must not be pooled, and joining here is what makes that decision race-free.
@@ -966,7 +1024,35 @@ def http_transport(
         else:
             _checkin(key, connection)
         return Reply(status=response.status, body=payload)
-    return Reply(status=0, body=b"")
+    return Reply(status=0, body=b"", failure="unreachable")
+
+
+def _connection_failure(error: BaseException) -> str:
+    """Name what a failed connect or exchange established about the machine.
+
+    Parameters
+    ----------
+    error : BaseException
+        The operating-system or protocol error that ended the attempt.
+
+    Returns
+    -------
+    str
+        ``"refused"`` when something answered and nothing is listening on the port — proof the
+        machine is up and its container is not — and ``"unreachable"`` for everything else: no
+        route, an unreadable name, a peer that accepted and then closed, a truncated answer.
+
+    Notes
+    -----
+    The two are not decoration. A refusal is a fact about the machine — something answered, and
+    nothing listened — so one of them retires the backend. Everything else in this bucket is a fact
+    about *this* host's route to it, which retires it too but for a different reason: retrying a
+    route that is not there, a name that does not resolve, or a peer that closes a fresh connection
+    gains nothing, and the probe is the thing that asks again on its own clock.
+    ``ConnectionRefusedError`` is the operating system's own distinction and needs no errno
+    inspection.
+    """
+    return "refused" if isinstance(error, ConnectionRefusedError) else "unreachable"
 
 
 def load_models(path: Path) -> dict[str, list[str]]:
@@ -1044,11 +1130,30 @@ class Backend:
         backend to try, so that a request arriving while another is in flight to one that is in fact
         dead does not queue behind that backend's own timeout.
     server_errors : int
-        Consecutive answers in the `5xx` range, reset by any success. A `500` is one request the
-        backend could not handle rather than a machine that is gone, so it takes
+        Consecutive answers in the `5xx` range, reset by any success, by a network failure, and by
+        anything else that is not the application failing. A `500` is one request the backend could
+        not handle rather than a machine that is gone, so it takes
         :data:`MAX_CONSECUTIVE_SERVER_ERRORS` of them before the machine is passed over: the first
         one must not shut a healthy backend out of the pool, and a container that answers `500` to
         everything must not keep taking traffic.
+    ambiguous_streak : int
+        Timeouts in a row, reset by any success, by a probe that answered, and by any other kind of
+        failure. :data:`AMBIGUOUS_FAILURES_BEFORE_PASSING_OVER` of them are what take the backend
+        out of the pool, because one lost packet and one dead card look the same to one attempt.
+    last_failure : str or None
+        The kind of the most recent failed attempt, requests and probes alike: ``"timeout"``,
+        ``"refused"``, ``"unreachable"``, ``"oversized"`` or ``"status"``. Never cleared by a
+        success — a machine that is answering *and* timed out a second ago is the whole point, and
+        `/pool` is where an operator reads that.
+    last_failure_stage : str or None
+        Where the clock ended, for a timeout: ``"connect"``, ``"send"`` or ``"read"``. `None`
+        otherwise. A connect timeout is the ambiguous one; a send timeout belongs to this host's
+        link and a read timeout to the machine owing an answer.
+    last_failure_at : float
+        When that failure happened, as a monotonic stamp, so `/pool` can age it. Zero means never.
+    failures : int
+        Failed attempts since the process started, requests and probes together — the count that
+        says whether a kind is a passing event or the state of things.
     """
 
     url: str
@@ -1063,6 +1168,11 @@ class Backend:
     rtt_seconds: float = 0.0
     in_flight: int = 0
     server_errors: int = 0
+    ambiguous_streak: int = 0
+    last_failure: str | None = None
+    last_failure_stage: str | None = None
+    last_failure_at: float = 0.0
+    failures: int = 0
     declared: bool = False
     """Whether this backend has answered what it serves, ever. Once true it is never asked again."""
     answered: bool = False
@@ -1107,6 +1217,90 @@ class Backend:
         if self.machine is not None and self.machine.machine:
             return self.machine.machine
         return self.url
+
+
+def _failure_kind(reply: Reply) -> str:
+    """Name what a failed attempt established about the machine that failed it.
+
+    Parameters
+    ----------
+    reply : Reply
+        An answer that was not a `2xx`, or no answer at all.
+
+    Returns
+    -------
+    str
+        ``"timeout"``, ``"refused"``, ``"unreachable"`` or ``"oversized"`` as the transport named
+        it; ``"status"`` for an answer the machine sent, whatever its code.
+
+    Notes
+    -----
+    The transport's own classification wins where it has one. A `Reply` built without it — a test
+    double, or a transport that is not :func:`http_transport` — is read the only way its fields
+    allow: a clock that ended means a timeout, no status means the machine could not be reached, and
+    a status means the machine answered.
+    """
+    if reply.failure is not None:
+        return reply.failure
+    if reply.timed_out:
+        return "timeout"
+    return "unreachable" if reply.status == 0 else "status"
+
+
+def _record_failure(backend: Backend, reply: Reply, kind: str, now: float) -> bool:
+    """Record one failed attempt and say whether it is a verdict on the machine.
+
+    Parameters
+    ----------
+    backend : Backend
+        The backend the attempt was made against, mutated with what the failure was.
+    reply : Reply
+        The failed answer.
+    kind : str
+        What :func:`_failure_kind` named it.
+    now : float
+        The current monotonic clock.
+
+    Returns
+    -------
+    bool
+        True when this failure is enough to pass the backend over, False when it is one more
+        observation to wait on.
+
+    Notes
+    -----
+    **One place decides what a failure means**, so a request and a probe cannot disagree about the
+    same evidence. The rule is what a lost packet can and cannot produce:
+
+    - ``refused``, ``unreachable`` and ``oversized`` are about this attempt and are a verdict on
+      their own.
+    - ``timeout`` is also what a broken link looks like, so it is a verdict only at
+      :data:`AMBIGUOUS_FAILURES_BEFORE_PASSING_OVER` in a row.
+    - ``status`` keeps its own rules: a `502`/`503`/`504` is a machine that is not serving, while a
+      `500` is one request the application could not handle and takes
+      :data:`MAX_CONSECUTIVE_SERVER_ERRORS` of them.
+
+    The counters are kept apart for a reason: a network failure resets the `5xx` run, because it
+    says nothing about the application, and a definitive failure clears the ambiguous streak,
+    because the two were never the same question.
+    """
+    backend.last_failure = kind
+    backend.last_failure_stage = reply.stage
+    backend.last_failure_at = now
+    backend.failures += 1
+    if kind == "status":
+        backend.ambiguous_streak = 0
+        backend.server_errors += 1
+        return (
+            reply.status in MACHINE_STATUSES
+            or backend.server_errors >= MAX_CONSECUTIVE_SERVER_ERRORS
+        )
+    backend.server_errors = 0
+    if kind in DEFINITIVE_FAILURES:
+        backend.ambiguous_streak = 0
+        return True
+    backend.ambiguous_streak += 1
+    return backend.ambiguous_streak >= AMBIGUOUS_FAILURES_BEFORE_PASSING_OVER
 
 
 class ModelRegistry:
@@ -1180,6 +1374,12 @@ class ModelRegistry:
         A `200` is the only answer that counts as alive: a container still loading its weights
         answers `503`, and publishing it as up would promise a call it would refuse.
 
+        A failure is read through :func:`_record_failure`, so a probe and a request cannot disagree
+        about the same evidence: one timeout leaves the machine's recorded state alone, because a
+        dropped probe packet and a switched-off card look identical, and a refusal or a second
+        timeout is what turns `alive` off. A `200` from the probe also clears the request path's
+        streak — it is the one witness that is not competing with traffic for the machine.
+
         The same call is the round-trip measurement, because it is the only request the gateway
         makes to a backend that carries no work: its duration is the link plus the answer, nothing
         else. Only a `200` is folded in — a refusal from a container that is still starting measures
@@ -1191,9 +1391,18 @@ class ModelRegistry:
             "GET", f"{backend.url}/health", {}, None, DECLARATION_TIMEOUT_SECONDS
         )
         elapsed = time.monotonic() - started
-        backend.alive = reply.status == 200
+        now = time.monotonic()
+        if reply.status == 200:
+            backend.alive = True
+            backend.ambiguous_streak = 0
+        elif _record_failure(backend, reply, _failure_kind(reply), now):
+            # The probe is what tells a machine nobody is calling apart from one that is answering,
+            # so its verdict is what `backends_up` publishes. It obeys the same rule as a request —
+            # one timeout is a lost packet, two are a machine — and its own success is what clears
+            # the streak, because a machine that answers `/health` is not a machine that is gone.
+            backend.alive = False
         backend.answered = reply.status != 0
-        backend.probed_at = time.monotonic()
+        backend.probed_at = now
         if backend.alive:
             backend.rtt_seconds = (
                 elapsed
@@ -1403,6 +1612,10 @@ class ModelRegistry:
             pairs = grouped[machine]
             measured = [backend.rtt_seconds for _, backend in pairs if backend.rtt_seconds > 0]
             probed = max((backend.probed_at for _, backend in pairs), default=0.0)
+            # The newest failure rather than the worst: what an operator wants is the state of
+            # things now, and an old refusal that a later request never repeated is history.
+            newest = max(pairs, key=lambda pair: pair[1].last_failure_at)[1]
+            failed_at = newest.last_failure_at
             machines.append(
                 MachineSummary(
                     machine=machine,
@@ -1411,6 +1624,16 @@ class ModelRegistry:
                     rtt_ms=min(measured) * 1000.0 if measured else None,
                     in_flight=depths.get(machine, 0),
                     probed_seconds_ago=None if not probed else max(0, round(now - probed)),
+                    last_failure=(
+                        None
+                        if newest.last_failure is None
+                        else f"{newest.last_failure} at {newest.last_failure_stage}"
+                        if newest.last_failure_stage
+                        else newest.last_failure
+                    ),
+                    failed_seconds_ago=None if not failed_at else max(0, round(now - failed_at)),
+                    failures=sum(backend.failures for _, backend in pairs),
+                    passed_over=all(backend.is_passed_over(now) for _, backend in pairs),
                 )
             )
         return machines
@@ -1713,6 +1936,7 @@ class ModelRegistry:
             if 200 <= reply.status < 300:
                 backend.unhealthy_until = 0.0
                 backend.server_errors = 0
+                backend.ambiguous_streak = 0
                 return reply
             if 400 <= reply.status < 500:
                 # The request's fault, so it is the client's answer and no other backend is asked:
@@ -1744,13 +1968,8 @@ class ModelRegistry:
             # no route and an unreadable name, and none of them is a timeout — a log line reading
             # "timeout" would send an operator to the wrong knob. The transport logs the operating
             # system's own words one line above.
-            cause = (
-                "timed out"
-                if reply.timed_out
-                else f"status {reply.status}"
-                if reply.status
-                else "unreachable"
-            )
+            kind = _failure_kind(reply)
+            cause = f"{kind} at {reply.stage}" if reply.stage else kind
             if reply.timed_out and index > 0:
                 # This attempt was handed only the remainder of the request's one clock. A timeout
                 # here is the request's budget running out, not a verdict on this machine, so the
@@ -1762,14 +1981,17 @@ class ModelRegistry:
                 )
                 failures.append(reply)
                 continue
-            backend.server_errors += 1
-            if (
-                reply.status == 0
-                or reply.status in MACHINE_STATUSES
-                or backend.server_errors >= MAX_CONSECUTIVE_SERVER_ERRORS
-            ):
+            if _record_failure(backend, reply, kind, time.monotonic()):
                 logger.warning("backend %s failed a %s: %s", backend.url, model, cause)
                 backend.unhealthy_until = time.monotonic() + UNHEALTHY_SECONDS
+                failures.append(reply)
+                continue
+            if kind != "status":
+                # A first timeout is not a verdict yet — the next machine gets the request, and the
+                # pool keeps this one until it either fails again or answers.
+                logger.warning(
+                    "backend %s failed a %s: %s; not a verdict yet", backend.url, model, cause
+                )
                 failures.append(reply)
                 continue
             # One request the backend could not handle. Retrying it elsewhere would spread whatever

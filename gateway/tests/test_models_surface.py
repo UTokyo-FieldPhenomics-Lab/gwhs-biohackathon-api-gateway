@@ -527,6 +527,34 @@ def test_three_server_errors_in_a_row_pass_the_machine_over() -> None:
     assert backend.unhealthy_until > 0.0
 
 
+def test_a_network_failure_breaks_the_run_of_server_errors() -> None:
+    """The `5xx` counter is a run *in a row*, so a timeout between two of them clears it.
+
+    A machine whose application is failing answers `500` every time; a lost packet in the middle of
+    that says nothing about the application and must not make the run look longer than it was. The
+    counter is what decides when three bad answers become "this container is broken".
+    """
+    backends = FakeBackends(replies={FIRST: [Reply(status=500, body=b"boom")]})
+    with _no_round_trip():
+        registry = ModelRegistry({MODEL: [FIRST, SECOND]}, BACKEND_TOKEN, backends)
+
+    backend = registry._backends[MODEL][0]  # noqa: SLF001 — the assertion is the counter
+    for _ in range(2):
+        with pytest.raises(HTTPException):
+            registry.forward(MODEL, "predict", "", b"{}", "application/json")
+    assert backend.server_errors == 2
+
+    backends.replies[FIRST] = [Reply(status=0, body=b"", timed_out=True, stage="read")]
+    registry.forward(MODEL, "predict", "", b"{}", "application/json")
+    assert backend.server_errors == 0, "a timeout was counted as an application failure"
+
+    backends.replies[FIRST] = [Reply(status=500, body=b"boom")]
+    with pytest.raises(HTTPException):
+        registry.forward(MODEL, "predict", "", b"{}", "application/json")
+    assert backend.server_errors == 1
+    assert backend.unhealthy_until == 0.0, "the run was not restarted after the timeout"
+
+
 def test_a_send_that_times_out_is_not_a_backend_failure() -> None:
     """The upload's link belongs to this host, so the machine keeps its place and gets no re-send.
 
@@ -551,6 +579,102 @@ def test_a_send_that_times_out_is_not_a_backend_failure() -> None:
         f"{FIRST}/models/{MODEL}/predict/upload",
         f"{FIRST}/models/{MODEL}/predict/upload",
     ], "the body was re-sent to another machine"
+
+
+def test_one_lost_attempt_is_not_a_verdict_on_the_machine() -> None:
+    """A connect that ran out of clock is as likely to be a dropped packet as a machine that is off.
+
+    Measured on 2026-10-29 from the laboratory LAN: about 2% of TCP segments were being
+    retransmitted to every off-campus destination, and one 2 kB JSON call took 9.07 s. A single
+    timeout is therefore evidence about the path, and charging it to the card took a healthy machine
+    out of the pool for thirty seconds while the link was already slow. The second decides it.
+    """
+    backends = FakeBackends(
+        replies={FIRST: [Reply(status=0, body=b"", timed_out=True, stage="connect")]}
+    )
+    with _no_round_trip():
+        registry = ModelRegistry({MODEL: [FIRST, SECOND]}, BACKEND_TOKEN, backends)
+
+    answered = registry.forward(MODEL, "predict", "", b"{}", "application/json")
+    backend = registry._backends[MODEL][0]  # noqa: SLF001 — the assertion is the pool's state
+    assert answered.status == 200, "the fallback was not asked"
+    assert backend.unhealthy_until == 0.0, "one lost attempt was charged to the machine"
+    assert backend.last_failure == "timeout", "the pool cannot say what failed"
+
+    registry.forward(MODEL, "predict", "", b"{}", "application/json")
+    assert backend.unhealthy_until > 0.0, "two in a row did not take the machine out of the pool"
+
+
+def test_a_refusal_is_a_verdict_on_the_machine_at_once() -> None:
+    """Nothing listening is proof about the machine, not about the path: it answered and refused.
+
+    The distinction is the whole point of naming the failure: a refusal arrives in one round trip
+    with a reset in it, so a lost packet cannot produce one, and waiting for a second costs a
+    request's worth of clock for nothing.
+    """
+    backends = FakeBackends(replies={FIRST: [Reply(status=0, body=b"", failure="refused")]})
+    with _no_round_trip():
+        registry = ModelRegistry({MODEL: [FIRST, SECOND]}, BACKEND_TOKEN, backends)
+
+    registry.forward(MODEL, "predict", "", b"{}", "application/json")
+
+    backend = registry._backends[MODEL][0]  # noqa: SLF001 — the assertion is the pool's state
+    assert backend.unhealthy_until > 0.0
+    assert backend.last_failure == "refused"
+
+
+def test_a_probe_that_lost_a_packet_does_not_retire_the_machine() -> None:
+    """The probe is the other witness, and one silent one is not a verdict either.
+
+    It is the only evidence about a machine nobody is calling, so its verdict is what `backends_up`
+    publishes. Reading one unanswered probe as a dead machine made the count fall exactly when the
+    campus egress was dropping packets — the moment a reader most needs it to be true.
+    """
+    ready = Reply(status=200, body=json.dumps(DECLARATION).encode())
+    lost = Reply(status=0, body=b"", timed_out=True, stage="connect")
+    backends = FakeBackends(health=[ready, lost, lost, ready])
+    registry = ModelRegistry({MODEL: [FIRST]}, BACKEND_TOKEN, backends)
+
+    assert registry.describe(MODEL).backends_up == 1  # the startup declaration is the first look
+
+    registry.probe()
+    assert registry.describe(MODEL).backends_up == 1, "one lost probe retired a machine"
+    assert registry.machines()[0].failures == 1, "the failed probe was not recorded"
+
+    registry.probe()
+    assert registry.describe(MODEL).backends_up == 0, "two lost probes did not"
+
+    registry.probe()
+    assert registry.describe(MODEL).backends_up == 1  # and back, with nothing restarted
+
+
+def test_the_pool_says_which_failure_and_how_old(tmp_path: Path, index_dir: Path) -> None:
+    """An operator reading `/pool` must be able to tell a dead machine from a lossy link.
+
+    `alive` alone cannot: it is false for both. The kind, its stage and its age can — a machine that
+    is alive with a connect timeout a second ago is a path problem, and one that refused ten seconds
+    ago with no answer since is a container that is not running.
+    """
+    backends = FakeBackends(
+        replies={FIRST: [Reply(status=0, body=b"", timed_out=True, stage="connect")]}
+    )
+    client = next(build_client(tmp_path, index_dir, backends))
+
+    answered = client.post(
+        f"/models/{MODEL}/predict", headers=KEY, json={"dataset": "gwhd", "row": 0}
+    )
+
+    assert answered.status_code == 200
+    entry = next(
+        machine
+        for machine in client.get("/pool", headers=KEY).json()["machines"]
+        if machine["machine"] == httpx.URL(FIRST).host
+    )
+    assert entry["last_failure"] == "timeout at connect"
+    assert entry["failures"] == 1
+    assert entry["failed_seconds_ago"] == 0
+    assert entry["alive"] is True, "the probe never said it was down"
+    assert entry["passed_over"] is False, "one loss was enough to stop routing to it"
 
 
 def test_a_backend_refusal_is_rewritten_into_this_contract() -> None:
@@ -1262,13 +1386,18 @@ def test_choosing_a_backend_and_reserving_it_are_one_step() -> None:
 
 
 def test_a_burst_of_requests_is_spread_over_both_backends(tmp_path: Path, index_dir: Path) -> None:
-    """Every request in a burst gets an answer, and only the first meets the failed backend.
+    """Every request in a burst gets an answer, and a lost backend meets at most one more after it.
 
     One authenticated request goes first, deliberately. The token pool reads its file on the first
     request that needs it and marks itself checked *before* the pool it read is in place, so a burst
     arriving inside that window is refused by the request gate — a real race in `auth.py`, unrelated
     to routing, that eight simultaneous requests could not reproduce against the live gateway.
     `GET /models` is used to warm it because it authenticates and touches no backend.
+
+    The failed backend is a timeout, so it is retired by the *second* request that meets it rather
+    than the first: one unanswered attempt is also what a dropped packet looks like, and the burst
+    still answers every request through the fallback. The request sent after the burst is what
+    proves the retirement happened — it must not meet the failed machine at all.
     """
     hanging = threading.Event()
     released = threading.Event()
@@ -1307,10 +1436,14 @@ def test_a_burst_of_requests_is_spread_over_both_backends(tmp_path: Path, index_
     for thread in burst:
         thread.join(10)
 
+    after = client.post(f"/models/{MODEL}/predict", headers=KEY, json=ask)
+
     assert answers == [200, 200, 200, 200]
-    assert sum(1 for url in met if url.startswith(FIRST)) == 1, (
-        "the burst queued behind the failure"
+    assert sum(1 for url in met if url.startswith(FIRST)) <= 2, (
+        "more than one request met the backend after its second unanswered attempt"
     )
+    assert after.status_code == 200
+    assert met[-1].startswith(SECOND), "the machine was not retired after two unanswered attempts"
 
 
 def test_the_least_busy_backend_is_chosen_when_every_one_is_busy() -> None:

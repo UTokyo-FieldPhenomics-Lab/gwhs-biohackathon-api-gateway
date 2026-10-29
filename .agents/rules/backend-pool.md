@@ -45,9 +45,9 @@ repo-wide invariants are in [`project.md`](project.md) and are not repeated here
 
 | Machine (alias) | Where | Router and LAN | GPU / VRAM | Location group | Last recorded status and evidence |
 |---|---|---|---|---|---|
-| `lab-3090` — host `labpc-host`, tailnet `labpc-tailnet` | laboratory | `room-router-a` (GL-BE9300), the laboratory LAN | RTX 3090, 24576 MiB | laboratory | serving — [occupancy 2026-10-19](../references/2026101923_gpu-occupancy.md) |
-| `homepc-4090` | home | `home-router` (GL-MT6000), the home LAN | RTX 4090, 24564 MiB | home | serving — [occupancy 2026-10-19](../references/2026101923_gpu-occupancy.md) |
-| `lab-5090` | laboratory | `room-router-d` (GL-MT6000), the 5090's LAN | RTX 5090, 32607 MiB | laboratory | serving; the largest card, and the only Windows host — 2026-10-19, [occupancy](../references/2026101923_gpu-occupancy.md) |
+| `lab-3090` — host `labpc-host`, tailnet `labpc-tailnet` | laboratory | `room-router-a` (GL-BE9300), the laboratory LAN | RTX 3090, 24576 MiB | laboratory | serving; both containers `ready`, 0.0 ms — 2026-10-29, [egress loss](../references/202610291100_campus-egress-loss.md) |
+| `homepc-4090` | home | `home-router` (GL-MT6000), the home LAN | RTX 4090, 24564 MiB | home | serving `gwfss` only; path 22–537 ms, mdev 163, ICMP flapping — 2026-10-29, [egress loss](../references/202610291100_campus-egress-loss.md) |
+| `lab-5090` | laboratory | `room-router-d` (GL-MT6000), the 5090's LAN | RTX 5090, 32607 MiB | laboratory | serving, and the only Windows host; both containers `ready`, 1.9–2.6 ms, ICMP filtered by its own firewall — 2026-10-29, [egress loss](../references/202610291100_campus-egress-loss.md) |
 | a second 5090 | borrowed from a company | ? | RTX 5090, 32 GB | likely laboratory | not delivered — as recorded 2026-10-17 |
 | ~3 more 90-class | laboratory | ? | unknown, ~24 GB | laboratory | not measured |
 | `aws-euc1-l4` — EC2 `g6.xlarge` in the gateway's VPC | AWS `eu-central-1` | the gateway's subnet; group `biohack-gpu-backend`, `22` and `12711`–`12713` from the host's group only | NVIDIA L4, 23034 MiB | AWS | not running — the artifacts are a base AMI and a digest, not a machine; last served 2026-10-27 ([rehearsal](../references/20261027_aws-gpu-backend.md)) |

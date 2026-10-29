@@ -209,6 +209,16 @@ Re-running it is the update path after a `git pull`: it rewrites both configurat
 checkout, so edit `deploy/Caddyfile` and `deploy/systemd/biohack-gateway.service` in the repository
 and re-run, rather than editing anything under `/etc`.
 
+`GET /pool` is the operator's view once it answers: every machine with its measured round trip, its
+queue depth, whether its containers are answering, and — where something has failed — `last_failure`,
+`failed_seconds_ago`, `failures` and `passed_over`. `alive: true` beside `last_failure: "timeout at
+connect"` means the path is losing packets; `alive: false` beside `"refused"` means a container is not
+running.
+
+```bash
+curl -s -H "X-API-Key: $KEY" https://api.global-wheat.com/pool
+```
+
 ### Where the gateway's settings and tokens live
 
 The service's host state lives in `~/.config/biohack-gateway/` on the host, outside the checkout: the

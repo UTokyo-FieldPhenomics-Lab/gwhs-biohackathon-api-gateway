@@ -668,14 +668,17 @@ def create_app(
         -------
         PoolResponse
             One entry per machine, grouped exactly as the router counts, each carrying the link's
-            in-flight bytes and measured rate beside its own depth; and the cache's counts.
+            in-flight bytes and measured rate beside its own depth, its last failure kind and its
+            age; and the cache's counts.
 
         Notes
         -----
         A plain `def` because it reads the answer store, whose SQLite query is blocking: FastAPI
         runs it in the thread pool, so a slow disk cannot hold the event loop every other route
         shares. Nothing here asks a backend — the probe owns that clock — so the numbers are the
-        last verdict and its age, not a fresh measurement.
+        last verdict and its age, not a fresh measurement. `alive` and `last_failure` are read
+        together: a machine that is answering and timed out a second ago is a path problem, and one
+        that is not answering because it refused is a container that is not running.
         """
         held = uploads.stats()
         return PoolResponse(

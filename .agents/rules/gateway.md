@@ -47,6 +47,13 @@ Package: `gateway/`. Shared constraints are in [`project.md`](project.md).
   three consecutive application failures pass the backend over. Connection failures, read timeouts
   and `502`/`503`/`504` allow failover; the exclusion window covers at least the failed attempt's
   response budget. [Failure policy](../references/2026102115_availability-and-failure-policy.md).
+- **Name what a failed attempt was, and let only a failure a dropped packet cannot produce retire a
+  machine.** The transport classifies each one as `timeout`, `refused`, `unreachable` or `oversized`.
+  A refusal, an unreachable host and an oversized answer pass the backend over at once; a `timeout`
+  takes two in a row, and any `200` — a request's or the probe's — clears the streak, so a machine
+  that keeps answering probes is never retired by a lossy link. Publish `last_failure`,
+  `failed_seconds_ago`, `failures` and `passed_over` on `/pool`, because `alive` alone cannot tell a
+  dead card from a lossy link. [Measurement](../references/202610291500_campus-egress-loss.md).
 - **Distinguish connect, send and read budgets.** A send timeout does not condemn the machine or
   resend its upload. Retries share one elapsed-time deadline; limit response bytes and close
   incomplete exchanges rather than pooling or caching them.

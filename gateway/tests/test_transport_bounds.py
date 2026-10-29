@@ -276,6 +276,12 @@ def test_a_connect_timeout_falls_back_to_a_healthy_backend() -> None:
     Reproduced through `ModelRegistry.forward` with the real transport and a real second machine,
     because the bug was that `forward` saw ``stage="send"`` where the phase was really connect and
     answered `504` without trying anything else.
+
+    The fallback is the same on the first failure and on the second. What the second one adds is the
+    pool's verdict: a connect timeout is also what a dropped packet looks like, so one of them is
+    recorded and only the next one takes the machine out — the rule `forward` applies to
+    ``timeout``/``unreachable`` failures, and the reason a lossy campus egress no longer empties the
+    pool.
     """
     first_server, first_port, first_handler = _backend()
     second_server, second_port, second_handler = _backend()
@@ -299,13 +305,19 @@ def test_a_connect_timeout_falls_back_to_a_healthy_backend() -> None:
                     connection.close()
             models._IDLE.clear()
         with mock.patch.object(socket, "create_connection", side_effect=reach_second_only):
-            reply = registry.forward(
-                MODEL,
-                "predict",
-                "",
-                b'{"input": {"url": "https://example.test/x.jpg"}}',
-                "application/json",
-            )
+            replies = []
+            unhealthy_after = []
+            for _ in range(2):
+                replies.append(
+                    registry.forward(
+                        MODEL,
+                        "predict",
+                        "",
+                        b'{"input": {"url": "https://example.test/x.jpg"}}',
+                        "application/json",
+                    )
+                )
+                unhealthy_after.append(registry._backends[MODEL][0].unhealthy_until)
         first, second = registry._backends[MODEL]
         unhealthy = first.unhealthy_until
         second_errors = second.server_errors
@@ -318,13 +330,15 @@ def test_a_connect_timeout_falls_back_to_a_healthy_backend() -> None:
             server.shutdown()
             server.server_close()
 
-    assert reply.status == 200
-    assert reply.body == json.dumps(PREDICTION).encode()
-    assert unhealthy > 0.0, "the machine that could not be connected to was not passed over"
+    assert [reply.status for reply in replies] == [200, 200]
+    assert replies[0].body == json.dumps(PREDICTION).encode()
+    assert unhealthy_after[0] == 0.0, "one lost connect was charged to the machine"
+    assert unhealthy_after[1] > 0.0, "the second did not take it out of the pool"
+    assert unhealthy > 0.0, "the machine that could not be connected to was never passed over"
     assert second_errors == 0
     assert second_in_flight == 0, "the attempt kept a lane counted against the fallback"
     assert machine_depths == [0], "a released attempt left a machine's depth raised"
-    assert (first_posts, second_posts) == (0, 1), "the healthy machine was not the one asked"
+    assert (first_posts, second_posts) == (0, 2), "the healthy machine was not the one asked"
 
 
 def test_a_drip_fed_response_ends_on_the_wall_clock_not_on_inactivity() -> None:
@@ -503,11 +517,12 @@ def test_an_oversized_answer_falls_back_and_releases_the_machine() -> None:
 
 
 def test_a_fallback_is_given_only_the_budget_the_first_attempt_left() -> None:
-    """Two attempts do not spend two full budgets, and the shortened one is not a machine verdict.
+    """Two attempts do not spend two full budgets, and neither timeout is a machine verdict.
 
-    The first backend gets the whole clock and times out, so it is passed over. The fallback gets
-    the remainder — less than a full attempt — and when that runs out the machine must stay in the
-    pool: it was judged on another machine's overspend, not on its own work.
+    The first backend gets the whole clock and times out, so the fallback gets the remainder — less
+    than a full attempt — and when that runs out it must stay in the pool: it was judged on another
+    machine's overspend, not on its own work. The first attempt's machine stays too, because a first
+    timeout is ambiguous: the next one is what takes it out.
     """
     timeouts: list[float] = []
 
@@ -534,14 +549,16 @@ def test_a_fallback_is_given_only_the_budget_the_first_attempt_left() -> None:
         second_unhealthy = second.unhealthy_until
         first_errors = first.server_errors
         second_errors = second.server_errors
+        first_streak = first.ambiguous_streak
 
     assert raised.value.status_code == 504
     assert len(timeouts) == 2, "the fallback was not tried at all"
     assert timeouts[1] < timeouts[0] * 0.7, "the fallback got a second full budget"
     assert elapsed < 0.9, f"two attempts spent two budgets ({elapsed:.2f} s)"
-    assert first_unhealthy > 0.0, "the full-budget attempt's machine was not passed over"
+    assert first_unhealthy == 0.0, "one ambiguous timeout passed the machine over"
+    assert first_streak == 1, "the ambiguous failure was not recorded"
     assert second_unhealthy == 0.0, "the machine was quarantined for the request's own clock"
-    assert (first_errors, second_errors) == (1, 0)
+    assert (first_errors, second_errors) == (0, 0)
 
 
 def test_no_backend_is_asked_after_the_shared_budget_is_spent() -> None:
