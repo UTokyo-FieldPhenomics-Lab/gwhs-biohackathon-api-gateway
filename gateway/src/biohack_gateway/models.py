@@ -512,6 +512,15 @@ class ModelPrediction(BaseModel):
         The model that answered.
     objects : list of ObjectOut
         The same object shape the dataset surface returns, so one decoder reads both.
+    count : float or None
+        The number of objects a counting model found, where it reports one. `None` when the model
+        reports none, and absent from a mask answer's wire shape. A counting model answers this
+        instead of objects, and still sends `objects: []`: one shape serves both.
+    points : list of list of float or None
+        Where a counting model placed what it counted, as ``[x, y, score]`` in the original image's
+        pixels. `score` is relative salience within this one answer, used for ordering — not a
+        calibrated confidence, and not comparable across images or models. `None` or absent when the
+        model places nothing.
     resolution_used : int or None
         The side the model actually ran at, where it reports one. This is the field that explains a
         mask's blockiness, and the one that makes a clamped `imgsz` visible without a warning.
@@ -532,6 +541,8 @@ class ModelPrediction(BaseModel):
 
     model: str
     objects: list[ObjectOut]
+    count: float | None = None
+    points: list[list[float]] | None = None
     resolution_used: int | None = None
     computed_by: ComputedBy | None = None
     warnings: list[ModelWarning] = field(default_factory=list)

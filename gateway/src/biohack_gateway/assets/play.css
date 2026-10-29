@@ -95,6 +95,11 @@ body {
 #play input[type="checkbox"] {
   width: auto;
 }
+/* A `boxes` value that is not yet a list of boxes: the field says so and the picture keeps the last
+   value that parsed, so a reader halfway through typing is marked rather than emptied. */
+#play input[aria-invalid="true"] {
+  border-color: var(--bad);
+}
 #play select {
   flex: 0 1 20rem;
 }
@@ -222,6 +227,21 @@ body {
   border-bottom: 1px solid var(--line);
   color: var(--muted);
   font-size: 0.9em;
+}
+/* The caption's own two facts, held as one unit so the view buttons stay at the other end of the
+   bar: the answer's count, when it has one, and the line about what was drawn beneath it. */
+#play figcaption .caption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem 0.75rem;
+}
+/* A counting answer's one number, in the ink rather than the caption's grey: it is the answer, not a
+   remark about it. Absent — not empty — when the answer carried no count. */
+#play #count {
+  color: var(--ink);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 /* The caption carries the outcome, and the colour belongs to the outcome rather than to the box: it
    is the `#check` line inside that is green or red, not the bar it sits in. */
@@ -396,6 +416,42 @@ body {
 #play .mark.inside > span {
   bottom: auto;
   top: -1.5px;
+}
+/* One counted point: a dot, not a frame — the answer places a cell, not an extent. Its position is a
+   percentage of the stage, which is the fitted picture's own box, while its size is the page's: a
+   dot that scaled with the photograph would vanish on a downscaled row. The ring is what keeps it
+   visible against straw as well as against soil, since the picture is whatever the dataset holds. */
+#play .point {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  border-radius: 50%;
+  background: #ff4fa3;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
+}
+/* The reader's own boxes, drawn on the picture: solid once added, dashed while one is being dragged.
+   They take a colour of their own rather than the answer's accent, because a box a reader drew and a
+   box a model answered are two different claims and must not read as one. The layer takes no pointer
+   events, so a press anywhere on the picture starts a box rather than hitting one already drawn. */
+#play #boxes {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+#play .box,
+#play .band {
+  position: absolute;
+  border: 2px solid #e08b00;
+  border-radius: 2px;
+}
+#play .band {
+  border-style: dashed;
+}
+/* A model that declared a `boxes` parameter has made the picture drawable, so the pointer says so
+   before the reader presses: a crosshair means the next press draws rather than scrolls. */
+#play #stage.drawing {
+  cursor: crosshair;
 }
 #play #run-state:empty {
   display: none;

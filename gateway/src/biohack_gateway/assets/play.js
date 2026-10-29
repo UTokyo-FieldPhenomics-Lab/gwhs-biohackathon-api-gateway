@@ -132,6 +132,9 @@
 
   const showParameters = (declaration) => {
     parameters.replaceChildren();
+    // A declaration replaces the controls, and with them the picture's editor: a model without a
+    // `boxes` parameter has nothing to draw, while the list itself stays for the next one that has.
+    boxInput = null;
     const declared = declaration.parameters || [];
     // A model that declares nothing has no controls to label, and the row is then only the button.
     $("parameters-legend").hidden = !declared.length;
@@ -146,7 +149,22 @@
       if (input.type === "range") label.append(readoutFor(input));
       parameters.append(label);
       fields.push({name: parameter.name, read: () => readValue(input)});
+      // A `boxes` parameter is a list the picture can be drawn on: the input and the overlay are
+      // two views of one list, so both directions are wired here and nowhere else.
+      if (parameter.type === "boxes") {
+        boxInput = input;
+        if (!input.value && boxes.length) {
+          input.value = JSON.stringify(boxes);
+          delete input.dataset.untouched;   // a list restored here is the reader's, so it is sent
+        }
+        syncBoxes();
+        input.addEventListener("input", syncBoxes);
+      }
     }
+    stage.classList.toggle("drawing", Boolean(boxInput));
+    // The overlay follows the editor: a model that takes no boxes must not leave another model's
+    // boxes drawn on the picture it is about to replace.
+    showBoxes();
   };
 
   const query = () => {
@@ -332,6 +350,9 @@
     dataset.replaceChildren();
     parameters.replaceChildren();
     fields = [];
+    boxInput = null;
+    boxes = [];
+    stage.classList.remove("drawing");
     $("run").disabled = true;
     clearViewer();
     // A palette was read with the key that just went; the next one may be a different team's, and a
@@ -506,6 +527,17 @@
   };
   new ResizeObserver(() => { if (fitted) fit(fitted); }).observe(pane);
 
+  // One rectangle of the image, in the stage's own percentages: the stage is sized to the fitted
+  // picture, so this is the single mapping every overlay uses — an object's box, a point and a drawn
+  // box all land together, and none of them can drift from the others. A point passes no size and
+  // keeps the one its own rule gives it.
+  const place = (element, image, x, y, width, height) => {
+    element.style.left = (x / image.naturalWidth) * 100 + "%";
+    element.style.top = (y / image.naturalHeight) * 100 + "%";
+    if (typeof width === "number") element.style.width = (width / image.naturalWidth) * 100 + "%";
+    if (typeof height === "number") element.style.height = (height / image.naturalHeight) * 100 + "%";
+  };
+
   // One object's box, its class and the score that goes with it, as elements over the raster rather
   // than pixels inside it: the pane draws a photograph at whatever size fits, so a score burned into
   // the bitmap would be a smudge on a tall strip and a billboard on a wide crop. As text it is the
@@ -516,10 +548,7 @@
     const mark = document.createElement("div");
     mark.className = "mark";
     mark.style.borderColor = colour;
-    mark.style.left = (x / image.naturalWidth) * 100 + "%";
-    mark.style.top = (y / image.naturalHeight) * 100 + "%";
-    mark.style.width = (width / image.naturalWidth) * 100 + "%";
-    mark.style.height = (height / image.naturalHeight) * 100 + "%";
+    place(mark, image, x, y, width, height);
     if (typeof object.score === "number") {
       const score = document.createElement("span");
       // The class is named on its own box when the legend can name it too — the dataset declares it,
@@ -576,6 +605,156 @@
     legend.hidden = named.size === 0;
   };
 
+  // The picture as something to write on. A declaration that names a `boxes` parameter makes the
+  // image drawable: press and drag draws one box, a click sets a corner and a second click finishes
+  // it, and Esc or the right button abandons the one being drawn. Under four pixels of travel is a
+  // click, not a box — a reader who meant to look at the picture must not find the list changed.
+  //
+  // The list is kept here as well as in the input, because the input is text a reader is halfway
+  // through typing: the last value that parsed is what the picture shows, so a typo marks the field
+  // rather than emptying the overlay or throwing.
+  let boxInput = null;   // the input a `boxes` parameter created, or null for a model without one
+  let boxes = [];        // the last list that parsed: [x, y, w, h, label] in the image's own pixels
+  let drag = null;       // the box being drawn: {x0, y0, x, y} in the image's own pixels
+  let band = null;       // the rectangle showing it while it is drawn
+
+  const MIN_DRAG = 4;
+
+  const showBoxes = () => {
+    const layer = $("boxes");
+    if (!last || !boxInput) {
+      layer.replaceChildren();
+      return;
+    }
+    layer.replaceChildren(...boxes.map((box) => {
+      const element = document.createElement("div");
+      element.className = "box";
+      place(element, last.image, box[0], box[1], box[2], box[3]);
+      return element;
+    }));
+    // A redraw while one is being drawn must not take the rubber band with it.
+    if (band) layer.append(band);
+  };
+
+  // The input's text as a list of boxes, or null when it is not one: null is a value still being
+  // typed rather than an error, and the caller keeps what it already has.
+  const parseBoxes = (text) => {
+    if (text.trim() === "") return [];   // nothing drawn yet, or everything deleted
+    let value;
+    try {
+      value = JSON.parse(text);
+    } catch {
+      return null;
+    }
+    if (!Array.isArray(value)) return null;
+    const whole = value.every((box) => Array.isArray(box) && box.length >= 4 &&
+      box.slice(0, 4).every((number) => typeof number === "number" && Number.isFinite(number)));
+    return whole ? value : null;
+  };
+
+  /** Take the input's text as the boxes on the picture, marking the field when it is not one. */
+  const syncBoxes = () => {
+    const parsed = parseBoxes(boxInput.value);
+    if (!parsed) {
+      boxInput.setAttribute("aria-invalid", "true");
+      return;
+    }
+    boxInput.removeAttribute("aria-invalid");
+    boxes = parsed;
+    showBoxes();
+  };
+
+  const endDrag = () => {
+    if (band) band.remove();
+    band = null;
+    drag = null;
+  };
+
+  const showBand = () => {
+    place(band, last.image, Math.min(drag.x0, drag.x), Math.min(drag.y0, drag.y),
+      Math.abs(drag.x - drag.x0), Math.abs(drag.y - drag.y0));
+  };
+
+  // The pointer as a place in the image rather than on the page: the stage is the fitted picture's
+  // own box, so one ratio converts back to the pixels the request carries. Held inside the picture,
+  // because a box outside it is not one a model can use.
+  const imageAt = (event) => {
+    const box = stage.getBoundingClientRect();
+    const image = last.image;
+    const clamp = (value, high) => Math.max(0, Math.min(high, value));
+    return [
+      clamp(((event.clientX - box.left) / box.width) * image.naturalWidth, image.naturalWidth),
+      clamp(((event.clientY - box.top) / box.height) * image.naturalHeight, image.naturalHeight),
+    ];
+  };
+
+  const finishDrag = () => {
+    const x = Math.round(Math.min(drag.x0, drag.x));
+    const y = Math.round(Math.min(drag.y0, drag.y));
+    const width = Math.round(Math.abs(drag.x - drag.x0));
+    const height = Math.round(Math.abs(drag.y - drag.y0));
+    endDrag();
+    if (width < MIN_DRAG && height < MIN_DRAG) return;   // a click, not a box
+    boxes = boxes.concat([[x, y, width, height, 1]]);
+    boxInput.value = JSON.stringify(boxes);
+    boxInput.removeAttribute("aria-invalid");
+    showBoxes();
+    // The query and the generated command read the input, and a script's own write fires no event:
+    // the page has to be told that a box arrived.
+    boxInput.dispatchEvent(new Event("input", {bubbles: true}));
+  };
+
+  stage.addEventListener("pointerdown", (event) => {
+    if (!boxInput || !last || event.button !== 0) return;
+    const [x, y] = imageAt(event);
+    if (drag) {
+      // The second click of a two-click box: its corner is where it was clicked.
+      drag.x = x;
+      drag.y = y;
+      finishDrag();
+      return;
+    }
+    drag = {x0: x, y0: y, x: x, y: y, sx: event.clientX, sy: event.clientY};
+    band = document.createElement("div");
+    band.className = "band";
+    $("boxes").append(band);
+    showBand();
+    event.preventDefault();
+    // The pointer keeps reporting to the stage however far the drag travels; a browser that will not
+    // capture still draws, only stopping at the picture's edge, which is where the box is held anyway.
+    try {
+      stage.setPointerCapture(event.pointerId);
+    } catch {
+      // nothing to do: the box is already being drawn
+    }
+  });
+
+  stage.addEventListener("pointermove", (event) => {
+    if (!drag) return;
+    [drag.x, drag.y] = imageAt(event);
+    showBand();
+  });
+
+  stage.addEventListener("pointerup", (event) => {
+    if (!drag || event.button !== 0) return;
+    // A press that travelled is a box; one that did not is a click, whose corner waits for the second.
+    // The travel is measured on the page, not in the picture: four pixels of a 5000-pixel row is a
+    // tenth of a screen pixel, so a shaking hand would draw a box where a reader meant to click.
+    if (Math.abs(event.clientX - drag.sx) < MIN_DRAG &&
+      Math.abs(event.clientY - drag.sy) < MIN_DRAG) return;
+    finishDrag();
+  });
+
+  // The right button and Escape abandon the box being drawn, and leave the list as it was.
+  stage.addEventListener("contextmenu", (event) => {
+    if (!drag) return;
+    event.preventDefault();
+    endDrag();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && drag) endDrag();
+  });
+
   // The answer on screen, kept so a view toggle redraws it: the image, the decoded mask layer, the
   // colours, and the address the picture came from. Nothing here is sent anywhere.
   let last = null;
@@ -621,8 +800,26 @@
       });
     }
 
+    // The points a counting answer places, each at its own pixel of the image and by the same mapping
+    // the boxes use. A dot is a place rather than an extent, so nothing here draws a frame around one
+    // and the legend names none of them; an answer without points leaves the picture as it was.
+    for (const point of Array.isArray(last.points) ? last.points : []) {
+      if (!Array.isArray(point) || point.length < 2) continue;
+      const dot = document.createElement("div");
+      dot.className = "point";
+      place(dot, image, point[0], point[1]);
+      marks.append(dot);
+    }
+
     showLegend(objects, colours, counts);
     $("legend").hidden = !view.legend || !$("legend").childElementCount;
+    // The count is one number, so it sits in the caption rather than over the photograph: present
+    // only when the answer carried one, which is what keeps a mask model's page unchanged.
+    const tally = $("count");
+    tally.hidden = typeof last.count !== "number";
+    tally.textContent = tally.hidden
+      ? "" : "count " + last.count.toLocaleString(undefined, {maximumFractionDigits: 1});
+    showBoxes();
     const machine = $("watermark");
     machine.hidden = !view.watermark || !machine.textContent;
     const full = $("full");
@@ -631,7 +828,7 @@
   };
 
   /** Decode one answer into a mask layer once, then let `render` draw it in whatever view is on. */
-  const paint = async (url, objects, palette = new Map()) => {
+  const paint = async (url, objects, palette = new Map(), answer = {}) => {
     const image = await loadImage(url);
     const scale = Math.min(1, MAX_SIDE / Math.max(image.naturalWidth, image.naturalHeight));
     const width = Math.max(1, Math.round(image.naturalWidth * scale));
@@ -655,7 +852,17 @@
       }
     });
 
-    last = {image: image, objects: objects, colours: colours, layer: layer, url: url};
+    // A counting answer's two fields travel with the picture exactly as `objects` does, so a view
+    // toggle redraws them from the answer rather than from the response body.
+    last = {
+      image: image,
+      objects: objects,
+      colours: colours,
+      layer: layer,
+      url: url,
+      count: answer.count,
+      points: answer.points,
+    };
     render();
     return {
       decoder: decoder,
@@ -672,14 +879,18 @@
     const objects = answer.objects || [];
     // Written before the picture, so the watermark is there when `paint` renders it.
     showMachine(answer);
-    const painted = await paint(url, objects, palette);
+    const painted = await paint(url, objects, palette, answer);
     $("response-body").textContent = JSON.stringify(answer, null, 2);
     $("response").hidden = false;
 
     // The caption is one line beside four view buttons, so it says the one thing worth checking —
     // that the decoded mask covers exactly the area the answer declared — in as few words as it can.
     const tally = objects.length + (objects.length === 1 ? " object" : " objects");
-    if (!painted.decoder) {
+    if (!objects.length) {
+      // A counting answer has no geometry to check: the count beside this line is the answer, and
+      // "0 objects" would read as a model that found nothing.
+      say($("check"), "", null);
+    } else if (!painted.decoder) {
       // Said rather than left blank: an empty canvas would read as a model that found nothing.
       say($("check"), tally + " · decoder did not load — the response body is complete", false);
     } else if (!painted.checked) {
@@ -696,7 +907,11 @@
   /** Empty the viewer: nothing on screen is the picture the controls no longer name. */
   const clearViewer = () => {
     figure.hidden = true;
+    endDrag();
     marks.replaceChildren();
+    $("boxes").replaceChildren();
+    $("count").hidden = true;
+    $("count").textContent = "";
     $("legend").replaceChildren();
     $("legend").hidden = true;
     $("full").hidden = true;

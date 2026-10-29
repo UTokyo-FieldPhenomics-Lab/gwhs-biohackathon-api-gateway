@@ -52,7 +52,10 @@ __PLAY_CSS__
 
   <figure hidden>
     <figcaption>
-      <span id="check"></span>
+      <span class="caption">
+        <span id="count" hidden></span>
+        <span id="check"></span>
+      </span>
       <span id="display">
         <button type="button" class="eye" data-view="masks" aria-pressed="true">
           <svg viewBox="0 0 20 20" aria-hidden="true">
@@ -93,6 +96,7 @@ __PLAY_CSS__
       <div id="stage">
         <canvas id="canvas"></canvas>
         <div id="marks"></div>
+        <div id="boxes"></div>
       </div>
       <div id="legend" hidden></div>
       <div id="watermark" hidden></div>
