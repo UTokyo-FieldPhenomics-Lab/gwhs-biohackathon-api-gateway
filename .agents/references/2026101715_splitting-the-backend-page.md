@@ -1,6 +1,6 @@
 # Splitting the backend page into a how-to, a pool rule, and the records
 
-Date: 2026-10-17. Topic: `deploy/gpu-backends.md` had grown three kinds of content — operating
+Date: 2026-10-17. Topic: `deploy/gpu-backends-local.md` had grown three kinds of content — operating
 steps, an inventory of our own machines, and design arguments with measurements — and the inventory
 had to be maintained by hand in a document nobody re-read. What moved where, and why.
 
@@ -12,7 +12,7 @@ someone asking *how was that established*. Three different questions, three diff
 sequence changes rarely, the inventory changes whenever a machine joins, and a measurement never
 changes at all. So:
 
-- **`deploy/gpu-backends.md`** is the sequence. §1 path, §2 Docker per OS, §3 the image, §4 the
+- **`deploy/gpu-backends-local.md`** is the sequence. §1 path, §2 Docker per OS, §3 the image, §4 the
   gateway's list, §5 links. It states a convention in one line and links the reasoning.
 - **`.agents/rules/backend-pool.md`** is the pool: which machines, which addresses, who may reach
   them, one router per fault domain, the card-minus-1-GB rule, and the token-not-address decision.

@@ -1,7 +1,10 @@
-# The compute plane's backends
+# The backends you keep
 
-How a machine becomes a backend: reach it, install Docker, run the model's container, and put its
-address in the gateway's list. **Which machines exist, and who may reach them, is not this file** —
+How an on-prem machine becomes a backend: reach it on the tailnet, install Docker, run the model's
+container, and put its address in the gateway's list. The machine stays, so everything about it is
+about surviving a reboot and being handed back. **A rented instance is the other half of this
+contract and a different lifecycle — [`gpu-backends-aws.md`](gpu-backends-aws.md).** Which machines
+exist, and who may reach them, is not either file's —
 [`../.agents/rules/backend-pool.md`](../.agents/rules/backend-pool.md).
 
 Three things this file does not argue, and only links:
@@ -17,9 +20,9 @@ Three things this file does not argue, and only links:
 
 **These are private addresses on the UTokyo Field Phenomics Lab tailnet, and only the gateway host
 can reach them.** Each room's router is a tailnet node advertising its own `/24`; the gateway host
-accepts those routes, so the address of `lab-5090` resolves from that host and from no other machine. Nothing
-is published to the internet and no port is forwarded. A reader outside this lab who tries one of
-these addresses gets a timeout — that is the design, not a fault.
+accepts those routes, so the address of `lab-5090` resolves from that host and from no other machine.
+Nothing is published to the internet and no port is forwarded. A reader outside this lab who tries
+one of these addresses gets a timeout — that is the design, not a fault.
 
 What makes a machine reachable is therefore two facts, and neither is a client on the machine:
 
@@ -45,9 +48,9 @@ Conventions that hold everywhere and are not re-decided per machine:
 - **A card is admitted against the card minus 1 GB**, never against the card — the desktop drives the
   same display. For scale, the demo model holds 8.5 GB resident.
 - **One router is one fault domain.** So however many machines the laboratory holds, they fail
-  together; home is independent of it, and a rented `eu-central-1` instance — the gateway's own VPC,
-  no tailnet — would be a third. That path is designed and not built, and it is the only one whose
-  availability is contracted rather than borrowed.
+  together; home is independent of it, and the rented `eu-central-1` instance is a third — its path
+  is [`gpu-backends-aws.md`](gpu-backends-aws.md), it needs no tailnet, and it is the only domain
+  whose availability is contracted rather than borrowed.
 
 ### Reaching a machine to look at it
 
@@ -263,7 +266,9 @@ Two facts about `docker build` that are not obvious:
   dropped connection to kill twenty minutes.
 
 `docker save | docker load` is the alternative for a machine with no route to the weight store; it
-costs tens of gigabytes over the sender's uplink and nothing else.
+costs tens of gigabytes over the sender's uplink and nothing else. A rented machine builds once and
+keeps the result as a digest rather than an image on a disk —
+[`gpu-backends-aws.md`](gpu-backends-aws.md).
 
 ### 3.2 The run line
 
@@ -379,7 +384,8 @@ This is the part that fails during an event and looks like a network fault.
 A file that does not parse means **no models**, never all of them, so a typo in host configuration
 cannot become a gateway that answers for models nobody configured. **Order is preference:** routing
 is first-healthy-wins with idle backends preferred, so the second entry is a fault domain first and
-extra capacity only incidentally.
+extra capacity only incidentally. A rented machine's line is the same shape and comes and goes with
+its instance — [`gpu-backends-aws.md`](gpu-backends-aws.md).
 
 **Its twin is the token, and the value has to be transcribed from `env`, never from a message.** One
 character is a different value, and `/health` cannot show the difference: it needs no token, so a
@@ -424,6 +430,7 @@ than working ends — a mismatched token still counts — so the probe in step 3
 
 | What | Where |
 |---|---|
+| The rented instance: its path, its image, and why it is disposable | [`gpu-backends-aws.md`](gpu-backends-aws.md) |
 | Which machines exist, who may reach them, one router is one fault domain | [`../.agents/rules/backend-pool.md`](../.agents/rules/backend-pool.md) |
 | The room routers, the exit node, the latencies each path measured | [`../.agents/references/2026101610_backend-reachability-over-the-room-routers.md`](../.agents/references/2026101610_backend-reachability-over-the-room-routers.md) |
 | The 5090's bring-up: the credential helper, the token mismatch, the failover that took 61.2 s | [`../.agents/references/2026101621_deploying-sam31-on-the-5090.md`](../.agents/references/2026101621_deploying-sam31-on-the-5090.md) |

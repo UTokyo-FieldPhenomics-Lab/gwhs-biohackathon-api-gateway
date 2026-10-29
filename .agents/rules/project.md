@@ -49,7 +49,7 @@ in `references/`. How to decide what to build is in [`design-philosophy.md`](des
 - **Backends require a non-public authenticated link and a service credential.** CloudFront never
   forwards to them. Do not rewrite a shared overlay policy unilaterally; record the deviation from
   tag isolation and retain the service token. Do not substitute caller-address allowlists for that
-  credential because NAT/proxy paths differ. [Private network](../../deploy/gpu-backends.md).
+  credential because NAT/proxy paths differ. [Private network](../../deploy/gpu-backends-aws.md).
 - **Per-team inference allowance is a fixed policy, default three, not pool width.**
   `BIOHACK_MAX_CONCURRENT_PER_TOKEN` is read at startup; `0` disables it for measurement. Excess work
   is refused immediately with `429`. Uploads take a lane in middleware; rows only after a cache miss;
@@ -89,3 +89,8 @@ in `references/`. How to decide what to build is in [`design-philosophy.md`](des
   Participant tutorials belong in `docs/content/`; host operations belong in `deploy/README.md`,
   linking back to command descriptions instead of duplicating flags.
   [Documentation alignment](../references/2026102115_documentation-and-implementation-alignment.md).
+- **A procedure states the decision the reader executes, not the argument for it.** `deploy/` and
+  `docs/` carry the option in use and the detail needed to carry it out. Rejected alternatives,
+  measurements, incident history and "why not X" belong in `references/`, linked once. A reader
+  weighing two designs is reading a record, not a runbook.
+  [The split that prompted this](../references/20261027_aws-gpu-backend.md).

@@ -1,6 +1,6 @@
 # homepc's 4090 becomes a backend
 
-Followed [`deploy/gpu-backends.md`](../../deploy/gpu-backends.md) §1–§3 on `homepc` after the guide
+Followed [`deploy/gpu-backends-local.md`](../../deploy/gpu-backends-local.md) §1–§3 on `homepc` after the guide
 was written for the 3090 and the 5090. Everything in it held; the differences are recorded here.
 
 ## The path was already there

@@ -20,7 +20,7 @@ one command away:
 running the model on the host instead. Installing the toolkit needs `sudo`, which is why this waited for
 a human: `sudo pacman -S --needed nvidia-container-toolkit`, `sudo nvidia-ctk runtime configure
 --runtime=docker`, `sudo systemctl restart docker`. The per-distribution version of that, for the Arch
-and Debian families, is now in [`deploy/gpu-backends.md`](../../deploy/gpu-backends.md).
+and Debian families, is now in [`deploy/gpu-backends-local.md`](../../deploy/gpu-backends-local.md).
 
 **The one line worth checking afterwards:** `nvidia-ctk runtime configure` rewrites
 `/etc/docker/daemon.json`, and on this machine that file carries `{"data-root": "/home/crest/docker"}` —

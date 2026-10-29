@@ -6,7 +6,9 @@ containers or owning a GPU.
 
 This README is for maintainers. Participants start at **<https://docs.global-wheat.com>**.
 Host provisioning and operations are in [`deploy/README.md`](deploy/README.md); backend operations
-are in [`deploy/gpu-backends.md`](deploy/gpu-backends.md). Agents start at [`AGENTS.md`](AGENTS.md).
+are in [`deploy/gpu-backends-local.md`](deploy/gpu-backends-local.md) for the on-prem machines and
+[`deploy/gpu-backends-aws.md`](deploy/gpu-backends-aws.md) for a rented instance. Agents start at
+[`AGENTS.md`](AGENTS.md).
 
 ## Architecture
 
@@ -82,7 +84,7 @@ change. An empty dataset or model directory is expected until local state is sup
 
 - Dataset indices: `~/.config/biohack-gateway/index/<dataset>.db`.
 - Backend candidates: `~/.config/biohack-gateway/models.json`; the format and private connection
-  procedure are in [`deploy/gpu-backends.md`](deploy/gpu-backends.md#4-on-the-gateway-host-putting-it-in-a-models-list).
+  procedure are in [`deploy/gpu-backends-local.md`](deploy/gpu-backends-local.md#4-on-the-gateway-host-putting-it-in-a-models-list).
 - Backend credential: `BIOHACK_BACKEND_TOKEN`, matching the containers. Without it, uncached
   inference cannot reach a backend.
 

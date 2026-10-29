@@ -24,7 +24,7 @@ is `24e7b2b`.
 ## A port is the model's, not the machine's
 
 Two containers may both listen on `12711` because each has its own network namespace; what routes is
-the host side. The convention, now in `rules/backend-pool.md` and `deploy/gpu-backends.md`, is one
+the host side. The convention, now in `rules/backend-pool.md` and `deploy/gpu-backends-local.md`, is one
 number per model on every machine: `sam3.1-meta` is `12711`, `gwfss-segformer-b4` is `12712`.
 
 `sam31-test` — a loopback-only leftover on `12712` from an earlier session — was removed to free the
@@ -112,7 +112,7 @@ the check is the only thing that says the bytes arrived intact.
 
 The 5090 answered on `12712` **without a new Windows firewall rule**. Docker Desktop's proxy adds a
 rule per process rather than per port, so the rule published for `12711` covered the second container
-too. Convenient, and not something to rely on: `deploy/gpu-backends.md` still says to add the port to
+too. Convenient, and not something to rely on: `deploy/gpu-backends-local.md` still says to add the port to
 the rule when a published port does not answer.
 
 `GET /models` then read `backends_up: 3` for both models. The same call on all three cards:

@@ -6,7 +6,7 @@ end of the chain the plan opened
 ([`../plans/2026101619_✅weights-fetched-inside-the-build.md`](../plans/2026101619_✅weights-fetched-inside-the-build.md))
 and the first time the weight-fetch design met a machine other than its author's. The rules it moved
 are [`../rules/models.md`](../rules/models.md); what the machines are is
-[`../../deploy/gpu-backends.md`](../../deploy/gpu-backends.md).
+[`../../deploy/gpu-backends-local.md`](../../deploy/gpu-backends-local.md).
 
 ## Did the design survive a second machine
 
@@ -87,7 +87,7 @@ actually executed afterwards — the `docker run` at 18:40 and the verification 
 the 42.
 
 Two things to carry forward, both now in
-[`gpu-backends.md`](../../deploy/gpu-backends.md#4-on-the-gateway-host-putting-it-in-a-models-list): a
+[`gpu-backends-local.md`](../../deploy/gpu-backends-local.md#4-on-the-gateway-host-putting-it-in-a-models-list): a
 backend whose token differs does not fall through to the next one (the gateway reads `401` as its own credential
 refused and answers `503` without trying the rest), and the mismatch is invisible from outside because
 `/health` needs no token — both ends declared themselves, `GET /models` read `backends_up: 2`, and every
@@ -155,7 +155,7 @@ correction, and the 5090 stays first because it is the machine that was verified
   desktop, so roughly **6.5 GB**. Admission is unaffected at a 31 GB budget, but the number is what a
   human or the deploy script reads first, and `resident_gb` measurements belong per card.
 - **Restart policy, resolved here.** The container runs `--restart unless-stopped` (what
-  `gpu-backends.md` asks for: a backend must come back after a reboot with nobody logged in, and on
+  `gpu-backends-local.md` asks for: a backend must come back after a reboot with nobody logged in, and on
   Windows Docker Desktop needs a signed-in user on top of that), while `sam31_official/Dockerfile` said
   no restart policy anywhere and gave the refusal loop as the reason. The deploy side is right, so the
   comment now says which side decides and what the policy costs: a card that cannot admit becomes a

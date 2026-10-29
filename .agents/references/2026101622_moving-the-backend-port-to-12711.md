@@ -1,7 +1,7 @@
 # The backend port moves to 12711
 
 2026-10-16, late evening. The pool's inference port was **8000**; it is now **12711**, inside and outside alike. The decision is in
-[`deploy/gpu-backends.md`](../../deploy/gpu-backends.md); this is what moving it cost, and what it
+[`deploy/gpu-backends-local.md`](../../deploy/gpu-backends-local.md); this is what moving it cost, and what it
 revealed.
 
 ## Why the number changed
@@ -20,7 +20,7 @@ container — Linux `32768–60999`, Windows `49152–65535`, both read off the 
 ## What changed, and where the number lived
 
 The blast radius was smaller than it looked. Everything in
-[`deploy/gpu-backends.md`](../../deploy/gpu-backends.md) is one sweep: the convention line, both run
+[`deploy/gpu-backends-local.md`](../../deploy/gpu-backends-local.md) is one sweep: the convention line, both run
 commands, the `models.json` example, the token probe, the `/health` example, the Windows firewall
 fallback, "Adding a machine" and "How to re-measure a row". In the container repository it is four
 lines: `SAM31_PORT` and `EXPOSE` in `Dockerfile`, the default in `serve.py`, the run line in
@@ -87,14 +87,14 @@ token check on the new port.
 The port sweep is done and the pool is consistent, but **the shape was not**: the section written the same
 evening — "Controlling a container on a machine you are sitting at" — describes what a backend *should*
 be, and the 3090 was not that. On that machine the whole reboot-survival story in
-[`gpu-backends.md`](../../deploy/gpu-backends.md) ("once, and the policy carries it from then on") did
+[`gpu-backends-local.md`](../../deploy/gpu-backends-local.md) ("once, and the policy carries it from then on") did
 not apply at all: there was no container, so there was no policy. **Resolved the next morning**: the
 machine now runs the container, and the reason it never had was a missing NVIDIA toolkit —
 [`2026101709`](2026101709_the-3090-becomes-a-container.md).
 
 ## Also done in the same pass
 
-[`gpu-backends.md`](../../deploy/gpu-backends.md) gained **"Controlling a container on a machine you are
+[`gpu-backends-local.md`](../../deploy/gpu-backends-local.md) gained **"Controlling a container on a machine you are
 sitting at"**: which flag is stored where in a container's configuration (`docker inspect` reads them
 back), that only the restart policy can be changed in place and everything else means `docker rm -f` plus
 the run line, what the lifecycle commands are, why `started` is not `ready`, why the check has to be

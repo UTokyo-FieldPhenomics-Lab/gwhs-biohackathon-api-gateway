@@ -30,7 +30,7 @@ and a `boxes` call answered `400 boxes is not a parameter`. `_declare` sets `bac
 and nothing re-reads it while the process lives; `rules/gateway.md` states this on purpose ("a
 declaration is a specification, and one that changes under a running process is a deployment that has
 not been restarted"). Restarting the gateway after the containers is now a sentence in
-[`deploy/gpu-backends.md`](../../deploy/gpu-backends.md) §3.3.
+[`deploy/gpu-backends-local.md`](../../deploy/gpu-backends-local.md) §3.3.
 
 **2. `-p 127.0.0.1:12711:12711` is not the run line this pool uses.** The first re-create on `labpc`
 copied the wrong part of `docker inspect`: `HostConfig.PortBindings` shows `"HostIp": ""` for a
@@ -47,7 +47,7 @@ removed in the same script; the pool is back to `dev` alone.
 | Check | Answer |
 |---|---|
 | `GET /models` | `sam3.1-meta`, `backends_up` 3, `declared` true, parameters `prompt, boxes, points, confidence_threshold, imgsz`; machines `lab-5090`, `lab-3090`, `homepc-4090` |
-| text only, `gwfss` row 4, `confidence_threshold=0.25` | 200, **17** objects at 1008 on `lab-5090` (the 3090 answers 18 on the same call — the card difference `deploy/gpu-backends.md` records) |
+| text only, `gwfss` row 4, `confidence_threshold=0.25` | 200, **17** objects at 1008 on `lab-5090` (the 3090 answers 18 on the same call — the card difference `deploy/gpu-backends-local.md` records) |
 | text + `boxes=[[0,0,211,165,1]]` + `imgsz=2000` | 200, 21 objects, ran at 1008, `warnings: [resolution_clamped]` |
 | `imgsz=320` | 400, "imgsz is one of 672, 784, 896, 1008" |
 | `device=cuda` | 400, "device is not a parameter; this model accepts prompt, boxes, points, confidence_threshold, imgsz" |
