@@ -104,6 +104,27 @@ rebuilt image serving `/health`, and `/play` in Firefox against the live contain
 in the parameter input appear on the picture as they are typed, and Run answers `count 30.8` with 31
 dots.
 
+## Deploying it to the three backends
+
+One 31 MB tarball of the folder (no `.venv`, no weights) plus `docker build` on each machine; the
+checkpoint arrives on that machine's own downlink, so nothing of 19.9 GB crosses the sender's uplink.
+Two things cost a round trip each:
+
+- **The gateway host runs from git.** The host's checkout was at the same commit as this one, so the
+  `count` and `points` fields could not arrive there until the change was pushed and pulled. Until it
+  was, the container answered 30.83 and the public API answered a body with no `count` at all — the
+  fields were dropped by the host's older `ModelPrediction`, which is exactly the failure the plan
+  predicted. The answer is a reminder that "the container works" and "the surface serves it" are two
+  deployments.
+- **A background build inside WSL 2 dies with the SSH session.** `nohup … &` inside `wsl -e bash -lc`
+  returns, the session closes, WSL shuts the distro down, and the build, its log and `/tmp` go with
+  it — the log was the only evidence, and it had vanished. Run the build in the foreground of a long
+  ssh (`ServerAliveInterval`) instead, or keep the VM alive with a process that outlives the client.
+
+The cache had to be cleared once: an answer stored before the host was updated holds no `count`, and
+a cache hit would have kept serving that body. The store is disposable by rule, so the file was
+deleted rather than migrated.
+
 ## What is left
 
 - **Registering it on the gateway host.** `models.json` gains `"tasselnetv4": ["http://<address>:12713"]`
