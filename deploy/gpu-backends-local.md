@@ -379,7 +379,7 @@ This is the part that fails during an event and looks like a network fault.
 
     {"sam3.1-meta":        ["http://<address>:12711"],
      "gwfss-segformer-b4": ["http://<address>:12712"],
-     "yolo":               ["http://<address>:12713", "http://<address>:12713"]}
+     "tasselnetv4":        ["http://<address>:12713", "http://<address>:12713"]}
 
 A file that does not parse means **no models**, never all of them, so a typo in host configuration
 cannot become a gateway that answers for models nobody configured. **Order is preference:** routing

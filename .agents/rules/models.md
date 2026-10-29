@@ -35,3 +35,7 @@ contents were inspected in an uninitialised clone. Shared constraints are in [`p
 - **Return the shared object shape with COCO compressed RLE, never another mask encoding.** Normalize
   inside the container so one client decoder handles every model and dataset surface.
   [Gateway contract](gateway.md#data-and-model-contract).
+- **A counting model answers a count and its points, never invented instances.** It has no mask, so its
+  `objects` is an empty list rather than boxes manufactured from a density map; `points` are
+  `[x, y, score]` in the image's pixels, and the container owns the one place that turns its density
+  and attention into them. [Counting contract](../plans/2026102923_tasselnetv4-counting-model.md).

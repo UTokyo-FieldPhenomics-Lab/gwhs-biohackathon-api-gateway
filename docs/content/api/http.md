@@ -149,6 +149,28 @@ says so, and `resolution_used` tells you the side that ran either way:
 `warnings` is absent from an answer that needed none. A value below the smallest published side is a
 `400`: the model was never run there, and the answer would be neither fast nor meaningful.
 
+### Counting results
+
+A counting model reports a number instead of masks. Its answer carries `count`, and — where the model
+places them — `points`; `objects` is then empty:
+
+```json
+{ "model": "tasselnetv4", "resolution_used": 384,
+  "objects": [],
+  "count": 21.7,
+  "points": [[512.0, 384.0, 1.0], [96.0, 720.0, 0.83]] }
+```
+
+A point is `[x, y, score]` in the image's own pixels. `score` is the point's place in the model's own
+ordering, scaled so the strongest is `1`: it is a salience, not a probability, and it is not comparable
+across pictures or across models. Points sit on the grid the model counts on — a sixteenth of its
+384-pixel frame, so roughly 40 pixels apart on a 1024-pixel picture. Read `count` as the answer and the
+points as where its mass sits.
+
+A counting model's prompt is **exemplar boxes**: `boxes`, one array of `[x, y, w, h, 1]`, in the form
+[Geometry](#geometry-boxes-and-points) describes. Draw a few around examples of what you want counted;
+the model matches their appearance across the picture. Without them it has nothing to count.
+
 ## Limits
 
 | what | limit | over it |
