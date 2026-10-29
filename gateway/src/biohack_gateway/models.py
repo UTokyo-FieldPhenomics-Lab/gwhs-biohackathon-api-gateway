@@ -434,9 +434,9 @@ class MachineSummary(BaseModel):
         Failed attempts since the process started, requests and probes together, summed across its
         containers. The age says whether it is passing; this says how much of it there has been.
     passed_over : bool
-        Whether every container on it is inside its thirty seconds of quiet, and so whether the
-        router is currently allowed to send it anything. `alive` and this disagree after a failure
-        that the probe has not yet contradicted.
+        Whether every container on it is inside its thirty seconds of quiet — the request path's
+        own quarantine, which is not what `alive` says. The router sends a machine work only where
+        both hold: `alive` true and this false.
     """
 
     machine: str
