@@ -107,6 +107,28 @@ Two things a later session should know:
   found while refreshing: the script writes and reports "already current" per page, which is the same
   information.
 
+## The workstation's container is GPU-configured but not running (2026-10-30 18:4x)
+
+Told to put `lab-3090` back on the card even though the machine was about to lose power, the CPU
+container was removed and the GPU run line created in its place:
+
+    docker run -d --gpus all --restart unless-stopped -p 12713:12711 \
+      -e BACKEND_TOKEN=… -e TNV4_MACHINE=lab-3090 --name tasselnetv4 tasselnetv4
+
+It sits in **`Created`**, because the prestart hook still fails (`nvml error: driver/library version
+mismatch`), and with no process listening on `12713` the pool serves `tasselnetv4` from two machines.
+The fake `nvidia-smi` mount is gone with the old container, and `TNV4_DEVICE` is unset, so the
+container's own default applies.
+
+**The reboot clears it, and this is why:** the running kernel is `6.18.49-1-MANJARO`, whose module
+directory no longer exists, and the 610.57.04 module is only in memory. `/lib/modules` holds
+`6.18.55-1-MANJARO`, whose `extramodules/nvidia.ko.zst` is **615.71.09** — the same version as
+`nvidia-utils`. After the power-cycle boot, kernel, module and userspace agree and `--gpus all` works.
+
+Whether Docker starts a container that has never run is not something this session verified. After
+the boot, check `docker ps --filter name=tasselnetv4`; one `docker start tasselnetv4` settles it, and
+`computed_by.machine` should read `lab-3090` (not `crest-nerv-cpu`) in the next public answer.
+
 ## Failure record
 
 - **A canvas showing a cross-origin picture cannot be read back.** `getImageData` on `#canvas` threw
