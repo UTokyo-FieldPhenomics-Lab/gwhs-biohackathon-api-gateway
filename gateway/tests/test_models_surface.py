@@ -432,14 +432,27 @@ COUNTING: dict[str, Any] = {
     "model": MODEL,
     "resolution_used": 384,
     "count": 42.0,
+    "density": {"size": [3, 3], "values": [0.0, 6.0, 0.0, 0.0, 12.0, 0.0, 0.0, 24.0, 0.0]},
+    "objects": [],
+}
+"""A counting model's answer: a number, the field it was summed from, and the empty object list D3
+keeps required. The cells add up to the count, which is what makes the field readable rather than
+decorative."""
+
+POINTED: dict[str, Any] = {
+    "model": MODEL,
+    "resolution_used": 384,
+    "count": 2.0,
     "points": [[16.0, 32.0, 1.0], [48.0, 64.0, 0.25]],
     "objects": [],
 }
-"""A counting model's answer: a number, its points, and the empty object list D3 keeps required."""
+"""A point-counting model's answer: points instead of a field. No container here emits it; the field
+stays in the contract because deleting it would mean rebuilding the shape and the page the day one
+does."""
 
 
-def test_a_counting_answer_keeps_its_count_and_points(tmp_path: Path, index_dir: Path) -> None:
-    """A count and its points are the answer, so they cross the gateway rather than being dropped.
+def test_a_counting_answer_keeps_its_count_and_field(tmp_path: Path, index_dir: Path) -> None:
+    """A count and the field it integrates cross the gateway rather than being dropped.
 
     The container declares nothing special for them: this is the same body shape a mask model
     answers, with `objects` empty and two fields carrying what a counter found instead.
@@ -455,9 +468,25 @@ def test_a_counting_answer_keeps_its_count_and_points(tmp_path: Path, index_dir:
 
     assert response.status_code == 200
     assert response.json() == COUNTING
+    cells = response.json()["density"]["values"]
+    assert round(sum(cells), 6) == response.json()["count"]
 
 
-def test_a_mask_answer_gains_no_count_or_points(tmp_path: Path, index_dir: Path) -> None:
+def test_a_point_answer_keeps_its_points(tmp_path: Path, index_dir: Path) -> None:
+    """The point shape is relayed unchanged for the model family that answers it."""
+    backends = FakeBackends(replies={FIRST: [Reply(status=200, body=json.dumps(POINTED).encode())]})
+    client = next(build_client(tmp_path, index_dir, backends))
+
+    response = client.post(
+        f"/models/{MODEL}/predict", headers=KEY, json={"dataset": "gwhd", "row": 0}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == POINTED
+    assert "density" not in response.json()
+
+
+def test_a_mask_answer_gains_no_count_density_or_points(tmp_path: Path, index_dir: Path) -> None:
     """The fields are optional: an answer that has none is the one it was before they existed."""
     backends = FakeBackends(
         replies={FIRST: [Reply(status=200, body=json.dumps(PREDICTION).encode())]}
@@ -471,6 +500,7 @@ def test_a_mask_answer_gains_no_count_or_points(tmp_path: Path, index_dir: Path)
     assert response.status_code == 200
     assert response.json() == PREDICTION
     assert "count" not in response.json()
+    assert "density" not in response.json()
     assert "points" not in response.json()
 
 
@@ -478,7 +508,7 @@ def test_a_field_the_contract_does_not_name_is_still_dropped(
     tmp_path: Path, index_dir: Path
 ) -> None:
     """A new field is not a licence for every field: the whole shape is still this contract."""
-    answer = {**PREDICTION, "density": [[0.0, 1.0], [2.0, 3.0]]}
+    answer = {**PREDICTION, "heatmap": [[0.0, 1.0], [2.0, 3.0]]}
     backends = FakeBackends(replies={FIRST: [Reply(status=200, body=json.dumps(answer).encode())]})
     client = next(build_client(tmp_path, index_dir, backends))
 
@@ -488,6 +518,19 @@ def test_a_field_the_contract_does_not_name_is_still_dropped(
 
     assert response.status_code == 200
     assert response.json() == PREDICTION
+
+
+def test_a_density_that_is_not_its_shape_is_refused(tmp_path: Path, index_dir: Path) -> None:
+    """A named field is checked: `density` is `size` and `values`, so a bare grid is refused."""
+    answer = {**COUNTING, "density": [[0.0, 1.0], [2.0, 3.0]]}
+    backends = FakeBackends(replies={FIRST: [Reply(status=200, body=json.dumps(answer).encode())]})
+    client = next(build_client(tmp_path, index_dir, backends))
+
+    response = client.post(
+        f"/models/{MODEL}/predict", headers=KEY, json={"dataset": "gwhd", "row": 0}
+    )
+
+    assert response.status_code == 502
 
 
 def test_a_counting_answer_without_objects_is_still_outside_the_contract(

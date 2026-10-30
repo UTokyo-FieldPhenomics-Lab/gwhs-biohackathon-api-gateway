@@ -503,6 +503,23 @@ class ModelWarning(BaseModel):
     message: str
 
 
+class DensityMap(BaseModel):
+    """A counting model's local-count field: the raster its count is the sum of.
+
+    Attributes
+    ----------
+    size : list of int
+        ``[rows, columns]``. The grid is the model's own resolution, not the picture's: a cell is
+        one counting window, so the same photograph can arrive on a 23×23 grid or a 17×30 one.
+    values : list of float
+        ``rows × columns`` local counts, row-major. They are counts rather than a density normalised
+        to one, so they add up to :attr:`ModelPrediction.count`.
+    """
+
+    size: list[int]
+    values: list[float]
+
+
 class ModelPrediction(BaseModel):
     """The answer to a predict request, whatever the model was.
 
@@ -516,11 +533,17 @@ class ModelPrediction(BaseModel):
         The number of objects a counting model found, where it reports one. `None` when the model
         reports none, and absent from a mask answer's wire shape. A counting model answers this
         instead of objects, and still sends `objects: []`: one shape serves both.
+    density : DensityMap or None
+        The local-count field a counting model answered from: its cells add up to `count`, and one
+        cell is a counting window rather than one object. It is not a segmentation — a cell holding
+        1.4 objects says how much mass sits there, not where an object's outline is — and it is the
+        model's own output rather than a rendering of something else. `None` or absent when the
+        model answers with objects or points instead.
     points : list of list of float or None
-        Where a counting model placed what it counted, as ``[x, y, score]`` in the original image's
-        pixels. `score` is relative salience within this one answer, used for ordering — not a
-        calibrated confidence, and not comparable across images or models. `None` or absent when the
-        model places nothing.
+        A point-counting model's points, as ``[x, y, score]`` in the original image's pixels.
+        `score` is that model's own score for the point; what it means is the model's to declare,
+        and it is not comparable across models. `None` or absent when the model places none — a
+        local-count regressor answers `count` and `density` and sets neither this nor a stand-in.
     resolution_used : int or None
         The side the model actually ran at, where it reports one. This is the field that explains a
         mask's blockiness, and the one that makes a clamped `imgsz` visible without a warning.
@@ -542,6 +565,7 @@ class ModelPrediction(BaseModel):
     model: str
     objects: list[ObjectOut]
     count: float | None = None
+    density: DensityMap | None = None
     points: list[list[float]] | None = None
     resolution_used: int | None = None
     computed_by: ComputedBy | None = None
