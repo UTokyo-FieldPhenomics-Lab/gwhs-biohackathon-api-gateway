@@ -1,5 +1,9 @@
 # A counting model on the model surface — TasselNetV4
 
+> **Partly superseded on 2026-10-30.** D1 and D2 publish points; the model's answer is a count and
+> a local-count field, and points were our invention. See
+> [`2026103015_✅density-field-instead-of-points.md`](2026103015_✅density-field-instead-of-points.md).
+
 ## Goal
 
 TasselNetV4 answers a **count** for a published row in the same prediction body the mask models use:

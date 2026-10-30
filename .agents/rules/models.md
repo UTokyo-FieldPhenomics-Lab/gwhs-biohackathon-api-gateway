@@ -39,4 +39,4 @@ contents were inspected in an uninitialised clone. Shared constraints are in [`p
   mask, so its `objects` is an empty list rather than boxes or dots manufactured from a density map;
   `density` is that map, cell by cell, and its sum is the count. A point set belongs to a
   point-counting model that emits its own points; nothing derives them from a field.
-  [Counting contract](../plans/2026103015_density-field-instead-of-points.md).
+  [Counting contract](../plans/2026103015_✅density-field-instead-of-points.md).

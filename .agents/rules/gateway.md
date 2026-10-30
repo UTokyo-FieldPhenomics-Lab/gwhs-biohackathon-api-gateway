@@ -105,7 +105,7 @@ Package: `gateway/`. Shared constraints are in [`project.md`](project.md).
 - **A prediction may carry a count instead of objects.** `count`, `density` and `points` are optional
   forwarded fields on the same body, and `objects` stays required — empty for a counting model — so
   one client parses both. The gateway relays them; it never derives a cell, a point or a count itself.
-  [Counting contract](../plans/2026103015_density-field-instead-of-points.md).
+  [Counting contract](../plans/2026103015_✅density-field-instead-of-points.md).
 
 ## Framed pages
 
