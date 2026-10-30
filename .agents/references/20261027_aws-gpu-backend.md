@@ -201,3 +201,26 @@ One routing detail worth keeping: the first `gwfss` request after a gateway rest
 `homepc-4090`, not the rented machine, even though the rented one was first in `models.json`. The
 gateway was twelve seconds old and the new backend had not been probed yet — `models.json` order is a
 preference among *known* backends, and a backend becomes known on the probe clock, not on the file.
+
+## What this rehearsal proved, and what it did not
+
+Proved, twice and without a single manual step on the machine: template → boot → ECR pull by digest →
+token from SSM → container(s) → `/health` 200 measured **from the gateway host**; the fixed private
+address survived three different instances (a DLAMI one and two g4dn); the image built on a `g5`
+booted and served on a `g4dn`, which is the portability claim actually exercised rather than argued;
+and both models answered through the gateway with `computed_by.machine = aws-euc1-l4`.
+
+Not proved, and worth knowing before December:
+
+- **Capacity is the risk, not the plumbing.** Every G size was unavailable in every AZ for about
+  ninety minutes; `g4dn` was the only stock. A third fault domain that cannot be launched is not a
+  fault domain. Launch ahead of the window, keep the two template versions, and accept that switching
+  AZ changes the fixed address.
+- **The `g6.xlarge` (L4) version was never launched from this image.** The image is proven on a T4 and
+  the driver is proven on an L4 only from the older DLAMI image. Driver 550 covers both, and the
+  kernel is the same, so this is a strong inference — not a measurement.
+- **Cold start with two models is 6–9 minutes**, not the three a single model took: two pulls of about
+  17 GB compressed, then two checkpoints loading. A launch at 09:55 is a backend by 10:04.
+- **A reboot of this image was never tested.** `docker` is enabled and both containers carry
+  `--restart unless-stopped`, which is the same chain the DLAMI instance demonstrated; it is still an
+  assumption until someone reboots one.
