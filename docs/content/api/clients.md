@@ -145,6 +145,20 @@ a model parameter. An image already at or under that side passes through byte fo
 re-encode and no loss of its EXIF. The core `global-wheat.js` carries no image code, so an upload
 through it is sent as it is — use `global-wheat.web.js` or `global-wheat.node.js`.
 
+A model that answers a **number** rather than geometry brings fields of its own: `count`, and for
+the counting model `density` — the local-count grid that number is the sum of. The clients hand them
+back as they arrived; there is nothing to decode, because a flat array and its size are already
+usable, and reshaping is one call:
+
+```python
+answer = client.predict("tasselnetv4", "gwfss", 0, boxes=[[312, 143, 44, 55, 1]])
+field = numpy.reshape(answer["density"]["values"], answer["density"]["size"])   # rows × columns
+```
+
+`values` is **row-major**, unlike the COCO `rle.counts` your mask was decoded from, which is
+column-major: a field read in the wrong order is a transposed picture, not an error.
+[Counting results](http.md#counting-results) says what the number and the grid mean.
+
 ## When it goes wrong
 
 A refusal is one body, `{"error": {"code": …, "message": …}}`, and every client raises it as one

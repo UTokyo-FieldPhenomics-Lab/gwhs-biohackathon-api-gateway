@@ -64,6 +64,20 @@ public final class Checks {
             check("predict sends the parameters in the query", predictCall.contains("prompt=wheat+head"));
             check("the key travels", predictCall.contains("key=t0ken"));
 
+            Map<String, Object> counted =
+                    client.predict(
+                            "tasselnetv4",
+                            "gwhs-temp",
+                            0,
+                            Map.of("boxes", List.of(List.of(1, 2, 3, 4, 1))));
+            check(
+                    "a count crosses unchanged",
+                    ((Number) counted.get("count")).doubleValue() == 21.7);
+            check(
+                    "a field crosses unchanged",
+                    ((List<?>) density(counted).get("values")).size() == 6
+                            && objects(counted).isEmpty());
+
             client.predict(
                     "sam3.1-meta",
                     "gwhs-temp",
@@ -150,6 +164,11 @@ public final class Checks {
     @SuppressWarnings("unchecked")
     private static List<Map<String, Object>> objects(Map<String, Object> body) {
         return (List<Map<String, Object>>) body.get("objects");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> density(Map<String, Object> body) {
+        return (Map<String, Object>) body.get("density");
     }
 
     /** A 4000x3000 photograph stored sideways, tagged orientation 6, as a portrait phone writes one. */
@@ -337,6 +356,11 @@ public final class Checks {
                                     + "\"bbox\":[0,0,1,1],\"area\":2,\"rle\":{\"size\":[2,2],\"counts\":\"0120\"}}]}";
             case "/models/gwfss-segformer-b4/predict/upload" ->
                     answer = "{\"model\":\"gwfss-segformer-b4\",\"objects\":[]}";
+            case "/models/tasselnetv4/predict" ->
+                    answer =
+                            "{\"model\":\"tasselnetv4\",\"objects\":[],\"count\":21.7,"
+                                    + "\"density\":{\"size\":[2,3],\"values\":[0.0,1.5,0.0,2.0,0.0,18.2]},"
+                                    + "\"resolution_used\":384}";
             default -> {
                 status = 401;
                 answer = "{\"error\":{\"code\":\"invalid_key\",\"message\":\"that key is not in the pool\"}}";

@@ -184,6 +184,10 @@ class Client {
 
   /**
    * Run one model on one published row.
+   *
+   * The answer is what the API wrote. A geometry model's objects are decoded in place; a counting
+   * model answers `count` and `density` instead of objects, and nothing here reshapes a field that
+   * is already a flat row-major array and its size.
    * @param {string} model The model id.
    * @param {string} dataset
    * @param {number} row The absolute row of the pinned revision; the gateway resolves the address.

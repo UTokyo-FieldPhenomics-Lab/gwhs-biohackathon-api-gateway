@@ -181,6 +181,21 @@ def test_predict_sends_the_address_in_the_body_and_the_parameters_in_the_query()
     assert call["params"] == {"prompt": "wheat head", "confidence_threshold": 0.4}
 
 
+def test_a_counting_answer_passes_through_untouched() -> None:
+    """A model that answers a number carries no objects, and nothing here decodes or reshapes it."""
+    body = {
+        "model": "tasselnetv4",
+        "objects": [],
+        "count": 21.7,
+        "density": {"size": [2, 3], "values": [0.0, 1.5, 0.0, 2.0, 0.0, 18.2]},
+        "resolution_used": 384,
+    }
+    client, session = make([Reply(200, body)])
+    answer = client.predict("tasselnetv4", "gwfss", 0, boxes=[[1, 2, 3, 4, 1]])
+    assert answer == body
+    assert list(session.calls[0]["params"]) == ["boxes"]
+
+
 def test_an_upload_sends_the_file_as_the_field_named_file(tmp_path: Path) -> None:
     """The route's contract is one multipart field, and the name and type are only what it needs."""
     photo = tmp_path / "photo.png"

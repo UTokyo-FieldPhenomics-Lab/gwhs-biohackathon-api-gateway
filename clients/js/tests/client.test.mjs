@@ -65,6 +65,20 @@ test("iter_images follows the cursor and keeps the filters", async () => {
   assert.match(calls[1].url, /cursor=c1/);
 });
 
+test("a counting answer passes through untouched", async () => {
+  const body = {
+    model: "tasselnetv4",
+    objects: [],
+    count: 21.7,
+    density: {size: [2, 3], values: [0, 1.5, 0, 2, 0, 18.2]},
+    resolution_used: 384,
+  };
+  const {client: api} = client([{status: 200, body}]);
+  const answer = await api.predict("tasselnetv4", "gwfss", 0, {boxes: [[1, 2, 3, 4, 1]]});
+  assert.deepEqual(answer, body);
+  assert.equal(answer.objects[0], undefined);
+});
+
 test("a refusal becomes an ApiError with the API's own words", async () => {
   const {client: api} = client([
     {status: 401, body: {error: {code: "invalid_key", message: "that key is not in the pool"}}},

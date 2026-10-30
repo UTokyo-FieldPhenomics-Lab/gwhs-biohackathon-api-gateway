@@ -424,8 +424,10 @@ class Client:
         Returns
         -------
         dict
-            ``{"model", "objects", "resolution_used", "computed_by"}``, with ``mask`` on every
-            object when ``decode`` is true.
+            The answer as the API wrote it: ``model``, ``objects``, ``resolution_used`` and
+            ``computed_by`` always, plus what this model answered with — ``count`` and ``density``
+            for a counting model, ``warnings`` where it reported one. ``mask`` is on every object
+            when ``decode`` is true; a counting answer has no objects and nothing to decode.
 
         Raises
         ------

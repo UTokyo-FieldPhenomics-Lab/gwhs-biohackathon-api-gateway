@@ -358,7 +358,10 @@ public final class GlobalWheat {
          * @param params the model's own parameters, under their own names. A geometry parameter is
          *     one value: {@code Map.of("boxes", List.of(List.of(480, 290, 110, 360, 1)))} goes out
          *     as one JSON array in one parameter, never as five repeated names
-         * @return {@code model}, {@code objects}, {@code resolution_used}, {@code computed_by}
+         * @return the answer as the API wrote it: {@code model}, {@code objects},
+         *     {@code resolution_used} and {@code computed_by} always, plus what this model answered
+         *     with — {@code count} and {@code density} for a counting model, {@code warnings} where
+         *     it reported one. A counting answer has no objects and nothing to decode
          */
         public Map<String, Object> predict(
                 String model, String dataset, int row, Map<String, ?> params) {
