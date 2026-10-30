@@ -167,6 +167,10 @@ across pictures or across models. Points sit on the grid the model counts on —
 384-pixel frame, so roughly 40 pixels apart on a 1024-pixel picture. Read `count` as the answer and the
 points as where its mass sits.
 
+An answer may also carry `warnings`, in the same shape a clamped `imgsz` produces: a counting model
+reports one when an exemplar is larger than the finest window it can count in — a spike that fills the
+frame — and the count is then a coarse one. The answer is an answer; the warning says which one.
+
 A counting model's prompt is **exemplar boxes**: `boxes`, one array of `[x, y, w, h, 1]`, in the form
 [Geometry](#geometry-boxes-and-points) describes. Draw a few around examples of what you want counted;
 the model matches their appearance across the picture. Without them it has nothing to count.

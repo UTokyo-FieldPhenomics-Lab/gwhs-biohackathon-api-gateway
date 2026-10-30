@@ -130,6 +130,18 @@
     return output;
   };
 
+  // Whether the picture's boxes answer to the mouse. It is a switch rather than a lock on the input:
+  // a reader who is typing coordinates still types, and the picture simply stops competing for the
+  // press. Only a model that declares a `boxes` parameter has anything to switch.
+  const showMode = () => {
+    const mode = $("boxes-mode");
+    mode.hidden = !boxInput;
+    if (!boxInput) return;
+    mode.textContent = boxesEditable ? "edit" : "locked";
+    mode.setAttribute("aria-pressed", String(boxesEditable));
+    stage.classList.toggle("drawing", boxesEditable);
+  };
+
   const showParameters = (declaration) => {
     parameters.replaceChildren();
     // A declaration replaces the controls, and with them the picture's editor: a model without a
@@ -161,7 +173,7 @@
         input.addEventListener("input", syncBoxes);
       }
     }
-    stage.classList.toggle("drawing", Boolean(boxInput));
+    showMode();
     // The overlay follows the editor: a model that takes no boxes must not leave another model's
     // boxes drawn on the picture it is about to replace.
     showBoxes();
@@ -352,7 +364,7 @@
     fields = [];
     boxInput = null;
     boxes = [];
-    stage.classList.remove("drawing");
+    showMode();
     $("run").disabled = true;
     clearViewer();
     // A palette was read with the key that just went; the next one may be a different team's, and a
@@ -410,6 +422,12 @@
 
   // A view toggle redraws from the answer already on screen: no request, and no decode — the mask
   // layer was built when that answer arrived.
+  $("boxes-mode").addEventListener("click", () => {
+    boxesEditable = !boxesEditable;
+    showMode();
+    showBoxes();
+  });
+
   $("display").addEventListener("click", (event) => {
     const button = event.target.closest("[data-view]");
     if (!button) return;
@@ -617,8 +635,74 @@
   let boxes = [];        // the last list that parsed: [x, y, w, h, label] in the image's own pixels
   let drag = null;       // the box being drawn: {x0, y0, x, y} in the image's own pixels
   let band = null;       // the rectangle showing it while it is drawn
+  let boxesEditable = true;   // whether the picture's boxes can be drawn, moved and deleted by hand
 
   const MIN_DRAG = 4;
+
+  // A box on the picture carries its own controls: a dot at each corner to drag the whole box by,
+  // whichever corner is nearer the hand, and an × to remove it. The layer itself takes no pointer
+  // events — a press anywhere else must still start a new box — so only the controls do.
+  const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+
+  const handleFor = (kind, index) => {
+    const element = document.createElement("button");
+    element.type = "button";
+    element.className = "handle " + kind;
+    element.dataset.index = String(index);
+    element.tabIndex = -1;
+    if (kind === "drop") {
+      element.textContent = "×";
+      element.setAttribute("aria-label", "remove this box");
+      element.addEventListener("pointerdown", (event) => event.stopPropagation());
+      element.addEventListener("click", (event) => {
+        event.stopPropagation();
+        boxes.splice(index, 1);
+        commitBoxes();
+      });
+    } else {
+      element.setAttribute("aria-label", "drag this box");
+      dragBy(element, index);
+    }
+    return element;
+  };
+
+  // Dragging a corner dot moves the box, its size untouched: the pointer's travel in the picture is
+  // the box's travel, so a box keeps its own scale while it is carried somewhere else. It is held
+  // inside the picture, because a box outside it is not one a model can use.
+  const dragBy = (element, index) => {
+    let start = null;
+    element.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 || !last) return;
+      const [x, y] = imageAt(event);
+      start = {x, y, box: boxes[index].slice(), node: element.parentElement};
+      event.stopPropagation();
+      event.preventDefault();
+      try {
+        element.setPointerCapture(event.pointerId);
+      } catch {
+        // nothing to do: the box is already being moved
+      }
+    });
+    element.addEventListener("pointermove", (event) => {
+      if (!start) return;
+      const [x, y] = imageAt(event);
+      const [, , width, height, label = 1] = start.box;
+      const moved = [
+        clamp(start.box[0] + (x - start.x), 0, last.image.naturalWidth - width),
+        clamp(start.box[1] + (y - start.y), 0, last.image.naturalHeight - height),
+        width,
+        height,
+        label,
+      ];
+      boxes[index] = moved;
+      place(start.node, last.image, moved[0], moved[1], width, height);
+    });
+    element.addEventListener("pointerup", () => {
+      if (!start) return;
+      start = null;
+      commitBoxes();
+    });
+  };
 
   const showBoxes = () => {
     const layer = $("boxes");
@@ -626,14 +710,29 @@
       layer.replaceChildren();
       return;
     }
-    layer.replaceChildren(...boxes.map((box) => {
+    layer.replaceChildren(...boxes.map((box, index) => {
       const element = document.createElement("div");
       element.className = "box";
       place(element, last.image, box[0], box[1], box[2], box[3]);
+      if (boxesEditable) {
+        element.append(
+          handleFor("move tl", index),
+          handleFor("move br", index),
+          handleFor("drop", index),
+        );
+      }
       return element;
     }));
     // A redraw while one is being drawn must not take the rubber band with it.
     if (band) layer.append(band);
+  };
+
+  /** Write the list back into the input, which is what the query and the command read. */
+  const commitBoxes = () => {
+    boxInput.removeAttribute("aria-invalid");
+    boxInput.value = JSON.stringify(boxes);
+    // A script's own write fires no event, and the page reads the input rather than the list.
+    boxInput.dispatchEvent(new Event("input", {bubbles: true}));
   };
 
   // The input's text as a list of boxes, or null when it is not one: null is a value still being
@@ -681,10 +780,9 @@
   const imageAt = (event) => {
     const box = stage.getBoundingClientRect();
     const image = last.image;
-    const clamp = (value, high) => Math.max(0, Math.min(high, value));
     return [
-      clamp(((event.clientX - box.left) / box.width) * image.naturalWidth, image.naturalWidth),
-      clamp(((event.clientY - box.top) / box.height) * image.naturalHeight, image.naturalHeight),
+      clamp(((event.clientX - box.left) / box.width) * image.naturalWidth, 0, image.naturalWidth),
+      clamp(((event.clientY - box.top) / box.height) * image.naturalHeight, 0, image.naturalHeight),
     ];
   };
 
@@ -696,16 +794,11 @@
     endDrag();
     if (width < MIN_DRAG && height < MIN_DRAG) return;   // a click, not a box
     boxes = boxes.concat([[x, y, width, height, 1]]);
-    boxInput.value = JSON.stringify(boxes);
-    boxInput.removeAttribute("aria-invalid");
-    showBoxes();
-    // The query and the generated command read the input, and a script's own write fires no event:
-    // the page has to be told that a box arrived.
-    boxInput.dispatchEvent(new Event("input", {bubbles: true}));
+    commitBoxes();
   };
 
   stage.addEventListener("pointerdown", (event) => {
-    if (!boxInput || !last || event.button !== 0) return;
+    if (!boxInput || !boxesEditable || !last || event.button !== 0) return;
     const [x, y] = imageAt(event);
     if (drag) {
       // The second click of a two-click box: its corner is where it was clicked.
@@ -862,6 +955,7 @@
       url: url,
       count: answer.count,
       points: answer.points,
+      warnings: Array.isArray(answer.warnings) ? answer.warnings : [],
     };
     render();
     return {
@@ -888,8 +982,11 @@
     const tally = objects.length + (objects.length === 1 ? " object" : " objects");
     if (!objects.length) {
       // A counting answer has no geometry to check: the count beside this line is the answer, and
-      // "0 objects" would read as a model that found nothing.
-      say($("check"), "", null);
+      // "0 objects" would read as a model that found nothing. What is left to say is a warning —
+      // an exemplar past the model's finest window, for one — and it belongs here, not in a toast.
+      const warning = last.warnings[0];
+      say($("check"), warning ? warning.message : "", null);
+      $("check").classList.toggle("warn", Boolean(warning));
     } else if (!painted.decoder) {
       // Said rather than left blank: an empty canvas would read as a model that found nothing.
       say($("check"), tally + " · decoder did not load — the response body is complete", false);

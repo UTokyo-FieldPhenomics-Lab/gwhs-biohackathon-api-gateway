@@ -246,6 +246,9 @@ body {
 /* The caption carries the outcome, and the colour belongs to the outcome rather than to the box: it
    is the `#check` line inside that is green or red, not the bar it sits in. */
 #play figcaption #check.good { color: var(--good); }
+/* A warning is neither the answer nor a refusal: the model counted, at a coarser window than it
+   would choose. The accent keeps it distinguishable from the good/bad of the decoder's check. */
+#play figcaption #check.warn { color: var(--accent); }
 #play figcaption #check.bad { color: var(--bad); }
 /* The four view toggles and the full-size link are one unit, so a narrow frame drops all of them to
    the next line together rather than splitting a control from its label. */
@@ -452,6 +455,62 @@ body {
    before the reader presses: a crosshair means the next press draws rather than scrolls. */
 #play #stage.drawing {
   cursor: crosshair;
+}
+/* A box answers to the mouse on its own two corners and its ×. The layer beneath takes no pointer
+   events, so these are the only places a press does something other than start a new box. */
+#play .handle {
+  position: absolute;
+  pointer-events: auto;
+  padding: 0;
+  line-height: 1;
+  border: 0;
+  cursor: pointer;
+}
+#play .handle.move {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #e08b00;
+  box-shadow: 0 0 0 2px #fff;
+  cursor: grab;
+}
+#play .handle.move:active {
+  cursor: grabbing;
+}
+#play .handle.move.tl {
+  left: -7px;
+  top: -7px;
+}
+#play .handle.move.br {
+  right: -7px;
+  bottom: -7px;
+}
+#play .handle.drop {
+  right: -9px;
+  top: -11px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #1f2328;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+/* The switch that decides whether the picture's boxes answer to the mouse. It is not a lock on the
+   input: typing coordinates and dragging corners are two ways in, and this picks which one is live. */
+#play #boxes-mode {
+  min-width: 4.2rem;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--bad);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--bad);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+}
+#play #boxes-mode[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 #play #run-state:empty {
   display: none;
