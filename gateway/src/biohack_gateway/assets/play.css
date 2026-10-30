@@ -257,6 +257,9 @@ body {
   align-items: center;
   gap: 0.9rem;
   white-space: nowrap;
+  /* Five eyes, a count and the raw-image link share this line, and the guide's pane is narrower than
+     a desktop page: wrapping keeps a toggle from being pushed out of reach. */
+  flex-wrap: wrap;
 }
 /* An eye governs what the picture shows: pressed means shown, and the slash is the off state. Each
    is a real button with an accessible name — the word beside it — rather than a clickable glyph. */
@@ -456,8 +459,12 @@ body {
 #play #stage.drawing {
   cursor: crosshair;
 }
-/* A box answers to the mouse on its own two corners and its ×. The layer beneath takes no pointer
-   events, so these are the only places a press does something other than start a new box. */
+/* A box answers to the mouse on its body and its two diagonal corners. The layer beneath takes no
+   pointer events, so a press on the picture away from a box still starts a new one. */
+#play #stage.drawing .box {
+  pointer-events: auto;
+  cursor: move;
+}
 #play .handle {
   position: absolute;
   pointer-events: auto;
@@ -466,22 +473,19 @@ body {
   border: 0;
   cursor: pointer;
 }
-#play .handle.move {
+#play .handle.resize {
   width: 13px;
   height: 13px;
   border-radius: 50%;
   background: #e08b00;
   box-shadow: 0 0 0 2px #fff;
-  cursor: grab;
+  cursor: nwse-resize;
 }
-#play .handle.move:active {
-  cursor: grabbing;
-}
-#play .handle.move.tl {
+#play .handle.resize.tl {
   left: -7px;
   top: -7px;
 }
-#play .handle.move.br {
+#play .handle.resize.br {
   right: -7px;
   bottom: -7px;
 }
@@ -497,20 +501,27 @@ body {
   font-weight: 700;
 }
 /* The switch that decides whether the picture's boxes answer to the mouse. It is not a lock on the
-   input: typing coordinates and dragging corners are two ways in, and this picks which one is live. */
+   input: typing coordinates and dragging the picture are two ways in, and this picks which one is
+   live. Both states stay visible, because a button reading "edit" alone looks like the way to start
+   editing rather than like the mode it is already in. */
 #play #boxes-mode {
-  min-width: 4.2rem;
-  padding: 0.25rem 0.6rem;
-  border: 1px solid var(--bad);
+  display: inline-flex;
+  border: 1px solid var(--line);
   border-radius: 6px;
+  overflow: hidden;
+}
+#play #boxes-mode button {
+  padding: 0.25rem 0.6rem;
+  border: 0;
   background: transparent;
-  color: var(--bad);
+  color: var(--muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.85em;
+  cursor: pointer;
 }
-#play #boxes-mode[aria-pressed="true"] {
-  border-color: var(--accent);
-  color: var(--accent);
+#play #boxes-mode button[aria-pressed="true"] {
+  background: var(--accent);
+  color: #fff;
 }
 #play #run-state:empty {
   display: none;

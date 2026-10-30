@@ -16,7 +16,10 @@
   // name — a renamed model, or one added after this line — falls back to the base view. A semantic
   // model answers with class extents that cover most of the frame, so its boxes open hidden and its
   // legend, which is where the class names and scores then live, opens shown.
-  const VIEW_BASE = {masks: true, boxes: true, legend: false, watermark: true};
+  //
+  // The order is the order a reader builds the picture in: the photograph, the model's pixel layer
+  // over it, the rectangle geometry on top, then the two annotations the page adds.
+  const VIEW_BASE = {image: true, masks: true, boxes: true, legend: false, watermark: true};
   const VIEW_BY_MODEL = {
     "gwfss-segformer-b4": {boxes: false, legend: true},
   };
@@ -134,11 +137,12 @@
   // a reader who is typing coordinates still types, and the picture simply stops competing for the
   // press. Only a model that declares a `boxes` parameter has anything to switch.
   const showMode = () => {
-    const mode = $("boxes-mode");
-    mode.hidden = !boxInput;
+    const group = $("boxes-mode");
+    group.hidden = !boxInput;
     if (!boxInput) return;
-    mode.textContent = boxesEditable ? "edit" : "locked";
-    mode.setAttribute("aria-pressed", String(boxesEditable));
+    for (const button of group.querySelectorAll("button")) {
+      button.setAttribute("aria-pressed", String((button.dataset.mode === "edit") === boxesEditable));
+    }
     stage.classList.toggle("drawing", boxesEditable);
   };
 
@@ -287,6 +291,9 @@
     // Applied with the declaration, so the eye buttons describe the answer that is about to be asked
     // for. Nothing on screen is redrawn here: the picture there belongs to the previous answer.
     view = {...VIEW_BASE, ...(VIEW_BY_MODEL[id] || {})};
+    // The switch follows the layer: a model whose boxes open hidden also opens locked, because a drag
+    // that draws into a hidden layer is a gesture with no visible result.
+    if (!view.boxes) boxesEditable = false;
     showView();
     showParameters(declaration);
     showFacts(declaration);
@@ -422,8 +429,16 @@
 
   // A view toggle redraws from the answer already on screen: no request, and no decode — the mask
   // layer was built when that answer arrived.
-  $("boxes-mode").addEventListener("click", () => {
-    boxesEditable = !boxesEditable;
+  $("boxes-mode").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-mode]");
+    if (!button) return;
+    boxesEditable = button.dataset.mode === "edit";
+    // Editing a layer nobody can see would draw boxes that vanish as they are made, so asking to
+    // edit shows the layer: visible is what editable means here.
+    if (boxesEditable && !view.boxes) {
+      view.boxes = true;
+      document.querySelector('[data-view="boxes"]').setAttribute("aria-pressed", "true");
+    }
     showMode();
     showBoxes();
   });
@@ -434,6 +449,10 @@
     const key = button.dataset.view;
     view[key] = !view[key];
     button.setAttribute("aria-pressed", String(view[key]));
+    // Hiding the box layer locks the picture: a drag would make a box nobody can see, and the page
+    // would look as if the gesture had failed rather than the layer being off.
+    if (key === "boxes" && !view.boxes) boxesEditable = false;
+    showMode();
     render();
   });
 
@@ -464,6 +483,21 @@
   // neighbours of one category still have to differ, so those cycle this list by object instead.
   // Nothing here names a class or a model; both lists arrive from the surface.
   const FALLBACK = ["#ff4fa3", "#00c2ff", "#ffb000", "#8b5cf6", "#00d68f", "#ff5a36"];
+
+  // A counting answer's field takes the colour the answer's dots used, so a reader who has seen one
+  // rendering recognises the other. It is one hue for the whole layer by design: the numbers say how
+  // much, the hue would have to say which class, and a local-count model has no classes.
+  const FIELD_COLOUR = "#ff4fa3";
+  // The tint of a cell, from what share of the field's ninth decile it holds. A local-count field
+  // spans an order of magnitude between its busiest cell and its ordinary ones — measured on `gwfss`
+  // row 0, 1.9 against 0.05 — so scaling by the peak shows one blob and scaling by nothing paints the
+  // whole frame. The decile is full tint and everything above it saturates; full opacity would hide
+  // the objects the field is about.
+  const FIELD_ALPHA = 150;
+  const FIELD_DECILE = 0.9;
+  // What a pixel layer is read against when the photograph is off. One dark neutral for both themes:
+  // the layer is the same colour in either, and this is the ground a density figure is printed on.
+  const FIELD_BACKDROP = "#12161c";
 
   const palettes = new Map();     // dataset id -> Promise of Map(lowercased class name -> #rrggbb)
 
@@ -639,10 +673,22 @@
 
   const MIN_DRAG = 4;
 
-  // A box on the picture carries its own controls: a dot at each corner to drag the whole box by,
-  // whichever corner is nearer the hand, and an × to remove it. The layer itself takes no pointer
-  // events — a press anywhere else must still start a new box — so only the controls do.
+  // A box answers to three gestures, split the way an annotation tool splits them: the body moves it,
+  // a corner resizes it from that corner, and the × removes it. The layer itself still takes no
+  // pointer events, so a press on the picture away from a box is still a new box.
   const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+
+  const MIN_BOX = 8;   // the smallest side a resize can leave, in the image's own pixels
+
+  // The pointer keeps reporting to the element it started on however far it travels; a browser that
+  // will not capture still draws, only stopping at the picture's edge, which is where the box is held.
+  const capture = (element, pointerId) => {
+    try {
+      element.setPointerCapture(pointerId);
+    } catch {
+      // nothing to do: the gesture is already under way
+    }
+  };
 
   const handleFor = (kind, index) => {
     const element = document.createElement("button");
@@ -660,28 +706,23 @@
         commitBoxes();
       });
     } else {
-      element.setAttribute("aria-label", "drag this box");
-      dragBy(element, index);
+      element.setAttribute("aria-label", "resize this box");
+      resizeBy(element, index, kind.endsWith("tl") ? "tl" : "br");
     }
     return element;
   };
 
-  // Dragging a corner dot moves the box, its size untouched: the pointer's travel in the picture is
-  // the box's travel, so a box keeps its own scale while it is carried somewhere else. It is held
-  // inside the picture, because a box outside it is not one a model can use.
-  const dragBy = (element, index) => {
+  // The body carries the box: the pointer's travel in the picture is the box's travel, so the box
+  // keeps its size while it is carried somewhere else — a corner is what changes a size.
+  const moveBy = (element, index) => {
     let start = null;
     element.addEventListener("pointerdown", (event) => {
       if (event.button !== 0 || !last) return;
       const [x, y] = imageAt(event);
-      start = {x, y, box: boxes[index].slice(), node: element.parentElement};
-      event.stopPropagation();
+      start = {x, y, box: boxes[index].slice()};
+      event.stopPropagation();   // the picture would otherwise read the press as a new box
       event.preventDefault();
-      try {
-        element.setPointerCapture(event.pointerId);
-      } catch {
-        // nothing to do: the box is already being moved
-      }
+      capture(element, event.pointerId);
     });
     element.addEventListener("pointermove", (event) => {
       if (!start) return;
@@ -695,7 +736,7 @@
         label,
       ];
       boxes[index] = moved;
-      place(start.node, last.image, moved[0], moved[1], width, height);
+      place(element, last.image, moved[0], moved[1], width, height);
     });
     element.addEventListener("pointerup", () => {
       if (!start) return;
@@ -704,8 +745,49 @@
     });
   };
 
+  // A corner dot moves that corner and leaves the opposite one where it was, so a box is made wider
+  // without being made taller. Held inside the picture, and never smaller than one pixel of drag.
+  const resizeBy = (dot, index, corner) => {
+    let start = null;
+    dot.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 || !last) return;
+      const [x, y] = imageAt(event);
+      start = {x, y, box: boxes[index].slice()};
+      event.stopPropagation();
+      event.preventDefault();
+      capture(dot, event.pointerId);
+    });
+    dot.addEventListener("pointermove", (event) => {
+      if (!start) return;
+      const [x, y] = imageAt(event);
+      const [left, top, width, height, label = 1] = start.box;
+      const right = left + width;
+      const bottom = top + height;
+      let resized;
+      if (corner === "tl") {
+        const nearLeft = clamp(left + (x - start.x), 0, right - MIN_BOX);
+        const nearTop = clamp(top + (y - start.y), 0, bottom - MIN_BOX);
+        resized = [nearLeft, nearTop, right - nearLeft, bottom - nearTop, label];
+      } else {
+        const nearRight = clamp(right + (x - start.x), left + MIN_BOX, last.image.naturalWidth);
+        const nearBottom = clamp(bottom + (y - start.y), top + MIN_BOX, last.image.naturalHeight);
+        resized = [left, top, nearRight - left, nearBottom - top, label];
+      }
+      boxes[index] = resized;
+      place(dot.parentElement, last.image, resized[0], resized[1], resized[2], resized[3]);
+    });
+    dot.addEventListener("pointerup", () => {
+      if (!start) return;
+      start = null;
+      commitBoxes();
+    });
+  };
+
   const showBoxes = () => {
     const layer = $("boxes");
+    // One toggle for every rectangle on the picture — the exemplars a reader drew and the boxes a
+    // model answered — so the layer is hidden as a whole, handles and rubber band included.
+    layer.hidden = !view.boxes;
     if (!last || !boxInput) {
       layer.replaceChildren();
       return;
@@ -715,9 +797,10 @@
       element.className = "box";
       place(element, last.image, box[0], box[1], box[2], box[3]);
       if (boxesEditable) {
+        moveBy(element, index);
         element.append(
-          handleFor("move tl", index),
-          handleFor("move br", index),
+          handleFor("resize tl", index),
+          handleFor("resize br", index),
           handleFor("drop", index),
         );
       }
@@ -725,6 +808,19 @@
     }));
     // A redraw while one is being drawn must not take the rubber band with it.
     if (band) layer.append(band);
+  };
+
+  /** Drop every box, on a picture that is no longer the one they were drawn on. */
+  const forgetBoxes = () => {
+    boxes = [];
+    endDrag();
+    if (boxInput) {
+      boxInput.value = "";
+      boxInput.removeAttribute("aria-invalid");
+      // No write-back event: an empty field is the parameter sent nowhere, and the gateway's
+      // "boxes is required" refusal is what a reader should meet if they run it like this.
+    }
+    showBoxes();
   };
 
   /** Write the list back into the input, which is what the query and the command read. */
@@ -861,7 +957,16 @@
     canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
     canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
     const context = canvas.getContext("2d");
-    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    // The photograph first, then the model's pixel layer over it. Each can be turned off: with the
+    // layer off the photograph is the one thing on screen that is not a model's claim, and with the
+    // photograph off the layer is read on its own — over a dark ground, because a pale tint on the
+    // pane's light grey reads as nothing at all.
+    if (view.image) {
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    } else if (view.masks) {
+      context.fillStyle = FIELD_BACKDROP;
+      context.fillRect(0, 0, canvas.width, canvas.height);
+    }
     if (view.masks) context.drawImage(layer, 0, 0, canvas.width, canvas.height);
 
     figure.hidden = false;
@@ -920,6 +1025,47 @@
     full.hidden = false;
   };
 
+  // A counting answer's field, as a layer the size of the picture. Its numbers are the model's own
+  // cells — one cell is a counting window, not a pixel — so they are painted at grid size and then
+  // stretched with smoothing on: an unsmoothed 21-cell grid over a 1024-pixel photograph reads as a
+  // mosaic, while what mass does between two cells is what a heatmap is for. The tint follows the
+  // value against the field's own ninth decile (see `FIELD_ALPHA`), so the photograph stays readable
+  // under it and a cell holding almost nothing is not painted rather than washing the whole frame.
+  const fieldLayer = (density, width, height) => {
+    const [rows, columns] = Array.isArray(density.size) ? density.size : [];
+    const values = Array.isArray(density.values) ? density.values : [];
+    if (!(rows > 0 && columns > 0) || values.length !== rows * columns) return null;
+    const occupied = values.map(Number).filter((value) => value > 0)
+      .sort((left, right) => left - right);
+    if (!occupied.length) return null;
+    const reference = occupied[Math.floor((occupied.length - 1) * FIELD_DECILE)];
+
+    const grid = document.createElement("canvas");
+    grid.width = columns;
+    grid.height = rows;
+    const cells = grid.getContext("2d");
+    const pixels = cells.createImageData(columns, rows);
+    const [red, green, blue] = rgbOf(FIELD_COLOUR);
+    values.forEach((value, at) => {
+      const solidity = Math.min(1, Math.max(0, Number(value) / reference));
+      if (!(solidity > 0)) return;
+      pixels.data[at * 4] = red;
+      pixels.data[at * 4 + 1] = green;
+      pixels.data[at * 4 + 2] = blue;
+      pixels.data[at * 4 + 3] = Math.round(solidity * FIELD_ALPHA);
+    });
+    cells.putImageData(pixels, 0, 0);
+
+    const layer = document.createElement("canvas");
+    layer.width = width;
+    layer.height = height;
+    const stretched = layer.getContext("2d");
+    stretched.imageSmoothingEnabled = true;
+    stretched.imageSmoothingQuality = "high";
+    stretched.drawImage(grid, 0, 0, width, height);
+    return layer;
+  };
+
   /** Decode one answer into a mask layer once, then let `render` draw it in whatever view is on. */
   const paint = async (url, objects, palette = new Map(), answer = {}) => {
     const image = await loadImage(url);
@@ -944,6 +1090,14 @@
         checked += 1;
       }
     });
+
+    // A counting answer brings no objects and no mask: what it brings is the field its count was
+    // summed from, painted into the same layer, so the masks toggle shows or hides it like any other
+    // pixel layer and a view change never asks the model again.
+    if (answer.density) {
+      const field = fieldLayer(answer.density, width, height);
+      if (field) painting.drawImage(field, 0, 0);
+    }
 
     // A counting answer's two fields travel with the picture exactly as `objects` does, so a view
     // toggle redraws them from the answer rather than from the response body.
@@ -1088,10 +1242,28 @@
     }
   };
 
+  // Which picture a coordinate belongs to: a dataset and a row, or the file that was chosen. Two
+  // answers follow from it, and they are about different moments, so they are two values.
+  const pictureOf = (upload, file, source, index) => upload
+    ? "upload:" + (file ? file.name + ":" + file.size + ":" + file.lastModified : "")
+    : source + ":" + index;
+  let boxesKey = "";   // the picture the boxes on screen were drawn on
+  let shownKey = "";   // the picture the pane is actually showing, answer included
+
   const preview = async () => {
     if (!key) return;
     const upload = $("source").value === "upload";
     const file = $("file").files[0];
+    // Settled before anything is fetched: a run that starts inside the debounce must not keep
+    // coordinates drawn on the picture it is replacing.
+    const picture = pictureOf(upload, file, dataset.value, $("row").value);
+    if (picture !== boxesKey) {
+      boxesKey = picture;
+      forgetBoxes();
+    }
+    // A run owns the pane while it runs, and afterwards the pane is showing an answer about this
+    // very picture — previewing it again would only take that answer off.
+    if (running || picture === shownKey) return;
     if (upload && !file) {
       previewToken += 1;
       clearViewer();
@@ -1119,7 +1291,8 @@
         caption = row.dataset + " row " + row.row;
       }
       const painted = await paint(url, []);
-      if (token !== previewToken) return;
+      if (token !== previewToken || running) return;
+      shownKey = picture;
       $("response").hidden = true;
       // A preview is a picture, not a result: there is no machine to name until something runs.
       showMachine(null);
@@ -1142,16 +1315,27 @@
     }
     $("run").disabled = true;
     running = true;
+    clearTimeout(rowTimer);   // a row number typed a moment ago must not preview over the answer
     say(state, "running…");
     // A preview still in flight belongs to a choice this run has moved past, and must not be allowed
     // to draw over the result.
     previewToken += 1;
     try {
       const chosen = encodeURIComponent(model.value);
-      const search = query();
       // Read once: a run outlives the control it started from, and the image, the body and the
       // palette must all describe the same dataset.
       const source = dataset.value;
+      // The picture this run is about, read once with the rest: a preview that resolves later must
+      // not be able to replace it, and a preview of the same picture has nothing to show.
+      const picture = pictureOf(upload, file, source, Number($("row").value));
+      // This run cancels the preview a typed row number scheduled, so the boxes are dropped here:
+      // they were drawn on the picture the run is leaving, and sending them would count whatever is
+      // now under those coordinates.
+      if (picture !== boxesKey) {
+        boxesKey = picture;
+        forgetBoxes();
+      }
+      const search = query();
       let imageUrl, answer, palette;
       if (upload) {
         // The container takes raw bytes, and the public route takes them as the multipart
@@ -1189,6 +1373,9 @@
         palette = await paletteLoaded;
       }
       await draw(imageUrl, answer, palette);
+      // The pane now holds this picture's answer, so a preview of the same picture has nothing to add
+      // and would only strip the marks it just drew.
+      boxesKey = shownKey = picture;
       // What came back is in the figure's own caption, beside the picture it describes, and the
       // resolution was said once beside the model: this line is for what is still happening, so it
       // goes back to empty now that nothing is.
@@ -1200,6 +1387,12 @@
       // Back to what the last probe said rather than to "enabled": a run that finished while the pool
       // went empty must not leave a button that would answer 503.
       $("run").disabled = facts.bad;
+      // A picture chosen while the run was in flight was not allowed to draw over the answer, and a
+      // run refused because the picture had changed leaves the previous one on screen. Either way the
+      // pane is now showing something the controls no longer name, so it is caught up here.
+      const now = pictureOf($("source").value === "upload", $("file").files[0],
+        dataset.value, $("row").value);
+      if (now !== shownKey) preview();
     }
   });
 

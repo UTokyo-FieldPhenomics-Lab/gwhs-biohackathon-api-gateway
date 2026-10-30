@@ -46,7 +46,10 @@ __PLAY_CSS__
   <div class="row" id="parameters-row">
     <span class="legend" id="parameters-legend" hidden>Parameters</span>
     <span id="parameters"></span>
-    <button id="boxes-mode" type="button" class="toggle" aria-pressed="true" hidden>edit</button>
+    <span id="boxes-mode" class="switch" role="group" aria-label="boxes on the picture" hidden>
+      <button type="button" data-mode="edit" aria-pressed="true">edit</button>
+      <button type="button" data-mode="locked" aria-pressed="false">locked</button>
+    </span>
     <button id="run" type="button" class="primary" disabled>Run</button>
     <span id="run-state" class="state" role="status"></span>
   </div>
@@ -58,6 +61,14 @@ __PLAY_CSS__
         <span id="check"></span>
       </span>
       <span id="display">
+        <button type="button" class="eye" data-view="image" aria-pressed="true">
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M2 10c2.2-3.2 4.9-5 8-5s5.8 1.8 8 5c-2.2 3.2-4.9 5-8 5s-5.8-1.8-8-5Z"/>
+            <circle cx="10" cy="10" r="2.5"/>
+            <path class="slash" d="M3.2 16.8 16.8 3.2"/>
+          </svg>
+          <span>image</span>
+        </button>
         <button type="button" class="eye" data-view="masks" aria-pressed="true">
           <svg viewBox="0 0 20 20" aria-hidden="true">
             <path d="M2 10c2.2-3.2 4.9-5 8-5s5.8 1.8 8 5c-2.2 3.2-4.9 5-8 5s-5.8-1.8-8-5Z"/>

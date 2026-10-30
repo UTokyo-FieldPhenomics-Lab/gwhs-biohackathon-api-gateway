@@ -438,16 +438,20 @@ def test_the_model_page_names_no_model_and_no_parameter(client: TestClient) -> N
 
 
 def test_the_model_page_has_one_view_toggle_per_layer(client: TestClient) -> None:
-    """Masks, boxes, legend, and the machine watermark are each shown or hidden by their own eye.
+    """The photograph, masks, boxes, legend and the machine watermark each have their own eye.
 
     The state is `aria-pressed` on the button, and the defaults are the table at the top of the
-    script — the one place the page names a model, and only to choose what is shown first.
+    script — the one place the page names a model, and only to choose what is shown first. The
+    photograph comes first because it is what every other layer is drawn over.
     """
     page = client.get(PLAY_PATH).text
 
-    for layer in ("masks", "boxes", "legend", "watermark"):
+    for layer in ("image", "masks", "boxes", "legend", "watermark"):
         assert f'data-view="{layer}"' in page
-    assert "const VIEW_BASE = {masks: true, boxes: true, legend: false, watermark: true};" in page
+    assert (
+        "const VIEW_BASE = "
+        "{image: true, masks: true, boxes: true, legend: false, watermark: true};" in page
+    )
     assert '"gwfss-segformer-b4": {boxes: false, legend: true},' in page
 
 
