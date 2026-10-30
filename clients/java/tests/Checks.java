@@ -77,6 +77,10 @@ public final class Checks {
                     "a field crosses unchanged",
                     ((List<?>) density(counted).get("values")).size() == 6
                             && objects(counted).isEmpty());
+            double[][] grid = (double[][]) density(counted).get("grid");
+            check(
+                    "a field crosses shaped",
+                    grid.length == 2 && grid[0].length == 3 && grid[1][2] == 18.2);
 
             client.predict(
                     "sam3.1-meta",

@@ -103,7 +103,8 @@ counted against it. See [Limits](http.md#limits).
 ## Methods
 
 The names are the same in all three languages, so this is one table rather than three. What differs is
-only how a mask is handed to you — a NumPy array, a typed array, or a `Mask` — which the
+only the container a decoded layer arrives in — a mask as a NumPy array, a typed array or a `Mask`,
+and a counting answer's field as an array of rows — which the
 [dataset pages](../datasets/index.md) spell out.
 
 | call | what it gives you |
@@ -146,18 +147,21 @@ re-encode and no loss of its EXIF. The core `global-wheat.js` carries no image c
 through it is sent as it is — use `global-wheat.web.js` or `global-wheat.node.js`.
 
 A model that answers a **number** rather than geometry brings fields of its own: `count`, and for
-the counting model `density` — the local-count grid that number is the sum of. The clients hand them
-back as they arrived; there is nothing to decode, because a flat array and its size are already
-usable, and reshaping is one call:
+the counting model `density` — the local-count grid that number is the sum of. The field is handed
+to you already shaped, as `density.grid`: a NumPy array in Python, an array of rows in JavaScript, a
+`double[][]` in Java. Nothing is left to reshape, and `density.size` and `density.values` stay beside
+it — the raw cells, in the order the wire wrote them — so checking the grid against `count` is still
+yours to do:
 
 ```python
 answer = client.predict("tasselnetv4", "gwfss", 0, boxes=[[312, 143, 44, 55, 1]])
-field = numpy.reshape(answer["density"]["values"], answer["density"]["size"])   # rows × columns
+field = answer["density"]["grid"]          # rows × columns, cells summing to answer["count"]
 ```
 
-`values` is **row-major**, unlike the COCO `rle.counts` your mask was decoded from, which is
-column-major: a field read in the wrong order is a transposed picture, not an error.
-[Counting results](http.md#counting-results) says what the number and the grid mean.
+`decode=False` in Python and `decode: false` in JavaScript leave a counting answer exactly as the API
+wrote it, with no `grid`; the Java client always shapes it, as it always decodes a mask. If you read
+`values` yourself, it is **row-major** — unlike the COCO counts a mask is decoded from, which are
+column-major. [Counting results](http.md#counting-results) says what the number and the grid mean.
 
 ## When it goes wrong
 

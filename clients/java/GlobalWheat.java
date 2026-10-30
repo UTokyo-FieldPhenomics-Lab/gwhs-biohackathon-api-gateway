@@ -361,7 +361,8 @@ public final class GlobalWheat {
          * @return the answer as the API wrote it: {@code model}, {@code objects},
          *     {@code resolution_used} and {@code computed_by} always, plus what this model answered
          *     with — {@code count} and {@code density} for a counting model, {@code warnings} where
-         *     it reported one. A counting answer has no objects and nothing to decode
+         *     it reported one. Each object's {@code mask} and a counting answer's
+         *     {@code density.grid} are added in place
          */
         public Map<String, Object> predict(
                 String model, String dataset, int row, Map<String, ?> params) {
@@ -371,6 +372,7 @@ public final class GlobalWheat {
             Map<String, Object> answer =
                     call("POST", "/models/" + segment(model) + "/predict", modelQuery(params), body, null);
             decodeObjects(answer);
+            decodeDensity(answer);
             return answer;
         }
 
@@ -460,6 +462,7 @@ public final class GlobalWheat {
                             null,
                             payload);
             decodeObjects(answer);
+            decodeDensity(answer);
             return answer;
         }
 
@@ -1094,6 +1097,37 @@ public final class GlobalWheat {
             throw new IllegalArgumentException("a colour must be #rrggbb, got " + colour);
         }
         return Integer.parseInt(text, 16);
+    }
+
+    /**
+     * Attach a counting answer's field as rows of cells, in place.
+     *
+     * <p>The wire carries {@code size} and a flat row-major {@code values}; {@code grid} is that
+     * reshaped, the same move as attaching a decoded {@code mask}, and the raw cells stay so they
+     * can still be added up.
+     */
+    @SuppressWarnings("unchecked")
+    private static void decodeDensity(Map<String, Object> body) {
+        if (!(body.get("density") instanceof Map<?, ?>)) {
+            return;
+        }
+        Map<String, Object> density = (Map<String, Object>) body.get("density");
+        if (!(density.get("size") instanceof List<?> size)
+                || !(density.get("values") instanceof List<?> values)
+                || size.size() != 2) {
+            return;
+        }
+        int rows = ((Number) size.get(0)).intValue();
+        int columns = ((Number) size.get(1)).intValue();
+        if (rows * columns != values.size()) {
+            throw new IllegalArgumentException(
+                    "density says " + rows + "x" + columns + " but carries " + values.size() + " values");
+        }
+        double[][] grid = new double[rows][columns];
+        for (int index = 0; index < values.size(); index++) {
+            grid[index / columns][index % columns] = ((Number) values.get(index)).doubleValue();
+        }
+        density.put("grid", grid);
     }
 
     /** Attach each object's decoded {@code mask}, in place. */

@@ -185,9 +185,9 @@ class Client {
   /**
    * Run one model on one published row.
    *
-   * The answer is what the API wrote. A geometry model's objects are decoded in place; a counting
-   * model answers `count` and `density` instead of objects, and nothing here reshapes a field that
-   * is already a flat row-major array and its size.
+   * The answer is what the API wrote, with two things added in place: each object's decoded `mask`,
+   * and — for a counting model, which has no objects — `density.grid`, the field as an array of
+   * rows. `density.size` and `density.values` stay either way.
    * @param {string} model The model id.
    * @param {string} dataset
    * @param {number} row The absolute row of the pinned revision; the gateway resolves the address.
@@ -202,7 +202,10 @@ class Client {
       params: modelParams(params),
       json: {dataset, row},
     });
-    if (decode) decode_objects(body);
+    if (decode) {
+      decode_objects(body);
+      decode_density(body);
+    }
     return body;
   }
 
@@ -230,7 +233,10 @@ class Client {
       params: modelParams(params),
       form,
     });
-    if (decode) decode_objects(body);
+    if (decode) {
+      decode_objects(body);
+      decode_density(body);
+    }
     return body;
   }
 
@@ -423,6 +429,26 @@ function label_masks(pixels, width, height, classes) {
  * Attach each object's decoded `mask`, in place.
  * @param {object} body A prediction or an image detail, either of which may carry `objects`.
  */
+/**
+ * Attach a counting answer's field as an array of rows, in place.
+ *
+ * The wire carries `size` and a flat row-major `values`; `grid` is that reshaped, which is the same
+ * move as attaching a decoded `mask`, and the raw cells stay so they can still be added up.
+ * @param {object} body A prediction; one without `density` is left alone.
+ */
+function decode_density(body) {
+  const density = body.density;
+  if (!density || !Array.isArray(density.values) || !Array.isArray(density.size)) return;
+  const [rows, columns] = density.size;
+  if (rows * columns !== density.values.length) {
+    throw new Error(`density says ${rows}x${columns} but carries ${density.values.length} values`);
+  }
+  density.grid = [];
+  for (let row = 0; row < rows; row += 1) {
+    density.grid.push(density.values.slice(row * columns, (row + 1) * columns));
+  }
+}
+
 function decode_objects(body) {
   for (const object of body.objects ?? []) {
     if (object.rle) object.mask = rle_decode(object.rle.counts, ...object.rle.size);

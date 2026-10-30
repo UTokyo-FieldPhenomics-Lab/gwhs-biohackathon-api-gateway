@@ -14,12 +14,15 @@ Package: `clients/`. Shared constraints are in [`project.md`](project.md); distr
   rather than replacing raw fields. Keep only route metadata shared in `routes.json`; the gateway
   contract test compares it against OpenAPI in both directions.
   [Contract test](../../gateway/tests/test_clients_contract.py).
-- **Keep public method and parameter names identical across languages.** Only decoded-mask container
-  shape varies naturally: NumPy array, `{data, width, height}` or Java `Mask`.
+- **Keep public method and parameter names identical across languages.** Only a decoded layer's
+  container shape varies naturally: a mask as a NumPy array, `{data, width, height}` or a Java
+  `Mask`, and a counting field as an array of rows.
   [API guide](../../docs/content/api/clients.md).
-- **Own RLE and palette decoding here, once per language.** Decode COCO column-major masks into
-  row-major containers on receipt, retaining raw `rle` and other fields so area remains checkable.
-  Docs, figures and `/play` call these implementations rather than duplicating them.
+- **Own RLE, palette and field decoding here, once per language.** Decode COCO column-major masks
+  into row-major containers on receipt, retaining raw `rle` and other fields so area remains
+  checkable; reshape a counting answer's `density.values` into `density.grid`, retaining `size` and
+  `values` for the same reason — a participant should not have to know which of the two orders the
+  wire uses. Docs, figures and `/play` call these implementations rather than duplicating them.
   [Decoder checks](../../clients/python/tests/test_geometry.py).
 - **Read one key and one API origin.** `GLOBAL_WHEAT_API_KEY` and `GLOBAL_WHEAT_API` are environment
   defaults overridden by constructor arguments; fail construction without a key instead of waiting

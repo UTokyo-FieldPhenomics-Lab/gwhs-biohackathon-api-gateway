@@ -427,7 +427,8 @@ class Client:
             The answer as the API wrote it: ``model``, ``objects``, ``resolution_used`` and
             ``computed_by`` always, plus what this model answered with — ``count`` and ``density``
             for a counting model, ``warnings`` where it reported one. ``mask`` is on every object
-            when ``decode`` is true; a counting answer has no objects and nothing to decode.
+            and ``density["grid"]`` is the field shaped to its ``size``, both when ``decode`` is
+            true; a counting answer has no objects, so only the field is added.
 
         Raises
         ------
@@ -443,6 +444,7 @@ class Client:
         )
         if decode:
             _decode_objects(body)
+            _decode_density(body)
         return body
 
     def predict_file(
@@ -507,6 +509,7 @@ class Client:
         )
         if decode:
             _decode_objects(body)
+            _decode_density(body)
         return body
 
     def _declaration(self, model: str) -> dict[str, Any] | None:
@@ -826,6 +829,37 @@ def _decode_objects(body: dict[str, Any]) -> None:
         rle = obj.get("rle")
         if isinstance(rle, dict):
             obj["mask"] = rle_decode(cast("str", rle["counts"]), cast("Sequence[int]", rle["size"]))
+
+
+def _decode_density(body: dict[str, Any]) -> None:
+    """Attach a counting answer's field as a two-dimensional ``grid``, in place.
+
+    Parameters
+    ----------
+    body : dict
+        A prediction. A mask answer carries no ``density`` and is left alone.
+
+    Raises
+    ------
+    ValueError
+        When the body's ``size`` and ``values`` disagree, which a correct backend cannot send.
+
+    Notes
+    -----
+    The wire carries ``size`` and a flat row-major ``values``; adding ``grid`` is the same move as
+    adding ``mask`` to an object, and the raw fields stay so a caller can still add the cells up.
+    """
+    density = body.get("density")
+    if not isinstance(density, dict):
+        return
+    values = density.get("values")
+    size = density.get("size")
+    if not isinstance(values, list) or not isinstance(size, list) or len(size) != 2:
+        return
+    rows, columns = int(size[0]), int(size[1])
+    if len(values) != rows * columns:
+        raise ValueError(f"density says {rows}×{columns} but carries {len(values)} values")
+    density["grid"] = np.asarray(values, dtype=float).reshape(rows, columns)
 
 
 def _declared_side(declared: Mapping[str, Any]) -> int | None:

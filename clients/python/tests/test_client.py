@@ -181,19 +181,44 @@ def test_predict_sends_the_address_in_the_body_and_the_parameters_in_the_query()
     assert call["params"] == {"prompt": "wheat head", "confidence_threshold": 0.4}
 
 
-def test_a_counting_answer_passes_through_untouched() -> None:
-    """A model that answers a number carries no objects, and nothing here decodes or reshapes it."""
-    body = {
+def counting_body() -> dict:
+    """Build a counting answer as the API writes one: a number, its field, and no objects.
+
+    Returns
+    -------
+    dict
+        The body, rebuilt per test because decoding adds to it in place.
+    """
+    return {
         "model": "tasselnetv4",
         "objects": [],
         "count": 21.7,
         "density": {"size": [2, 3], "values": [0.0, 1.5, 0.0, 2.0, 0.0, 18.2]},
         "resolution_used": 384,
     }
-    client, session = make([Reply(200, body)])
+
+
+def test_a_counting_answer_carries_its_field_as_a_grid() -> None:
+    """A number and its field arrive shaped: the raw cells stay, and `grid` is what one draws."""
+    client, session = make([Reply(200, counting_body())])
     answer = client.predict("tasselnetv4", "gwfss", 0, boxes=[[1, 2, 3, 4, 1]])
-    assert answer == body
+    assert answer["count"] == 21.7
+    assert answer["objects"] == []
+    assert answer["density"]["size"] == [2, 3]
+    assert answer["density"]["values"] == [0.0, 1.5, 0.0, 2.0, 0.0, 18.2]
+    grid = answer["density"]["grid"]
+    assert grid.shape == (2, 3)
+    assert grid[0, 1] == 1.5 and grid[1, 2] == 18.2
     assert list(session.calls[0]["params"]) == ["boxes"]
+
+
+def test_decode_false_leaves_a_counting_answer_as_it_arrived() -> None:
+    """The same switch the masks follow: no grid is added, and the body is the one the API wrote."""
+    body = counting_body()
+    client, _ = make([Reply(200, body)])
+    answer = client.predict("tasselnetv4", "gwfss", 0, boxes=[[1, 2, 3, 4, 1]], decode=False)
+    assert answer == body
+    assert "grid" not in answer["density"]
 
 
 def test_an_upload_sends_the_file_as_the_field_named_file(tmp_path: Path) -> None:

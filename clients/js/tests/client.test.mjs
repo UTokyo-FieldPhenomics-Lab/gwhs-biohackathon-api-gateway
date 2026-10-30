@@ -65,7 +65,7 @@ test("iter_images follows the cursor and keeps the filters", async () => {
   assert.match(calls[1].url, /cursor=c1/);
 });
 
-test("a counting answer passes through untouched", async () => {
+test("a counting answer arrives with its field shaped", async () => {
   const body = {
     model: "tasselnetv4",
     objects: [],
@@ -75,8 +75,26 @@ test("a counting answer passes through untouched", async () => {
   };
   const {client: api} = client([{status: 200, body}]);
   const answer = await api.predict("tasselnetv4", "gwfss", 0, {boxes: [[1, 2, 3, 4, 1]]});
+  assert.deepEqual(answer.density.grid, [[0, 1.5, 0], [2, 0, 18.2]]);
+  assert.deepEqual(answer.density.values, [0, 1.5, 0, 2, 0, 18.2]);
+  assert.deepEqual(answer.density.size, [2, 3]);
+  assert.equal(answer.objects.length, 0);
+});
+
+test("decode false leaves a counting answer as it arrived", async () => {
+  const body = {
+    model: "tasselnetv4",
+    objects: [],
+    count: 21.7,
+    density: {size: [2, 3], values: [0, 1.5, 0, 2, 0, 18.2]},
+  };
+  const {client: api} = client([{status: 200, body}]);
+  const answer = await api.predict("tasselnetv4", "gwfss", 0, {
+    decode: false,
+    boxes: [[1, 2, 3, 4, 1]],
+  });
   assert.deepEqual(answer, body);
-  assert.equal(answer.objects[0], undefined);
+  assert.equal(answer.density.grid, undefined);
 });
 
 test("a refusal becomes an ApiError with the API's own words", async () => {
