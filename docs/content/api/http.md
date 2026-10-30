@@ -151,21 +151,32 @@ says so, and `resolution_used` tells you the side that ran either way:
 
 ### Counting results
 
-A counting model reports a number instead of masks. Its answer carries `count`, and — where the model
-places them — `points`; `objects` is then empty:
+A counting model reports a number instead of masks. Its answer carries `count` and `density`, and
+`objects` is empty:
 
 ```json
 { "model": "tasselnetv4", "resolution_used": 384,
   "objects": [],
   "count": 21.7,
-  "points": [[512.0, 384.0, 1.0], [96.0, 720.0, 0.83]] }
+  "density": { "size": [23, 23], "values": [0.041, 0, 1.284, …] } }
 ```
 
-A point is `[x, y, score]` in the image's own pixels. `score` is the point's place in the model's own
-ordering, scaled so the strongest is `1`: it is a salience, not a probability, and it is not comparable
-across pictures or across models. Points sit on the grid the model counts on — a sixteenth of its
-384-pixel frame, so roughly 40 pixels apart on a 1024-pixel picture. Read `count` as the answer and the
-points as where its mass sits.
+`density` is the field the count was summed from, on the model's own grid: `size` is
+`[rows, columns]`, `values` are the cells' local counts read row by row, and they add up to `count`.
+One cell is a counting window, not a pixel — 17, 21 or 23 cells fill the 384-pixel-tall frame the
+model saw, depending on which of its three density levels your exemplar's size selects, so one cell is
+between 45 and 60 pixels of a 1024-pixel-tall photograph. The grid is square per tile and as wide as
+the picture, so its shape varies with the image; read `size`, not a constant. Read `count` as the
+answer, and draw the field as a heatmap if you want to see where the mass sits.
+
+The field is not a segmentation. A cell holding 1.4 objects says how much sits in that window; it does
+not say where one object ends and the next begins, and nothing in the answer carries an object's
+identity. For per-plant outlines or boxes, use a segmentation model, such as `gwfss-segformer-b4` or
+`sam3.1-meta`.
+
+A point-counting model would answer `points` instead of `density` — `[x, y, score]` in the image's own
+pixels, where `score` is that model's own score for the point, not comparable across models or
+pictures. No model on this service answers that way today.
 
 An answer may also carry `warnings`, in the same shape a clamped `imgsz` produces: a counting model
 reports one when an exemplar is larger than the finest window it can count in — a spike that fills the

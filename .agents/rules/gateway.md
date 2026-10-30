@@ -102,10 +102,10 @@ Package: `gateway/`. Shared constraints are in [`project.md`](project.md).
   native outputs; the gateway has no ML dependency or geometry encoder. Reuse the shared index
   reader and response models instead of adding parallel definitions.
   [Layout](../../docs/data-layout.md), [model rules](models.md).
-- **A prediction may carry a count instead of objects.** `count` and `points` are optional forwarded
-  fields on the same body, and `objects` stays required — empty for a counting model — so one client
-  parses both. The gateway relays them; it never derives a point or a count itself.
-  [Counting contract](../plans/2026102923_tasselnetv4-counting-model.md).
+- **A prediction may carry a count instead of objects.** `count`, `density` and `points` are optional
+  forwarded fields on the same body, and `objects` stays required — empty for a counting model — so
+  one client parses both. The gateway relays them; it never derives a cell, a point or a count itself.
+  [Counting contract](../plans/2026103015_density-field-instead-of-points.md).
 
 ## Framed pages
 
