@@ -4,9 +4,11 @@ SAM 3.1 — text-prompted segmentation, [Meta's own code and checkpoint](https:/
 Send an image address (or a photograph) and a prompt; it answers with boxes, scores, and masks. The
 id says whose weights these are: `meta` is the upstream release, not a fine-tune.
 
-Expect a **conspicuous head in a close-up**, not a field count: on a 1024 px quadrat of small, dense
-heads it returns nothing, at any threshold. That is this checkpoint rather than the API, and a fine-tune
-served as an id of its own is where field counts would come from.
+Expect the heads it can **name**, not a field count. Ask for a phrase it cannot place — `wheat head` on
+a `gwhd` row is one — and it answers nothing at any threshold, because the model has already decided
+that the thing is not in the picture at all. Ask for `spikelet` on that same row and it finds 51 heads.
+That is this checkpoint rather than the API, and a fine-tune served as an id of its own is where field
+counts would come from.
 
 ## Parameters
 
@@ -31,10 +33,13 @@ values — `boxes` and `points` are JSON, and `imgsz` has a ceiling — and both
 
 ## Prompting
 
-**One prompt at a time is the easy case, and any of them works alone.** A phrase finds the concept; a
-box is an exemplar of it; a point marks one spot. They combine because the detector's prompt is the
-text features concatenated with the geometry features, so a box beside a phrase is an exemplar beside
-a concept rather than a replacement for it:
+**A phrase, a box and a point all answer one question: what am I looking for.** None of them cuts the
+picture up. A box is an *example* of the object — `exemplar box` in the declaration — not a region to
+segment inside. The model looks for that object everywhere, so an answer outside the box you drew is
+the normal result, not a mistake. It is the same idea as [`tasselnetv4`](tasselnetv4.md)'s boxes: show
+it one head, and it goes looking for heads.
+
+They combine because the model reads them as one prompt, not as one filter beside one region:
 
 ```bash
 # a phrase
@@ -45,15 +50,36 @@ a concept rather than a replacement for it:
 "$API/models/sam3.1-meta/predict?boxes=[[480,290,110,360]]"
 ```
 
-What was measured on a 512 px `gwfss` row, `prompt=wheat head&confidence_threshold=0.25`: text alone
-found 18 objects; one exemplar box found 13, overlapping the text answer by IoU 0.98, and adding a
-**negative** box took 16 down to 13 — the label subtracts. A point is accepted and runs, but its
-effect is not characterised: a positive point beside the phrase changed the answer in a way that no
-longer matched the text-only result, and a negative point did not reliably subtract. Boxes are what
-this page shows for that reason. If you use points, read the answer rather than trusting it.
+Measured on a 512 px `gwfss` row, `prompt=wheat head&confidence_threshold=0.25`: the phrase alone found
+18 objects; one example box found 13, overlapping the phrase's answer by IoU 0.98, and a **negative**
+box — one that says what the object is not — took 16 down to 13. A point behaves like a small box: on
+`gwhd` row 4, one point on a head with no phrase answered 63 objects. So geometry says *what* to find,
+never *where* to look.
 
 An answer from geometry alone carries `"category": null`: there was no phrase to name the object,
 and repeating one would describe the question rather than the picture.
+
+## What the score means
+
+An object's `score` is two numbers multiplied: how much this thing looks like what you asked for, and
+how far the model believes the thing is in the picture at all. The second number belongs to the whole
+answer, so when the model has decided the concept is absent it pulls every object down together — and
+`confidence_threshold` has nothing left to filter.
+
+That is why an empty answer cannot be fixed with the threshold. On `gwhd` row 4, `wheat head` alone
+answers **0 objects** at `0.31` and exactly **200** at `0` — every candidate the model can output, all
+at about `0.006`, which is noise rather than heads. Change the words instead, and count on three `gwhd`
+rows:
+
+| prompt alone, `confidence_threshold` 0.31 | row 0 | row 4 | row 7 |
+|---|---|---|---|
+| `wheat head` — the default | 0 | 0 | 0 |
+| `seed head` | 0 | 44 | 6 |
+| `spikelet` | 18 | 51 | 10 |
+
+Or show it one example box beside the phrase: 22 heads on row 4, the boxed one at `0.95`. An empty
+answer means "I do not see that here", not "I am unsure about each object" — the lever is the words, or
+one example, not a lower threshold.
 
 ## Size
 
@@ -69,8 +95,9 @@ counted in requests, not pixels, so a smaller side is the one lever that makes a
 | `1008` | 0.21 s | — |
 
 Faster and cheaper, and **worse on small objects**: the price of a smaller side is that a head a few
-tens of pixels across stops resolving, which is already this checkpoint's weak case. Measured on a
-RTX 3090 with the container's own image; your numbers will differ by the card.
+tens of pixels across stops resolving — and a head that small is a harder question here than a
+conspicuous one. Measured on an RTX 3090 with the container's own image; your numbers will differ by
+the card.
 
 ## The answer
 
