@@ -8,19 +8,28 @@ the other uses it, Forget on either clears it for both.
 
 ## Run one
 
-Paste your team's key, pick a row or a photograph, and press Run. The image is drawn as soon as the
-address is complete — whole, at whatever size the page can show it in — with each box labelled by the
-score the model gave it, and the mask decoded in your browser by the same decoder this site hands you.
-A class the dataset declares is tinted in the colour that dataset publishes — the same palette its
-mask images use — and the legend in the picture's corner names them. An instance model answers with objects
-rather than classes, so each of those is given a colour of its own instead. The model line says how
-many machines are answering and how long ago the gateway last asked them, and keeps that age climbing
-rather than letting a stale count pass for a live one.
+The panel opens on a model a first-time reader can run with no parameters, and a model's own
+**Examples** buttons fill in an address and the parameters a call was measured with — one chip and
+Run is the shortest way to a first answer. Nothing is sent until you press it.
 
-A backbone answers with a feature grid instead of geometry: its `features` eye draws the first three
-principal components of the patch grid over the photograph, and the `image` eye turns the photograph
-off so the field is read on its own. The colours belong to that one picture; the [backbone model
-page](../models/dinov3.md) says what the grid is and what can be computed from it.
+The image is drawn as soon as the address is complete — whole, at whatever size the page can show it
+in — with each box labelled by the score the model gave it, and the mask decoded in your browser by
+the same decoder this site hands you. A class the dataset declares is tinted in the colour that
+dataset publishes — the same palette its mask images use — and the legend in the picture's corner
+names them. An instance model answers with objects rather than classes, so each of those is given a
+colour of its own instead. The model line says how many machines are answering and how long ago the
+gateway last asked them, and keeps that age climbing rather than letting a stale count pass for a
+live one.
+
+The `results` eye is the layer for whatever a model produces as pixels, in whichever of its two
+shapes it takes. A backbone answers with a feature grid, and the first three principal components of
+that grid are drawn over the photograph; the `image` eye turns the photograph off so the field is
+read on its own. A model that *makes* a picture answers with a PNG, and that picture replaces the
+photograph instead of tinting it — the `image` eye is what brings the input back. The colours belong
+to that one picture; the [backbone model page](../models/dinov3.md) says what a grid is and what can
+be computed from it.
+
+A model that answers in words puts them under the picture, in a bar you can close.
 
 The page also prints the call it would make as a `curl` command, with your key left as `$KEY`, so
 anything you set up here can be taken straight to a shell.

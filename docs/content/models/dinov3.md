@@ -24,7 +24,7 @@ One page because the contract, the output and the analysis are identical. Only t
 ceiling and the cost change; the table below is the whole difference.
 
 **[Try the L](https://api.global-wheat.com/play?model=dinov3-vitl16)** ·
-**[try the H+](https://api.global-wheat.com/play?model=dinov3-vith16plus)** — the `features` eye
+**[try the H+](https://api.global-wheat.com/play?model=dinov3-vith16plus)** — the `results` eye
 draws the first three principal components of the patch grid, and the `image` eye turns the
 photograph off so the field is read on its own.
 
