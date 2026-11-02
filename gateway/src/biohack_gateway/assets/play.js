@@ -246,10 +246,9 @@
       const name = document.createElement("span");
       name.textContent = parameter.name;
       const input = controlFor(parameter);
-      if (parameter.description) label.title = parameter.description;
-      // A wrapping control takes the row it is on: a textarea beside a select is a field two words
-      // wide, and the reader types a sentence into it.
-      if (input.tagName === "TEXTAREA") label.classList.add("wide");
+      // The description goes on the name, not the label: the label is `display: contents`, so it has
+      // no box of its own and a tooltip hung on it would never appear.
+      if (parameter.description) name.title = parameter.description;
       label.append(name, input);
       if (input.type === "range") label.append(readoutFor(input));
       parameters.append(label);
