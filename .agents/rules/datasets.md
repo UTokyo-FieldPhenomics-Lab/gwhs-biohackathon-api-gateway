@@ -6,6 +6,11 @@ Package: `datasets/`. Shared constraints are in [`project.md`](project.md).
   publish builds, validates, uploads, verifies and installs both image and metadata artifacts.
   `--dry-run` writes nothing; any failure exits non-zero, and only success permits downstream teardown.
   [Publisher](../../datasets/src/biohack_datasets/publish.py).
+- **Install an index only from a publish that had a bucket.** A publish without one uploads nothing
+  yet still writes an index, and nothing compares that index's rows against the objects that exist:
+  `gwhd` served 6,512 rows over ten images without any test noticing. Verify object presence through
+  `data.*` after installing, since a metadata answer says nothing about it.
+  [The gap](../references/2026110216_org-owned-upstream-pins.md).
 - **Read serially and upload with bounded concurrency, without staging images.** Preserve the
   parquet row-group memory bound; parallel readers would multiply it. Upload row bytes directly so
   disk holds the upstream cache and metadata index, not a second image tree.
