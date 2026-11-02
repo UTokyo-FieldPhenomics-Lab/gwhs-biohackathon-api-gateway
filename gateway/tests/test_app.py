@@ -417,45 +417,80 @@ def test_the_model_page_loads_the_site_own_client(client: TestClient) -> None:
     assert "function rle_decode" not in page  # the decoder is loaded, never copied
 
 
-def test_the_model_page_names_no_model_and_no_parameter(client: TestClient) -> None:
+def test_the_model_page_names_no_model_and_no_parameter_outside_its_presets(
+    client: TestClient,
+) -> None:
     """The page is built from `GET /models`, so supporting a new model needs no change to it.
 
     This is the invariant the page exists to hold: a model it cannot render is an incomplete
-    declaration rather than a page that is not clever enough. A model id or one of today's parameter
-    names appearing in the page is that invariant broken, and it would be broken quietly.
-
-    One exception is deliberate: the view-defaults table names a model to choose what is *shown*
-    first — never what is sent — and an id it does not name falls back to the base view, which is
-    also what a renamed model gets.
+    declaration rather than a page that is not clever enough. One exception is deliberate and
+    bounded: the preset table at the top names a model to choose what is *shown* first and to offer
+    the calls known to work, and it never decides what is sent. The test holds the exception to that
+    block — an id or a parameter name anywhere else is the invariant broken, and it would be broken
+    quietly.
     """
     page = client.get(PLAY_PATH).text
+    start = page.index("const MODEL_PRESETS = {")
+    end = page.index("let view = {...VIEW_BASE};")
+    presets, rest = page[start:end], page[:start] + page[end:]
 
-    assert "sam3.1" not in page  # the base view is all it needs
-    assert page.count('"gwfss-segformer-b4"') == 1  # the view-defaults table, and nowhere else
-    for parameter in ("prompt", "confidence_threshold", "imgsz"):
-        assert parameter not in page
+    named = ("sam3.1-meta", "gwfss-segformer-b4", "internvl-u", "prompt", "confidence_threshold")
+    for name in named:
+        assert name in presets, f"{name} left the preset table, so this test is stale"
+        assert name not in rest, f"{name} appears outside the preset table"
+    assert "imgsz" not in page  # a parameter the page has no preset for, so it stays unnamed
     assert "/models/" in page and "/datasets/" in page  # it asks the surface instead
 
 
 def test_the_model_page_has_one_view_toggle_per_layer(client: TestClient) -> None:
     """Each layer the picture can show has its own eye.
 
-    The photograph, masks, a backbone's features, boxes, legend and the machine watermark. The state
-    is `aria-pressed` on the button, and the defaults are the table at the top of the script — the
-    one place the page names a model, and only to choose what is shown first. The photograph comes
-    first because it is what every other layer is drawn over; the features layer is off by default
-    because only a backbone answers one.
+    The photograph, masks, the model's pixel layer, boxes, legend and the machine watermark. The
+    state is `aria-pressed` on the button, and the defaults are the table at the top of the script —
+    the one place the page names a model, and only to choose what is shown first. The photograph
+    comes first because it is what every other layer is drawn over; `results` is off by default
+    because only a model that produces pixels answers one.
     """
     page = client.get(PLAY_PATH).text
 
-    for layer in ("image", "masks", "features", "boxes", "legend", "watermark"):
+    for layer in ("image", "masks", "results", "boxes", "legend", "watermark"):
         assert f'data-view="{layer}"' in page
     assert (
         "const VIEW_BASE = "
-        "{image: true, masks: true, features: false, boxes: true, legend: false, watermark: true};"
+        "{image: true, masks: true, results: false, boxes: true, legend: false, watermark: true};"
         in page
     )
     assert '"gwfss-segformer-b4": {boxes: false, legend: true, landing: true},' in page
+
+
+def test_the_model_page_offers_an_examples_chip_per_known_call(client: TestClient) -> None:
+    """A preset may carry calls known to work, and the page checks each before it offers one.
+
+    The chip writes the address and the parameters the call was measured with, so a reader never
+    types a prompt there is no reason to trust. What makes that safe is the filter: an example whose
+    dataset left the directory, whose row left the dataset, or whose parameters the model no longer
+    declares disappears rather than becoming a button that refuses.
+    """
+    page = client.get(PLAY_PATH).text
+
+    assert 'id="examples-row"' in page and 'id="examples"' in page
+    assert 'label: "18 heads"' in page  # the documented known-good call, as a chip
+    assert 'label: "describe this picture"' in page
+    assert "datasetRows.has(example.dataset)" in page
+    assert "declared.has(name)" in page
+
+
+def test_the_model_page_keeps_the_answer_in_its_own_bar(client: TestClient) -> None:
+    """A model that answers in words has somewhere to put them, under the picture.
+
+    A disclosure rather than a paragraph in the caption: a reasoning-guided answer runs to several
+    hundred words, and the caption is one line beside the eyes.
+    """
+    page = client.get(PLAY_PATH).text
+
+    assert 'id="answer"' in page and 'id="answer-text"' in page
+    assert "#play #answer p" in page, "the bar is styled where the rest of the page is"
+    assert "$(\"answer\").open = true" in page, "a new answer is shown rather than hidden"
 
 
 def test_the_model_page_takes_a_class_colour_from_the_dataset(client: TestClient) -> None:

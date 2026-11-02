@@ -4,34 +4,95 @@
   // nowhere else; the browser remembers it in the one store both this page and the reference share,
   // and nothing else on this page writes it anywhere.
   let key = "";
-  let fields = [];   // one entry per declared parameter: {name, type, read}
+  let fields = [];   // one entry per declared parameter: {name, type, input, read}
+  let datasetRows = new Map();   // dataset id -> its row count, as the surface last reported it
 
   const $ = (id) => document.getElementById(id);
   const model = $("model"), dataset = $("dataset"), parameters = $("parameters");
   const canvas = $("canvas"), figure = document.querySelector("#play figure");
   const pane = $("pane"), stage = $("stage"), marks = $("marks");
 
-  // What the picture shows first, per model. This is the one model-specific thing the page carries,
-  // and it is presentation only: it decides nothing about what is sent, and an id the table does not
-  // name — a renamed model, or one added after this line — falls back to the base view. A semantic
-  // model answers with class extents that cover most of the frame, so its boxes open hidden and its
-  // legend, which is where the class names and scores then live, opens shown.
+  // What the picture shows first, and what a reader can start from, per model. This is the one
+  // model-specific thing the page carries, and it is presentation only: it decides nothing about what
+  // is sent, and an id the table does not name — a renamed model, or one added after this line —
+  // falls back to the base view and to no examples.
   //
-  // The order is the order a reader builds the picture in: the photograph, the model's pixel layer
-  // over it, a backbone's feature field, the rectangle geometry on top, then the two annotations the
-  // page adds.
-  const VIEW_BASE = {image: true, masks: true, features: false, boxes: true, legend: false, watermark: true};
-  const VIEW_BY_MODEL = {
-    // `landing` is which model the page opens on when a URL names none: the one a first-time reader
-    // can run with no parameters. It is a presentation default, kept in the one table allowed to
-    // name a model, not a second id in the connect path.
+  // Two kinds of entry, one table. The view keys are what the eyes show first; a semantic model
+  // answers with class extents that cover most of the frame, so its boxes open hidden and its legend,
+  // which is where the class names and scores then live, opens shown. `examples` are calls known to
+  // work: a chip writes the address and the parameters it names into the controls, so a reader never
+  // types a value there is no reason to trust. This table is also the only place a model id or a
+  // parameter name appears, and the test that holds the page to its own invariant says so.
+  // `landing` is which model the page opens on when a URL names none. Every one of these is a
+  // presentation default, kept in the one table allowed to name a model, not a second id in the
+  // connect path.
+  //
+  // View order is the order a reader builds the picture in: the photograph, the model's pixel layer
+  // over it, the rectangle geometry on top, then the two annotations the page adds.
+  const VIEW_BASE = {image: true, masks: true, results: false, boxes: true, legend: false, watermark: true};
+  const MODEL_PRESETS = {
     "gwfss-segformer-b4": {boxes: false, legend: true, landing: true},
-    // A backbone has no objects and no mask; what it publishes is the grid this layer draws. The
-    // features eye is hidden again for every model without this entry.
-    "dinov3-vitl16": {boxes: false, masks: false, features: true},
-    "dinov3-vith16plus": {boxes: false, masks: false, features: true},
+    // A backbone has no objects and no mask; what it publishes is the grid its `results` eye draws.
+    // `results` is the layer for a model's pixel output, whatever shape it takes: a feature grid
+    // tinted over the photograph, or a picture that replaces it. The eye is hidden again for every
+    // model without this entry.
+    "dinov3-vitl16": {boxes: false, masks: false, results: true},
+    "dinov3-vith16plus": {boxes: false, masks: false, results: true},
+    "internvl-u": {
+      boxes: false,
+      masks: false,
+      results: true,
+      examples: [
+        {
+          label: "describe this picture",
+          dataset: "gwfss",
+          row: 4,
+          params: {prompt: "What is in this picture? Answer in one sentence.", mode: "text"},
+        },
+        {
+          label: "colder light",
+          dataset: "gwfss",
+          row: 4,
+          params: {prompt: "The same heads under colder evening light.", mode: "image", size: 768},
+        },
+        {
+          label: "reason, then draw",
+          dataset: "gwfss",
+          row: 4,
+          params: {
+            prompt: "A single wheat spike against dark soil, morning light.",
+            mode: "text_image",
+            size: 768,
+          },
+        },
+      ],
+    },
+    // The call the documentation keeps as its known-good one: eighteen heads on this row, at this
+    // threshold. A participant reproducing it here and in a client is testing both.
+    "sam3.1-meta": {
+      landing: false,
+      examples: [
+        {
+          label: "18 heads",
+          dataset: "gwfss",
+          row: 4,
+          params: {prompt: "wheat head", confidence_threshold: 0.25},
+        },
+      ],
+    },
   };
   let view = {...VIEW_BASE};
+
+  // Only the keys the base view knows are view defaults: `examples` and `landing` are presets for the
+  // controls, and copying them into `view` would put a fact about the page into the picture's state.
+  const presetFor = (id) => MODEL_PRESETS[id] || {};
+  const viewFor = (id) => {
+    const defaults = {};
+    for (const [name, value] of Object.entries(presetFor(id))) {
+      if (name in VIEW_BASE) defaults[name] = value;
+    }
+    return {...VIEW_BASE, ...defaults};
+  };
 
   const say = (element, text, ok) => {
     element.textContent = text;
@@ -109,6 +170,17 @@
       input = document.createElement("input");
       input.type = "checkbox";
       input.checked = value;
+    } else if (
+      parameter.type === "text" &&
+      !(typeof parameter.max_length === "number" && parameter.max_length < 40)
+    ) {
+      // A sentence is typed, not pasted into one line: a text parameter whose ceiling is a sentence
+      // gets a field that wraps. `max_length` is the only thing that decides this, so a short label
+      // stays an input and a sentence becomes a textarea, without the page naming either of them.
+      input = document.createElement("textarea");
+      input.rows = String(Math.min(5, Math.max(2, Math.ceil((parameter.max_length || 120) / 90))));
+      if (typeof parameter.max_length === "number") input.maxLength = parameter.max_length;
+      if (value !== null && value !== undefined) input.value = String(value);
     } else {
       input = document.createElement("input");
       input.type = "text";
@@ -175,10 +247,13 @@
       name.textContent = parameter.name;
       const input = controlFor(parameter);
       if (parameter.description) label.title = parameter.description;
+      // A wrapping control takes the row it is on: a textarea beside a select is a field two words
+      // wide, and the reader types a sentence into it.
+      if (input.tagName === "TEXTAREA") label.classList.add("wide");
       label.append(name, input);
       if (input.type === "range") label.append(readoutFor(input));
       parameters.append(label);
-      fields.push({name: parameter.name, type: parameter.type, read: () => readValue(input)});
+      fields.push({name: parameter.name, type: parameter.type, input, read: () => readValue(input)});
       // A `boxes` parameter is a list the picture can be drawn on: the input and the overlay are
       // two views of one list, so both directions are wired here and nowhere else.
       if (parameter.type === "boxes") {
@@ -195,6 +270,54 @@
     // The overlay follows the editor: a model that takes no boxes must not leave another model's
     // boxes drawn on the picture it is about to replace.
     showBoxes();
+  };
+
+  // A preset's examples, as chips. Which ones exist is the model's own, and each is checked against
+  // what the page can actually reach: a dataset still in the directory, a row still inside it, and
+  // parameters the model still declares. An example that outlives any of those disappears rather than
+  // becoming a button that refuses — the page cannot promise a call it can no longer describe.
+  const showExamples = (id, declaration) => {
+    const box = $("examples");
+    box.replaceChildren();
+    const declared = new Set((declaration.parameters || []).map((entry) => entry.name));
+    const usable = (presetFor(id).examples || []).filter(
+      (example) =>
+        (!example.dataset || datasetRows.has(example.dataset)) &&
+        (typeof example.row !== "number" ||
+          example.row < (datasetRows.get(example.dataset) || 0)) &&
+        Object.keys(example.params || {}).every((name) => declared.has(name)),
+    );
+    for (const example of usable) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = example.label;
+      button.title = "the parameters this call was measured with";
+      button.addEventListener("click", () => applyExample(example));
+      box.append(button);
+    }
+    $("examples-row").hidden = !usable.length;
+  };
+
+  // Writing an example is writing the controls: the same inputs the reader would have typed into, so
+  // the command and the request that follow are the ones it produced. Nothing is sent — an example
+  // fills the form in, and Run is still the reader's to press.
+  const applyExample = (example) => {
+    if (example.dataset) {
+      $("source").value = "row";
+      syncSource();
+      dataset.value = example.dataset;
+      if (typeof example.row === "number") $("row").value = String(example.row);
+    }
+    for (const field of fields) {
+      if (!(field.name in example.params)) continue;
+      field.input.value = String(example.params[field.name]);
+      // A value written here is the reader's, not the model's default, so it is sent: the same
+      // bookkeeping a restored box list does, because it is the same kind of write.
+      delete field.input.dataset.untouched;
+      field.input.dispatchEvent(new Event("input", {bubbles: true}));
+    }
+    preview();
+    refreshRequest();
   };
 
   const query = () => {
@@ -304,20 +427,22 @@
     const declaration = await call("/models/" + encodeURIComponent(id));
     // Applied with the declaration, so the eye buttons describe the answer that is about to be asked
     // for. Nothing on screen is redrawn here: the picture there belongs to the previous answer.
-    view = {...VIEW_BASE, ...(VIEW_BY_MODEL[id] || {})};
+    const preset = presetFor(id);
+    view = viewFor(id);
     // A view only this answer can fill: the eyes are hidden where the layer would always be empty, so
-    // the row names what the model actually publishes. A backbone has no objects and no mask; its
-    // page shows the photograph, its field and the two annotations, and nothing that would be a
-    // no-op button.
-    const backbone = Boolean((VIEW_BY_MODEL[id] || {}).features);
-    document.querySelector('[data-view="features"]').hidden = !backbone;
-    document.querySelector('[data-view="masks"]').hidden = backbone;
-    document.querySelector('[data-view="boxes"]').hidden = backbone;
+    // the row names what the model actually publishes. A model that answers in pixels has no objects
+    // and no mask, and its page shows the photograph, its own picture and the two annotations, and
+    // nothing that would be a no-op button.
+    const publishesPixels = Boolean(preset.results);
+    document.querySelector('[data-view="results"]').hidden = !publishesPixels;
+    document.querySelector('[data-view="masks"]').hidden = publishesPixels;
+    document.querySelector('[data-view="boxes"]').hidden = publishesPixels;
     // The switch follows the layer: a model whose boxes open hidden also opens locked, because a drag
     // that draws into a hidden layer is a gesture with no visible result.
     if (!view.boxes) boxesEditable = false;
     showView();
     showParameters(declaration);
+    showExamples(id, declaration);
     showFacts(declaration);
     $("run").disabled = !declaration.backends_up;
     // Refreshed after the declaration and not before: the command carries the parameters this model
@@ -343,7 +468,6 @@
     dataset.disabled = upload || !dataset.options.length;
     $("row").disabled = upload;
   };
-
   // Connect with whatever key is in play: the one this browser holds, entered on the reference page
   // or here on an earlier visit. The store is shared with the reference, so one key serves both pages
   // and Forget on either clears it for both.
@@ -358,6 +482,7 @@
       // needs no model, and is what everything after it is about — so it is listed and previewed
       // before a declaration is asked for, and a reader with no model answering still sees their image.
       const datasets = await call("/datasets");
+      datasetRows = new Map(datasets.datasets.map((entry) => [entry.id, entry.rows]));
       fill(dataset, datasets.datasets, (entry) =>
         entry.id + " (" + entry.rows + (entry.rows === 1 ? " row)" : " rows)"));
       syncSource();
@@ -372,7 +497,7 @@
       // The directory is in id order, so a backbone sorts first and its answer is a grid to decode
       // before it is a picture. The landing model stays the one a first-time reader can run with no
       // parameters; the table marks it, and the fallback is the directory's own first entry.
-      const landing = Object.keys(VIEW_BY_MODEL).find((id) => VIEW_BY_MODEL[id].landing);
+      const landing = Object.keys(MODEL_PRESETS).find((id) => MODEL_PRESETS[id].landing);
       const chosen =
         directory.models.find((entry) => entry.id === wanted) ||
         directory.models.find((entry) => entry.id === landing) ||
@@ -984,33 +1109,41 @@
   // no second decode. The mask layer was composited once, at display size, when the answer arrived.
   const render = () => {
     if (!last) return;
-    const {image, objects, colours, layer, url, feature} = last;
-    const scale = Math.min(1, MAX_SIDE / Math.max(image.naturalWidth, image.naturalHeight));
-    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const {image, objects, colours, layer, url, feature, result} = last;
+    // What the pane shows: the model's own picture where it made one, and the input otherwise. A
+    // result replaces the frame rather than compositing over it — it is an answer, not a reading of
+    // the input — so while it is on, the photograph and its layers are not drawn at all.
+    const frame = view.results && result ? result : image;
+    const scale = Math.min(1, MAX_SIDE / Math.max(frame.naturalWidth, frame.naturalHeight));
+    canvas.width = Math.max(1, Math.round(frame.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(frame.naturalHeight * scale));
     const context = canvas.getContext("2d");
-    // The photograph first, then the model's pixel layer over it. Each can be turned off: with the
-    // layer off the photograph is the one thing on screen that is not a model's claim, and with the
-    // photograph off the layer is read on its own — over a dark ground, because a pale tint on the
-    // pane's light grey reads as nothing at all.
-    if (view.image) {
-      context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    } else if (view.masks || view.features) {
-      context.fillStyle = FIELD_BACKDROP;
-      context.fillRect(0, 0, canvas.width, canvas.height);
+    if (frame !== image) {
+      context.drawImage(frame, 0, 0, canvas.width, canvas.height);
+    } else {
+      // The photograph first, then the model's pixel layer over it. Each can be turned off: with the
+      // layer off the photograph is the one thing on screen that is not a model's claim, and with the
+      // photograph off the layer is read on its own — over a dark ground, because a pale tint on the
+      // pane's light grey reads as nothing at all.
+      if (view.image) {
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      } else if (view.masks || view.results) {
+        context.fillStyle = FIELD_BACKDROP;
+        context.fillRect(0, 0, canvas.width, canvas.height);
+      }
+      if (view.results && feature) {
+        context.globalAlpha = view.image ? FEATURE_TINT : 1;
+        context.imageSmoothingEnabled = true;
+        context.imageSmoothingQuality = "high";
+        context.drawImage(feature.layer, 0, 0, canvas.width, canvas.height);
+        context.globalAlpha = 1;
+      }
+      if (view.masks) context.drawImage(layer, 0, 0, canvas.width, canvas.height);
     }
-    if (view.features && feature) {
-      context.globalAlpha = view.image ? FEATURE_TINT : 1;
-      context.imageSmoothingEnabled = true;
-      context.imageSmoothingQuality = "high";
-      context.drawImage(feature.layer, 0, 0, canvas.width, canvas.height);
-      context.globalAlpha = 1;
-    }
-    if (view.masks) context.drawImage(layer, 0, 0, canvas.width, canvas.height);
 
     figure.hidden = false;
-    fit(image);
-    fitted = image;
+    fit(frame);
+    fitted = frame;
 
     // One category with one object can be named by that object's own colour; a category with several
     // objects can be named only when the dataset gave them all one colour.
@@ -1283,6 +1416,20 @@
 
     // A counting answer's two fields travel with the picture exactly as `objects` does, so a view
     // toggle redraws them from the answer rather than from the response body.
+    //
+    // A model that answers with a picture is decoded here, once, for the same reason: a view toggle
+    // redraws it instead of re-reading a megabyte of base64. A `data:` URL is the shortest path from
+    // what the answer carries to an `<img>`, the page already admits `data:` for images, and nothing
+    // has to be decoded by hand to show a file the container has already encoded.
+    let result = null;
+    let resultError = null;
+    if (answer.image && answer.image.data) {
+      try {
+        result = await loadImage("data:" + answer.image.media_type + ";base64," + answer.image.data);
+      } catch (error) {
+        resultError = error.message;
+      }
+    }
     last = {
       image: image,
       objects: objects,
@@ -1293,6 +1440,9 @@
       points: answer.points,
       feature: feature,
       featureError: featureError,
+      result: result,
+      resultError: resultError,
+      text: typeof answer.answer === "string" ? answer.answer.trim() : "",
       warnings: Array.isArray(answer.warnings) ? answer.warnings : [],
     };
     render();
@@ -1349,6 +1499,13 @@
     );
     $("response").hidden = false;
 
+    // The answer in words, if the model gave one. Opened with every new answer: a reader who asked a
+    // question should not have to find the answer behind a disclosure, and one who is done with it
+    // closes it — the state is the reader's, not the page's, so it is not reset here.
+    $("answer-text").textContent = last.text;
+    $("answer").hidden = !last.text;
+    if (last.text) $("answer").open = true;
+
     // The caption is one line beside four view buttons, so it says the one thing worth checking —
     // that the decoded mask covers exactly the area the answer declared — in as few words as it can.
     const tally = objects.length + (objects.length === 1 ? " object" : " objects");
@@ -1363,6 +1520,18 @@
       say($("check"), warning ? warning.message :
         grid.rows + " × " + grid.columns + " × " + grid.dim + " · " + megabytes +
         " MB · colours: PCA of this image", null);
+      $("check").classList.toggle("warn", Boolean(warning));
+    } else if (last.resultError) {
+      say($("check"), "picture: " + last.resultError, false);
+    } else if (last.result || last.text) {
+      // A picture or a sentence is the whole answer, so the caption says what came back rather than
+      // counting objects the model never claimed. A warning still outranks it: a clamped frame is the
+      // one thing about such an answer that the reader has to know before judging the result.
+      const warning = last.warnings[0];
+      const fact = last.result
+        ? last.result.naturalWidth + " × " + last.result.naturalHeight + " · the model's own picture"
+        : "text answer · " + last.text.length + " characters";
+      say($("check"), warning ? warning.message : fact, null);
       $("check").classList.toggle("warn", Boolean(warning));
     } else if (!objects.length) {
       // A counting answer has no geometry to check: the count beside this line is the answer, and
@@ -1398,6 +1567,8 @@
     $("legend").replaceChildren();
     $("legend").hidden = true;
     $("full").hidden = true;
+    $("answer").hidden = true;
+    $("answer-text").textContent = "";
     fitted = null;
     last = null;
     $("check").textContent = "";

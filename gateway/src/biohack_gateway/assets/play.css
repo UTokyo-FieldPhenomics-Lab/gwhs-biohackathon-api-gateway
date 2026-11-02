@@ -202,6 +202,49 @@ body {
   font-size: 0.85em;
 }
 
+/* A text parameter is a sentence rather than a token, so it takes the whole row it is on: it is the
+   one control a reader types into, and one line of it is a field nobody can read back. The rule is
+   by declared type, not by name — a model this page has never heard of gets the same treatment for
+   the same reason. Every other kind stays on one line. */
+#play #parameters label.wide {
+  flex: 1 1 100%;
+  align-items: flex-start;
+}
+#play #parameters textarea {
+  box-sizing: border-box;
+  flex: 1;
+  min-width: 10rem;
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+  resize: vertical;
+}
+
+/* A call already known to work, as one click. A chip writes the model's own parameters and the
+   address they were measured at into the controls above it, so the reader never types a value they
+   have no reason to trust; the chips come and go with the model, because they are that model's. */
+#play #examples {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+#play #examples button {
+  font: inherit;
+  font-size: 0.9em;
+  color: var(--ink);
+  background: var(--band);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.15rem 0.7rem;
+  cursor: pointer;
+}
+#play #examples button:hover {
+  border-color: var(--ink);
+}
+
 /* The result. The canvas is black until an image is drawn on it, so it stays hidden until there is
    one — a blank rectangle would read as a model that found nothing.
    
@@ -235,6 +278,24 @@ body {
   flex-wrap: wrap;
   align-items: baseline;
   gap: 0.15rem 0.75rem;
+}
+/* The answer in words, under the picture rather than beside it: the pane is one frame fitted whole,
+   so there is no second column to give away. A new answer opens it — a closed disclosure would hide
+   the only thing a prose model returned — and a reader who would rather look at the picture shuts it.
+   It scrolls rather than growing, because a reasoning-guided answer runs to several hundred words and
+   the frame around this page is sized to what is on screen. */
+#play #answer {
+  margin: 0;
+  padding: 0.4rem 0.6rem;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+}
+#play #answer p {
+  margin: 0.4rem 0 0.1rem;
+  max-height: 10rem;
+  overflow: auto;
+  color: var(--ink);
+  white-space: pre-wrap;
 }
 /* A counting answer's one number, in the ink rather than the caption's grey: it is the answer, not a
    remark about it. Absent — not empty — when the answer carried no count. */

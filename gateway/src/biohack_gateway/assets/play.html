@@ -43,6 +43,11 @@ __PLAY_CSS__
     <span id="model-state" class="state" role="status"></span>
   </div>
 
+  <div class="row" id="examples-row" hidden>
+    <span class="legend">Examples</span>
+    <span id="examples"></span>
+  </div>
+
   <div class="row" id="parameters-row">
     <span class="legend" id="parameters-legend" hidden>Parameters</span>
     <span id="parameters"></span>
@@ -77,13 +82,13 @@ __PLAY_CSS__
           </svg>
           <span>masks</span>
         </button>
-        <button type="button" class="eye" data-view="features" aria-pressed="false" hidden>
+        <button type="button" class="eye" data-view="results" aria-pressed="false" hidden>
           <svg viewBox="0 0 20 20" aria-hidden="true">
             <path d="M2 10c2.2-3.2 4.9-5 8-5s5.8 1.8 8 5c-2.2 3.2-4.9 5-8 5s-5.8-1.8-8-5Z"/>
             <circle cx="10" cy="10" r="2.5"/>
             <path class="slash" d="M3.2 16.8 16.8 3.2"/>
           </svg>
-          <span>features</span>
+          <span>results</span>
         </button>
         <button type="button" class="eye" data-view="boxes" aria-pressed="true">
           <svg viewBox="0 0 20 20" aria-hidden="true">
@@ -121,6 +126,10 @@ __PLAY_CSS__
       <div id="legend" hidden></div>
       <div id="watermark" hidden></div>
     </div>
+    <details id="answer" hidden>
+      <summary>Answer</summary>
+      <p id="answer-text"></p>
+    </details>
   </figure>
 
   <details id="request" hidden>
