@@ -550,6 +550,35 @@ class ImageFeatures(BaseModel):
     data: str
 
 
+class GeneratedImage(BaseModel):
+    """A picture a model produced: a generation, an edit, or anything else that is not geometry.
+
+    It is carried rather than described. The alternative — a URL to a stored object — would put a
+    mutable copy of an answer that was never published anywhere in reach of a cache and a lifetime,
+    and an upload's answer is the caller's own image, which this gateway deliberately does not
+    retain.
+
+    Attributes
+    ----------
+    media_type : str
+        The encoded file's own content type — ``image/png`` or ``image/jpeg`` today. A decoder reads
+        it rather than smelling the first bytes, and the container decides which one it wrote.
+    width, height : int
+        The picture's pixel size, in that order. It is the frame the model actually produced, which
+        need not be the participant's: an edit runs at the model's own ceiling and is answered at
+        that side, so this is where a clamped request becomes visible.
+    data : str
+        Base64 of the encoded file, exactly as the backend wrote it. The decoder is
+        ``PIL.Image.open(io.BytesIO(base64.b64decode(data)))``, and each client owns the equivalent
+        so a participant reads no base64.
+    """
+
+    media_type: str
+    width: int
+    height: int
+    data: str
+
+
 class ModelPrediction(BaseModel):
     """The answer to a predict request, whatever the model was.
 
@@ -582,6 +611,16 @@ class ModelPrediction(BaseModel):
         A backbone's patch grid, where it publishes one. Absent for every model that answers with
         objects, a count or points; a body carrying it still sends ``objects: []``, so one client
         parses every model.
+    answer : str or None
+        What a model said, where it answers in prose: a caption, a question's answer, or the
+        reasoning that preceded a generation. `None` or absent for every model that answers with
+        objects, a count, points, a descriptor or a picture. It is one field and not a transcript:
+        a model's other channels stay in the container until one is needed.
+    image : GeneratedImage or None
+        A picture a model produced, where it produces one. Absent for every model that answers in
+        geometry, a count, a descriptor or prose; a body carrying it still sends ``objects: []``,
+        so one client parses every model. It is relayed byte for byte: the gateway decodes nothing
+        and re-encodes nothing, so a picture's format is the container's decision.
     resolution_used : int or None
         The side the model actually ran at, where it reports one. This is the field that explains a
         mask's blockiness, and the one that makes a clamped `imgsz` visible without a warning.
@@ -607,6 +646,8 @@ class ModelPrediction(BaseModel):
     points: list[list[float]] | None = None
     embedding: list[float] | None = None
     features: ImageFeatures | None = None
+    answer: str | None = None
+    image: GeneratedImage | None = None
     resolution_used: int | None = None
     computed_by: ComputedBy | None = None
     warnings: list[ModelWarning] = field(default_factory=list)

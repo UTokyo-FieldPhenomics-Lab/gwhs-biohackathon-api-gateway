@@ -450,6 +450,34 @@ POINTED: dict[str, Any] = {
 stays in the contract because deleting it would mean rebuilding the shape and the page the day one
 does."""
 
+ANSWERED: dict[str, Any] = {
+    "model": MODEL,
+    "resolution_used": 448,
+    "answer": "A wheat spike against soil, with awns intact and no visible lesion.",
+    "objects": [],
+}
+"""A model that answers in prose: a caption, a question's answer, or the reasoning before a
+generation. One client parses it because `objects` is the empty list every non-geometric answer
+sends."""
+
+TINY_PNG = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAADUlEQVR4nGM4UWEDRAALgwL5Z6uxbgAAAABJ"
+    "RU5ErkJggg=="
+)
+"""A real 2×1 PNG, so a fixture that claims a picture is one. The gateway does not decode it; the
+clients do, and their tests open this same payload."""
+
+EDITED: dict[str, Any] = {
+    "model": MODEL,
+    "resolution_used": 1024,
+    "answer": "Warmed the light and left the crop in place.",
+    "image": {"media_type": "image/png", "width": 2, "height": 1, "data": TINY_PNG},
+    "objects": [],
+}
+"""An editing model's answer: the picture it produced, the prose it said alongside, and the empty
+object list. Its `resolution_used` is the side it ran the edit at, not the participant's image
+size — an edit is re-run at the model's ceiling."""
+
 
 def test_a_counting_answer_keeps_its_count_and_field(tmp_path: Path, index_dir: Path) -> None:
     """A count and the field it integrates cross the gateway rather than being dropped.
@@ -484,6 +512,71 @@ def test_a_point_answer_keeps_its_points(tmp_path: Path, index_dir: Path) -> Non
     assert response.status_code == 200
     assert response.json() == POINTED
     assert "density" not in response.json()
+
+
+def test_a_prose_answer_keeps_its_text(tmp_path: Path, index_dir: Path) -> None:
+    """A model that answers in words crosses the gateway, with `objects` still the empty list."""
+    backends = FakeBackends(
+        replies={FIRST: [Reply(status=200, body=json.dumps(ANSWERED).encode())]}
+    )
+    client = next(build_client(tmp_path, index_dir, backends))
+
+    response = client.post(
+        f"/models/{MODEL}/predict", headers=KEY, json={"dataset": "gwhd", "row": 0}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == ANSWERED
+    assert "image" not in response.json()
+
+
+def test_an_edited_picture_crosses_the_gateway_intact(tmp_path: Path, index_dir: Path) -> None:
+    """An editing answer's picture and prose survive, with the payload byte for byte.
+
+    The gateway relays the encoded file rather than decoding or re-encoding it: a re-encode would
+    invent quality the model did not produce, and the container is where an image's format is
+    decided.
+    """
+    backends = FakeBackends(replies={FIRST: [Reply(status=200, body=json.dumps(EDITED).encode())]})
+    client = next(build_client(tmp_path, index_dir, backends))
+
+    response = client.post(
+        f"/models/{MODEL}/predict", headers=KEY, json={"dataset": "gwhd", "row": 0}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == EDITED
+    assert response.json()["image"]["data"] == TINY_PNG
+
+
+def test_a_picture_without_its_bytes_is_refused(tmp_path: Path, index_dir: Path) -> None:
+    """A named field is checked: `image` is a content type, a size and a payload."""
+    answer = {**EDITED, "image": {"media_type": "image/png", "width": 2, "height": 1}}
+    backends = FakeBackends(replies={FIRST: [Reply(status=200, body=json.dumps(answer).encode())]})
+    client = next(build_client(tmp_path, index_dir, backends))
+
+    response = client.post(
+        f"/models/{MODEL}/predict", headers=KEY, json={"dataset": "gwhd", "row": 0}
+    )
+
+    assert response.status_code == 502
+
+
+def test_an_answer_is_not_a_licence_for_a_second_text_field(
+    tmp_path: Path, index_dir: Path
+) -> None:
+    """`answer` is one field, not free-form text: an unnamed one is still dropped."""
+    answer = {**ANSWERED, "reasoning": "the spike is upright"}
+    backends = FakeBackends(replies={FIRST: [Reply(status=200, body=json.dumps(answer).encode())]})
+    client = next(build_client(tmp_path, index_dir, backends))
+
+    response = client.post(
+        f"/models/{MODEL}/predict", headers=KEY, json={"dataset": "gwhd", "row": 0}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == ANSWERED
+    assert "reasoning" not in response.json()
 
 
 def test_a_mask_answer_gains_no_count_density_or_points(tmp_path: Path, index_dir: Path) -> None:
