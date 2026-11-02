@@ -520,6 +520,36 @@ class DensityMap(BaseModel):
     values: list[float]
 
 
+class ImageFeatures(BaseModel):
+    """A backbone's patch grid: one feature vector per cell of a fixed-size raster.
+
+    This is not geometry and carries no object. A backbone has no head, so the only thing it can
+    honestly publish is its own tokens, and this is them in the form that survives a JSON body: a
+    million numbers as decimal text would be five times the payload and a hundred times slower to
+    parse than the same numbers in half precision.
+
+    Attributes
+    ----------
+    size : list of int
+        ``[rows, columns]`` of the grid. The cell is the model's patch, so the grid is the frame the
+        network ran at divided by the checkpoint's patch side — not the participant's image size.
+    dim : int
+        Dimensions per vector: the checkpoint's hidden size, so it differs between models.
+    dtype : str
+        The element type of ``data``. ``float16`` is the only value published today, and a decoder
+        reads it rather than assuming it.
+    data : str
+        Base64 of the grid, row-major and channels-last, little-endian. The decoder is
+        ``numpy.frombuffer(base64.b64decode(data), "<f2").reshape(rows, columns, dim)``, and the same
+        three calls in the other two client languages.
+    """
+
+    size: list[int]
+    dim: int
+    dtype: str
+    data: str
+
+
 class ModelPrediction(BaseModel):
     """The answer to a predict request, whatever the model was.
 
@@ -544,6 +574,14 @@ class ModelPrediction(BaseModel):
         `score` is that model's own score for the point; what it means is the model's to declare,
         and it is not comparable across models. `None` or absent when the model places none — a
         local-count regressor answers `count` and `density` and sets neither this nor a stand-in.
+    embedding : list of float or None
+        A backbone's whole-image descriptor, one number per dimension. `None` or absent when the
+        model publishes none. It is not a class score and not comparable across models: two
+        backbones with different hidden sizes have vectors of different length and meaning.
+    features : ImageFeatures or None
+        A backbone's patch grid, where it publishes one. Absent for every model that answers with
+        objects, a count or points; a body carrying it still sends ``objects: []``, so one client
+        parses every model.
     resolution_used : int or None
         The side the model actually ran at, where it reports one. This is the field that explains a
         mask's blockiness, and the one that makes a clamped `imgsz` visible without a warning.
@@ -567,6 +605,8 @@ class ModelPrediction(BaseModel):
     count: float | None = None
     density: DensityMap | None = None
     points: list[list[float]] | None = None
+    embedding: list[float] | None = None
+    features: ImageFeatures | None = None
     resolution_used: int | None = None
     computed_by: ComputedBy | None = None
     warnings: list[ModelWarning] = field(default_factory=list)
