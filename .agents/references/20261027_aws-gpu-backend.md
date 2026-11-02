@@ -224,3 +224,20 @@ Not proved, and worth knowing before December:
 - **A reboot of this image was never tested.** `docker` is enabled and both containers carry
   `--restart unless-stopped`, which is the same chain the DLAMI instance demonstrated; it is still an
   assumption until someone reboots one.
+
+### The counting model, added 2026-11-02
+
+`tasselnetv4` is in ECR as `tasselnetv4:20261102`, digest **`sha256:6ae7d7aa…abeaba`**, 7.56 GB
+compressed from a 19.9 GB local image. Pushed from this workstation's `tasselnetv4:latest`, whose
+`/app/infer.py`, `/app/outputs.py` and `/app/serve.py` hashes were checked against the submodule at
+`8072ffc` first — the image that publishes the field, not the points-era one still on some machines.
+The push took ten minutes on this workstation's uplink and uploaded the whole image, because ECR had
+never seen these layers.
+
+The launch template still starts **two** containers, `sam3.1-meta` and `gwfss-segformer-b4`; adding
+the counting model is a new template version with a third `docker pull`/`docker run` on
+`12713:12711` and this digest in its user-data. Nothing else about the rented path changes.
+
+**Basic image scanning reports no status in this account** — `imageScanStatus` is `null` for all three
+repositories, including the two baked on 2026-10-27, so `scanOnPush` is accepted and evidently not
+serving the per-image status here. Not a property of this push.
