@@ -178,46 +178,65 @@ VM*, where the router cannot reach them.
    `/usr/lib/wsl/lib`.
 5. Verify in WSL: `nvidia-smi`, then `docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04
    nvidia-smi -L`.
-6. **Turn on an SSH server**, if the machine is to be administered over the tailnet rather than
-   from its own chair:
+6. **Turn on an SSH server**, so an agent can administer the machine instead of a person at its
+   chair. Install it with winget, not as a Windows capability: `Microsoft.OpenSSH.Preview` is the
+   Win32-OpenSSH MSI the upstream release ships, fetched and hash-checked directly, while the
+   capability pulls its payload from Windows Update and can sit at 100% on a managed machine
+   indefinitely.
 
    ```powershell
-   Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
-   Start-Service sshd
+   winget install --id Microsoft.OpenSSH.Preview -e `
+     --accept-source-agreements --accept-package-agreements
    Set-Service -Name sshd -StartupType Automatic
-   New-NetFirewallRule -Name sshd -DisplayName "OpenSSH Server" -Enabled True -Direction Inbound `
-     -Protocol TCP -Action Allow -LocalPort 22 -RemoteAddress <the 5090's LAN>/24,100.64.0.0/10
+   Start-Service sshd
+   Get-NetFirewallRule -DisplayName '*OpenSSH*' | Select-Object Name,Enabled,Direction,Action
    ```
 
-   `-RemoteAddress` is the **source**; both ranges are there because the router rewrites it to the
-   local subnet in practice (sshd logs the Docker Desktop proxy, which is not the caller). **Never widen it to
-   `Any`** — that is the public internet.
+   The installer admits port 22 with a rule of its own, and the intranet is the boundary this pool
+   accepts — leave that rule alone. A narrow rule added beside a wide one changes nothing, because
+   allow rules are a union. If the lookup shows nothing admitting 22, create one with
+   `-RemoteAddress <the backend's LAN>/24,100.64.0.0/10`: that is the source **as the backend sees
+   it**, because the room router rewrites it into the backend's own subnet (the 5090 behind
+   `room-router-d` shows that room's router, not the caller), and the range is that subnet's network
+   address, not the backend's address inside it — a machine at `192.0.2.37/24` fills in
+   `192.0.2.0/24`, never `192.0.2.37/32`.
 
-7. **Write the administrator's public key to the program-data file**, not the profile, then restart
-   sshd:
+   `winget search OpenSSH` is the authority if the package id has moved — the older
+   `Microsoft.OpenSSH.Beta` no longer resolves. Without winget, the same MSI is in the Win32-OpenSSH
+   release; a capability attempt left `InstallPending` comes out first, so the service cannot later
+   revert to `System32\OpenSSH`.
+
+7. **Let the agent in from the machine's own console.** The caller supplies its public key —
+   `ssh-keygen -t ed25519` makes one if there is none, and `cat ~/.ssh/id_ed25519.pub` prints the
+   whole line to copy. At the backend's console, RustDesk is enough, as its administrator:
 
    ```powershell
-   $key = 'ssh-ed25519 AAAA… lab-5090 backend'
+   $key = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI… labpc'
    $p = "$env:ProgramData\ssh\administrators_authorized_keys"      # NOT %USERPROFILE%\.ssh
    Set-Content -Path $p -Value $key -Encoding ascii                # ascii: no BOM
    icacls $p /inheritance:r /grant "Administrators:F" /grant "SYSTEM:F"
-   Restart-Service sshd
+   whoami                                                          # machine\account is the login name
    ```
 
-   The stock `sshd_config` redirects the administrators group to that file, so a key in the profile
-   is ignored with no message; `icacls` is not decoration (a writable file is refused silently); and
-   a UTF-16 file or a BOM breaks the line — the first byte should be `115`, the `s` of `ssh-ed25519`.
+   No restart follows: the file is read at each login. `whoami` is what sshd resolves, and the
+   profile directory name is not it. The stock `sshd_config` redirects the administrators group to
+   that file, so a key in the profile is ignored with no message; `icacls` is not decoration (a
+   writable file is refused silently); a UTF-16 file or a BOM breaks the line — the first byte should
+   be `115`, the `s` of `ssh-ed25519`. With no console at all, reach the machine once by password and
+   run the same four lines — that is what password authentication stays enabled for.
 
 8. **Publish the backend port.** Docker Desktop adds a firewall rule when it publishes one, so
    usually nothing to do. If a published port does not answer, the rule is:
 
    ```powershell
-   New-NetFirewallRule -DisplayName "biohack backends" -Direction Inbound -Protocol TCP `
-     -LocalPort 12711,12712 -RemoteAddress the 5090's LAN,100.64.0.0/10 -Action Allow
+   New-NetFirewallRule -Name biohack-backends -DisplayName "biohack backends" -Direction Inbound `
+     -Protocol TCP -Action Allow -LocalPort 12711,12712 `
+     -RemoteAddress <the backend's LAN>/24,100.64.0.0/10
    ```
 
-   One rule lists every model port the machine publishes; a machine that adds a model adds its
-   number here, not a second rule that quietly differs.
+   The source ranges are step 6's. One rule lists every model port the machine publishes; a machine
+   that adds a model adds its number here, not a second rule that quietly differs — and `-Name` is
+   what makes a rerun fail instead of creating that second rule.
 
 9. **Windows blocks ICMP echo by default**, so a machine that answers nothing to `ping` is not
    necessarily down. Never use ping as the reachability test for this backend — use a TCP probe.
