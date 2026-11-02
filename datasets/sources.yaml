@@ -25,7 +25,7 @@
 datasets:
   gwhd:
     adapter: gwhd          # image + bounding-box annotations
-    upstream: Etienne-David/GlobalWheatHeadDataset2021@d223a227ee21fca3dbab9605d3fbcdcc2e33abc5
+    upstream: GlobalWheat/GWHD_2021@976d2f12ca59bff731d3e54713d77bf9aa3bca03
     license: cc-by-4.0     # as declared by the upstream dataset card
   gwfss:
     adapter: gwfss         # image + semantic mask annotations
@@ -35,7 +35,7 @@ datasets:
     license: cc-by-4.0     # as declared by the upstream dataset card
   gwhs-temp:
     adapter: gwhs          # development-only sample of the GWHS schema
-    upstream: GWHS/sample_dataset@655118534e9ad980b6f7c0dd6566a406d5a29a27
+    upstream: GlobalWheat/GWHS_v1.0_sample@2af7596667715cfcd8185818f30932d1abc35971
     license: null          # development-only rehearsal of 10 rows; the sample's card declares no license
   gwhs:
     adapter: gwhs          # image + object-level RLE and labels

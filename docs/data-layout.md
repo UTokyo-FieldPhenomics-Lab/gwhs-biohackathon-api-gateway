@@ -13,9 +13,9 @@ release takes its own id, so that a later full release never renumbers an addres
 
 | Dataset id | Upstream | Splits | Rows | Annotation |
 |---|---|---|---|---|
-| `gwhd` | `Etienne-David/GlobalWheatHeadDataset2021` | `train`, `validation`, `test` | 6,512 | bounding boxes |
+| `gwhd` | `GlobalWheat/GWHD_2021` | `train`, `validation`, `test` | 6,512 | bounding boxes |
 | `gwfss` | `GlobalWheat/GWFSS_v1.0` | `labelled` | 1,096 | semantic mask image |
-| `gwhs-temp` | `GWHS/sample_dataset` | `train` | 10 (sample) | objects: boxes, RLE geometry, tags, attributes |
+| `gwhs-temp` | `GlobalWheat/GWHS_v1.0_sample` | `train` | 10 (sample) | objects: boxes, RLE geometry, tags, attributes |
 | `gwhs` | pending full annotation | — | — | objects: boxes, RLE geometry, tags, attributes |
 
 `gwhs-temp` exists for development and testing only. It is the rehearsal target: it exercises the
