@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {test} from "node:test";
 
-import {ApiError, Client, label_masks, rle_decode} from "../global-wheat.js";
+import {ApiError, Client, decode_features, label_masks, rle_decode} from "../global-wheat.js";
 
 const EXAMPLE = new URL("../../../clients/fixtures/example-prediction.json", import.meta.url);
 // A recorded call: eighteen objects of a 512x512 prediction, each with its area and its RLE.
@@ -95,6 +95,41 @@ test("decode false leaves a counting answer as it arrived", async () => {
   });
   assert.deepEqual(answer, body);
   assert.equal(answer.density.grid, undefined);
+});
+
+const FEATURES = {size: [2, 2], dim: 3, dtype: "float16", data: "AAAAPABAAEIARABFAEYARwBIgEgASYBJ"};
+
+test("a feature grid decodes to one flat array", () => {
+  const grid = decode_features(FEATURES);
+  assert.ok(grid instanceof Float32Array);
+  assert.equal(grid.length, 12);
+  assert.equal(grid[0], 0);
+  assert.equal(grid[5], 5);
+  assert.equal(grid[11], 11);
+});
+
+test("a backbone answer arrives with its grid shaped", async () => {
+  const {client: api} = client([
+    {status: 200, body: {model: "dinov3-vitl16", objects: [], embedding: [0.5], features: {...FEATURES}}},
+  ]);
+  const answer = await api.predict("dinov3-vitl16", "gwfss", 0);
+  assert.equal(answer.features.grid.length, 12);
+  assert.deepEqual(answer.features.size, [2, 2]);
+  assert.equal(answer.features.dim, 3);
+  assert.equal(typeof answer.features.data, "string");
+});
+
+test("decode false leaves a backbone answer as it arrived", async () => {
+  const {client: api} = client([
+    {status: 200, body: {model: "dinov3-vitl16", objects: [], features: {...FEATURES}}},
+  ]);
+  const answer = await api.predict("dinov3-vitl16", "gwfss", 0, {decode: false});
+  assert.equal(answer.features.grid, undefined);
+});
+
+test("a feature grid whose payload is short is refused", () => {
+  assert.throws(() => decode_features({...FEATURES, data: FEATURES.data.slice(0, -4)}), /bytes/);
+  assert.throws(() => decode_features({...FEATURES, dtype: "float32"}), /dtype/);
 });
 
 test("a refusal becomes an ApiError with the API's own words", async () => {

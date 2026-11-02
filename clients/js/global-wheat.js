@@ -1,7 +1,7 @@
 // Global Wheat API client: one import, then datasets, models, and masks.
 //
-// The API is eight HTTP routes; this file is those eight routes as functions, plus the two decoders
-// a result needs before it is usable. It carries **no response models**: every answer is the API's
+// The API is eight HTTP routes; this file is those eight routes as functions, plus the decoders a
+// result needs before it is usable: a mask, a counting field, and a backbone's feature grid. It carries **no response models**: every answer is the API's
 // own JSON, so this file cannot disagree with the server about a field it does not restate. Only
 // the routes are named here, and `clients/routes.json` beside this file is what keeps them honest
 // against the gateway's OpenAPI document.
@@ -185,9 +185,10 @@ class Client {
   /**
    * Run one model on one published row.
    *
-   * The answer is what the API wrote, with two things added in place: each object's decoded `mask`,
-   * and — for a counting model, which has no objects — `density.grid`, the field as an array of
-   * rows. `density.size` and `density.values` stay either way.
+   * The answer is what the API wrote, with decoded layers added in place: each object's `mask`, a
+   * counting answer's `density.grid` as an array of rows, and a backbone's `features.grid` as one
+   * flat `Float32Array` of `rows * columns * dim` values. The raw `rle`, `density.values` and
+   * `features.data` stay either way.
    * @param {string} model The model id.
    * @param {string} dataset
    * @param {number} row The absolute row of the pinned revision; the gateway resolves the address.
@@ -205,6 +206,7 @@ class Client {
     if (decode) {
       decode_objects(body);
       decode_density(body);
+      decode_body_features(body);
     }
     return body;
   }
@@ -236,6 +238,7 @@ class Client {
     if (decode) {
       decode_objects(body);
       decode_density(body);
+      decode_body_features(body);
     }
     return body;
   }
@@ -449,6 +452,65 @@ function decode_density(body) {
   }
 }
 
+/**
+ * Decode a backbone's `features` object into one flat array of float32 values.
+ *
+ * The wire carries the grid row-major and channels-last as base64 of little-endian float16, so one
+ * cell is `(row * columns + column) * dim` in the result. The array is flat rather than an array of
+ * rows because a 32x32x1024 grid would be 1024 small arrays; `features.size` and `features.dim` are
+ * beside it and say how to index it.
+ * @param {object} field The `features` object, verbatim.
+ * @returns {Float32Array} `rows * columns * dim` values, row-major and channels-last.
+ */
+function decode_features(field) {
+  if (!field || typeof field !== "object") throw new TypeError("features must be an object");
+  if (field.dtype !== "float16") throw new Error(`unsupported features dtype ${field.dtype}`);
+  const [rows, columns] = Array.isArray(field.size) ? field.size.map(Number) : [];
+  const dim = Number(field.dim);
+  if (!(rows > 0 && columns > 0 && dim > 0)) throw new Error("features carries no size or dim");
+  const binary =
+    typeof atob === "function"
+      ? atob(String(field.data ?? ""))
+      : Buffer.from(String(field.data ?? ""), "base64").toString("binary");
+  const expected = rows * columns * dim * 2;
+  if (binary.length !== expected) {
+    throw new Error(
+      `features carries ${binary.length} bytes for a ${rows}x${columns}x${dim} grid, expected ${expected}`,
+    );
+  }
+  const table = half_table();
+  const grid = new Float32Array(rows * columns * dim);
+  for (let index = 0, at = 0; index < grid.length; index += 1, at += 2) {
+    grid[index] = table[binary.charCodeAt(at) | (binary.charCodeAt(at + 1) << 8)];
+  }
+  return grid;
+}
+
+/** Attach a backbone's decoded `features.grid`, in place. */
+function decode_body_features(body) {
+  if (body.features && typeof body.features === "object") {
+    body.features.grid = decode_features(body.features);
+  }
+}
+
+/** One table for every half-precision bit pattern, built on the first decode and reused. */
+let HALF_TABLE;
+function half_table() {
+  if (HALF_TABLE) return HALF_TABLE;
+  HALF_TABLE = new Float32Array(65536);
+  for (let bits = 0; bits < 65536; bits += 1) {
+    const sign = bits & 0x8000 ? -1 : 1;
+    const exponent = (bits >> 10) & 0x1f;
+    const fraction = bits & 0x03ff;
+    let value;
+    if (exponent === 0) value = (fraction / 1024) * 2 ** -14;
+    else if (exponent === 31) value = fraction ? NaN : Infinity;
+    else value = (1 + fraction / 1024) * 2 ** (exponent - 15);
+    HALF_TABLE[bits] = sign * value;
+  }
+  return HALF_TABLE;
+}
+
 function decode_objects(body) {
   for (const object of body.objects ?? []) {
     if (object.rle) object.mask = rle_decode(object.rle.counts, ...object.rle.size);
@@ -517,11 +579,11 @@ async function error(response) {
   return new ApiError(response.status, detail.code ?? fallback, detail.message ?? text.trim());
 }
 
-const api = {ApiError, Client, label_masks, rle_decode};
+const api = {ApiError, Client, decode_features, label_masks, rle_decode};
 
-export {ApiError, Client, label_masks, rle_decode};
+export {ApiError, Client, decode_features, label_masks, rle_decode};
 export default api;
 
-// A plain <script> has no import, so the same four names are left where the pages that use one
-// decoder can find them. Loading this file as a module leaves the same object.
+// A plain <script> has no import, so the same names are left where the pages that use one decoder
+// can find them. Loading this file as a module leaves the same object.
 globalThis.GlobalWheat = api;

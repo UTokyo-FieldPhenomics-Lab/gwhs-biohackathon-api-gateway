@@ -7,10 +7,12 @@ and the way it reads an answer — not the server. The one test that needs the s
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pytest
 from rle_fixture import encode
 
@@ -219,6 +221,59 @@ def test_decode_false_leaves_a_counting_answer_as_it_arrived() -> None:
     answer = client.predict("tasselnetv4", "gwfss", 0, boxes=[[1, 2, 3, 4, 1]], decode=False)
     assert answer == body
     assert "grid" not in answer["density"]
+
+
+def features_body() -> dict:
+    """Build a backbone answer as the API writes one: a CLS vector, a patch grid, no objects.
+
+    Returns
+    -------
+    dict
+        The body, rebuilt per test because decoding adds to it in place.
+    """
+    grid = np.arange(12, dtype=np.float32).reshape(2, 2, 3)
+    return {
+        "model": "dinov3-vitl16",
+        "objects": [],
+        "embedding": [0.5, -0.25],
+        "features": {
+            "size": [2, 2],
+            "dim": 3,
+            "dtype": "float16",
+            "data": base64.b64encode(grid.astype("<f2").tobytes()).decode("ascii"),
+        },
+        "resolution_used": 32,
+    }
+
+
+def test_a_backbone_answer_carries_its_grid_as_an_array() -> None:
+    """The grid arrives shaped and row-major, and the raw encoding stays beside it."""
+    client, _ = make([Reply(200, features_body())])
+    body = client.predict("dinov3-vitl16", "gwfss", 0)
+    grid = body["features"]["grid"]
+    assert grid.shape == (2, 2, 3)
+    assert grid.dtype == np.float32
+    assert grid[0, 1, 2] == 5.0 and grid[1, 1, 2] == 11.0
+    assert body["features"]["size"] == [2, 2]
+    assert body["features"]["dim"] == 3
+    assert isinstance(body["features"]["data"], str)
+
+
+def test_decode_false_leaves_a_backbone_answer_as_it_arrived() -> None:
+    """The same switch the masks and the counting field follow: no grid is added."""
+    body = features_body()
+    client, _ = make([Reply(200, body)])
+    answer = client.predict("dinov3-vitl16", "gwfss", 0, decode=False)
+    assert answer == body
+    assert "grid" not in answer["features"]
+
+
+def test_a_feature_grid_whose_header_and_payload_disagree_is_refused() -> None:
+    """A truncated payload is a body outside the contract, not something to reshape."""
+    field = features_body()["features"]
+    field["data"] = field["data"][:-4]
+    with pytest.raises(ValueError, match="bytes"):
+        global_wheat.decode_features(field)
 
 
 def test_an_upload_sends_the_file_as_the_field_named_file(tmp_path: Path) -> None:

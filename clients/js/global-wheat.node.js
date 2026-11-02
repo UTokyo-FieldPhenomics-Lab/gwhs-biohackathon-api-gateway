@@ -14,7 +14,7 @@
 
 import sharp from "sharp";
 
-import {ApiError, Client as Core, label_masks, rle_decode} from "./global-wheat.js";
+import {ApiError, Client as Core, decode_features, label_masks, rle_decode} from "./global-wheat.js";
 
 const QUALITY = 90;
 
@@ -51,7 +51,7 @@ class Client extends Core {
   }
 }
 
-const api = {ApiError, Client, label_masks, rle_decode, resize};
+const api = {ApiError, Client, decode_features, label_masks, rle_decode, resize};
 
-export {ApiError, Client, label_masks, rle_decode, resize};
+export {ApiError, Client, decode_features, label_masks, rle_decode, resize};
 export default api;

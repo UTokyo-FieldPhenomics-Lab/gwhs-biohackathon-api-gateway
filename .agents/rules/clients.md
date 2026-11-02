@@ -21,9 +21,11 @@ Package: `clients/`. Shared constraints are in [`project.md`](project.md); distr
 - **Own RLE, palette and field decoding here, once per language.** Decode COCO column-major masks
   into row-major containers on receipt, retaining raw `rle` and other fields so area remains
   checkable; reshape a counting answer's `density.values` into `density.grid`, retaining `size` and
-  `values` for the same reason — a participant should not have to know which of the two orders the
-  wire uses. Docs, figures and `/play` call these implementations rather than duplicating them.
-  [Decoder checks](../../clients/python/tests/test_geometry.py).
+  `values` for the same reason; decode a backbone's base64 float16 grid into `features.grid`,
+  retaining `size`, `dim`, `dtype` and `data`. A participant should not have to know which of the
+  orders or encodings the wire uses. Docs, figures and `/play` call these implementations rather
+  than duplicating them. [Decoder checks](../../clients/python/tests/test_geometry.py),
+  [feature round-trip](../../clients/python/tests/test_client.py).
 - **Read one key and one API origin.** `GLOBAL_WHEAT_API_KEY` and `GLOBAL_WHEAT_API` are environment
   defaults overridden by constructor arguments; fail construction without a key instead of waiting
   for the first `401`. [Python client](../../clients/python/global_wheat.py).

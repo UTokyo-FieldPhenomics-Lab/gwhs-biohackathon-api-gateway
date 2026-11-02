@@ -82,6 +82,33 @@ public final class Checks {
                     "a field crosses shaped",
                     grid.length == 2 && grid[0].length == 3 && grid[1][2] == 18.2);
 
+            Map<String, Object> featured = client.predict("dinov3-vitl16", "gwfss", 4, null);
+            Map<String, Object> features =
+                    (Map<String, Object>) featured.get("features");
+            GlobalWheat.Features featureGrid = (GlobalWheat.Features) features.get("grid");
+            check(
+                    "a feature grid crosses shaped",
+                    featureGrid != null
+                            && featureGrid.rows == 2
+                            && featureGrid.columns == 2
+                            && featureGrid.dim == 3
+                            && featureGrid.grid[0][1][2] == 5.0f
+                            && featureGrid.grid[1][1][2] == 11.0f);
+            check("the raw feature payload is kept", features.get("data") instanceof String);
+
+            Map<String, Object> shortFeature = new LinkedHashMap<>();
+            shortFeature.put("size", List.of(2, 2));
+            shortFeature.put("dim", 3);
+            shortFeature.put("dtype", "float16");
+            shortFeature.put("data", "AAA=");
+            boolean refusedShort = false;
+            try {
+                GlobalWheat.decode_features(shortFeature);
+            } catch (IllegalArgumentException expected) {
+                refusedShort = true;
+            }
+            check("a short feature payload is refused", refusedShort);
+
             client.predict(
                     "sam3.1-meta",
                     "gwhs-temp",
@@ -365,6 +392,13 @@ public final class Checks {
                             "{\"model\":\"tasselnetv4\",\"objects\":[],\"count\":21.7,"
                                     + "\"density\":{\"size\":[2,3],\"values\":[0.0,1.5,0.0,2.0,0.0,18.2]},"
                                     + "\"resolution_used\":384}";
+            case "/models/dinov3-vitl16/predict" ->
+                    answer =
+                            "{\"model\":\"dinov3-vitl16\",\"objects\":[],"
+                                    + "\"embedding\":[0.5,-0.25],"
+                                    + "\"features\":{\"size\":[2,2],\"dim\":3,\"dtype\":\"float16\","
+                                    + "\"data\":\"AAAAPABAAEIARABFAEYARwBIgEgASYBJ\"},"
+                                    + "\"resolution_used\":32}";
             default -> {
                 status = 401;
                 answer = "{\"error\":{\"code\":\"invalid_key\",\"message\":\"that key is not in the pool\"}}";

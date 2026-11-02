@@ -30,6 +30,7 @@ Dependencies are ``requests``, ``numpy`` and ``pillow``, and nothing else.
 
 from __future__ import annotations
 
+import base64
 import io
 import json
 import os
@@ -52,6 +53,7 @@ __all__ = [
     "UPLOAD_QUALITY",
     "ApiError",
     "Client",
+    "decode_features",
     "label_masks",
     "rle_decode",
 ]
@@ -413,7 +415,8 @@ class Client:
             The absolute row of the pinned revision. The gateway resolves the address, so no URL is
             ever sent.
         decode : bool, optional
-            Attach each object's ``mask``, decoded.
+            Attach each object's ``mask``, a counting answer's ``density.grid`` and a backbone's
+            ``features.grid``, decoded.
         **params
             The model's own control parameters — ``prompt="wheat head"``,
             ``confidence_threshold=0.5``. ``client.model(id)["parameters"]`` lists them with their
@@ -426,9 +429,11 @@ class Client:
         dict
             The answer as the API wrote it: ``model``, ``objects``, ``resolution_used`` and
             ``computed_by`` always, plus what this model answered with — ``count`` and ``density``
-            for a counting model, ``warnings`` where it reported one. ``mask`` is on every object
-            and ``density["grid"]`` is the field shaped to its ``size``, both when ``decode`` is
-            true; a counting answer has no objects, so only the field is added.
+            for a counting model, ``embedding`` and ``features`` for a backbone, ``warnings``
+            where it reported one. ``mask`` is on every object, ``density["grid"]`` is the field
+            shaped to its ``size`` and ``features["grid"]`` is the patch grid shaped to its
+            ``size``, all when ``decode`` is true; a counting or backbone answer has no objects,
+            so only the field is added.
 
         Raises
         ------
@@ -445,6 +450,7 @@ class Client:
         if decode:
             _decode_objects(body)
             _decode_density(body)
+            _decode_features(body)
         return body
 
     def predict_file(
@@ -475,7 +481,8 @@ class Client:
             Resize before sending. ``False`` sends the file untouched, which is the documented
             opt-out for a caller who wants the original bytes on the wire.
         decode : bool, optional
-            Attach each object's ``mask``, decoded.
+            Attach each object's ``mask``, a counting answer's ``density.grid`` and a backbone's
+            ``features.grid``, decoded.
         **params
             The model's own control parameters, encoded as in :meth:`predict` — a geometry value is
             one JSON array in one parameter. ``resize_before_submit`` is this client's own option,
@@ -510,6 +517,7 @@ class Client:
         if decode:
             _decode_objects(body)
             _decode_density(body)
+            _decode_features(body)
         return body
 
     def _declaration(self, model: str) -> dict[str, Any] | None:
@@ -817,6 +825,61 @@ def _packed(color: str) -> int:
     return (red << 16) | (green << 8) | blue
 
 
+def decode_features(field: Mapping[str, Any]) -> np.ndarray:
+    """Decode a backbone's ``features`` object into a three-dimensional array.
+
+    Parameters
+    ----------
+    field : mapping
+        The ``features`` object as the API publishes it: ``size``, ``dim``, ``dtype`` and ``data``.
+
+    Returns
+    -------
+    numpy.ndarray
+        ``(rows, columns, dim)`` float32, row-major and channels last. Cell ``[r, c]`` is the patch
+        at row ``r`` and column ``c`` of the frame the network ran at.
+
+    Raises
+    ------
+    ValueError
+        The object carries a dtype this client does not read, a size that is not two positive
+        integers, or a payload whose byte count disagrees with ``rows × columns × dim × 2``. Each
+        is a body the contract does not describe, and guessing would publish a grid with the wrong
+        shape.
+
+    Notes
+    -----
+    The wire is base64 of little-endian float16, so the decoder is three calls: base64, a typed
+    ``frombuffer``, and a reshape. The result is converted to float32 because half precision is
+    what the model ran in, not what a caller's matrix multiplication wants; the raw ``data`` stays
+    on the object beside the decoded ``grid``, so the encoding is still checkable.
+
+    Examples
+    --------
+    >>> grid = decode_features(answer["features"])       # doctest: +SKIP
+    >>> grid.shape                                       # doctest: +SKIP
+    (32, 32, 1024)
+    """
+    if field.get("dtype") != "float16":
+        raise ValueError(f"unsupported features dtype {field.get('dtype')!r}")
+    size = field.get("size")
+    if not isinstance(size, Sequence) or len(size) != 2:
+        raise ValueError("features.size must be [rows, columns]")
+    rows, columns = int(size[0]), int(size[1])
+    dim = int(field.get("dim", 0))
+    if rows <= 0 or columns <= 0 or dim <= 0:
+        raise ValueError(f"features carries no grid: {rows}×{columns}×{dim}")
+    payload = base64.b64decode(cast(str, field["data"]), validate=True)
+    expected = rows * columns * dim * 2
+    if len(payload) != expected:
+        raise ValueError(
+            f"features carries {len(payload)} bytes for a {rows}×{columns}×{dim} grid "
+            f"of float16, expected {expected}"
+        )
+    grid = np.frombuffer(payload, dtype="<f2").astype(np.float32)
+    return cast("np.ndarray", grid.reshape(rows, columns, dim))
+
+
 def _decode_objects(body: dict[str, Any]) -> None:
     """Attach each object's decoded ``mask``, in place.
 
@@ -860,6 +923,25 @@ def _decode_density(body: dict[str, Any]) -> None:
     if len(values) != rows * columns:
         raise ValueError(f"density says {rows}×{columns} but carries {len(values)} values")
     density["grid"] = np.asarray(values, dtype=float).reshape(rows, columns)
+
+
+def _decode_features(body: dict[str, Any]) -> None:
+    """Attach a backbone's decoded ``features.grid``, in place.
+
+    Parameters
+    ----------
+    body : dict
+        A prediction. A task model carries no ``features`` and is left alone.
+
+    Raises
+    ------
+    ValueError
+        When the object's header and payload disagree, which a correct backend cannot send.
+    """
+    features = body.get("features")
+    if not isinstance(features, dict):
+        return
+    features["grid"] = decode_features(features)
 
 
 def _declared_side(declared: Mapping[str, Any]) -> int | None:

@@ -10,7 +10,7 @@
 // already at or under that side is not touched at all. The page must be on the API's own origin;
 // see the Clients page for why, and load this file as a module — a plain <script> cannot import.
 
-import {ApiError, Client as Core, label_masks, rle_decode} from "./global-wheat.js";
+import {ApiError, Client as Core, decode_features, label_masks, rle_decode} from "./global-wheat.js";
 
 const QUALITY = 0.9;
 
@@ -74,9 +74,9 @@ class Client extends Core {
   }
 }
 
-const api = {ApiError, Client, label_masks, rle_decode, resize};
+const api = {ApiError, Client, decode_features, label_masks, rle_decode, resize};
 
-export {ApiError, Client, label_masks, rle_decode, resize};
+export {ApiError, Client, decode_features, label_masks, rle_decode, resize};
 export default api;
 
 // A plain <script type="module" src="…/global-wheat.web.js"> has no import of its own, so the same

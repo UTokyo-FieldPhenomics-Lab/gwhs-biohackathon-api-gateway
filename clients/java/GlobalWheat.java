@@ -1,7 +1,7 @@
 // Global Wheat API client: one file, then datasets, models, and masks.
 //
-// The API is eight HTTP routes; this file is those eight routes as methods, plus the two decoders a
-// result needs before it is usable. It carries **no response models**: every answer is the API's own
+// The API is eight HTTP routes; this file is those eight routes as methods, plus the decoders a
+// result needs before it is usable: a mask, a counting field, and a backbone's feature grid. It carries **no response models**: every answer is the API's own
 // JSON, parsed into a `Map`/`List` tree, so this file cannot disagree with the server about a field
 // it does not restate. Only the routes are named here, and `clients/routes.json` beside this file is
 // what keeps them honest against the gateway's OpenAPI document.
@@ -42,6 +42,7 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -121,6 +122,25 @@ public final class GlobalWheat {
                 }
             }
             return total;
+        }
+    }
+
+    /** One decoded backbone grid: row-major patches, each a vector of the checkpoint's width. */
+    public static final class Features {
+        /** The patch grid's rows. */
+        public final int rows;
+        /** The patch grid's columns. */
+        public final int columns;
+        /** Dimensions per patch vector. */
+        public final int dim;
+        /** The vectors, row-major: {@code grid[row][column][dimension]}. */
+        public final float[][][] grid;
+
+        Features(int rows, int columns, int dim, float[][][] grid) {
+            this.rows = rows;
+            this.columns = columns;
+            this.dim = dim;
+            this.grid = grid;
         }
     }
 
@@ -373,6 +393,7 @@ public final class GlobalWheat {
                     call("POST", "/models/" + segment(model) + "/predict", modelQuery(params), body, null);
             decodeObjects(answer);
             decodeDensity(answer);
+            decodeFeatures(answer);
             return answer;
         }
 
@@ -463,6 +484,7 @@ public final class GlobalWheat {
                             payload);
             decodeObjects(answer);
             decodeDensity(answer);
+            decodeFeatures(answer);
             return answer;
         }
 
@@ -1128,6 +1150,96 @@ public final class GlobalWheat {
             grid[index / columns][index % columns] = ((Number) values.get(index)).doubleValue();
         }
         density.put("grid", grid);
+    }
+
+    /** Attach a backbone's decoded {@code features.grid}, in place. */
+    @SuppressWarnings("unchecked")
+    private static void decodeFeatures(Map<String, Object> body) {
+        if (body.get("features") instanceof Map<?, ?>) {
+            Map<String, Object> features = (Map<String, Object>) body.get("features");
+            features.put("grid", decode_features(features));
+        }
+    }
+
+    /**
+     * Decode a backbone's {@code features} object into a three-dimensional array.
+     *
+     * <p>The wire is base64 of little-endian float16, row-major and channels-last: {@code
+     * grid[row][column][dimension]} is the vector at that patch. The array is float although the
+     * wire is half, because half is what the model ran in, not what a caller's arithmetic wants;
+     * the raw {@code data} stays beside the grid.
+     *
+     * @param field the {@code features} object, verbatim
+     * @return the decoded grid
+     * @throws IllegalArgumentException if the dtype, the header or the payload is not the one the
+     *     contract describes
+     */
+    @SuppressWarnings("unchecked")
+    public static Features decode_features(Map<String, Object> field) {
+        if (!"float16".equals(field.get("dtype"))) {
+            throw new IllegalArgumentException("unsupported features dtype " + field.get("dtype"));
+        }
+        if (!(field.get("size") instanceof List<?> size) || size.size() != 2) {
+            throw new IllegalArgumentException("features.size must be [rows, columns]");
+        }
+        int rows = ((Number) size.get(0)).intValue();
+        int columns = ((Number) size.get(1)).intValue();
+        int dim = ((Number) field.get("dim")).intValue();
+        if (rows <= 0 || columns <= 0 || dim <= 0) {
+            throw new IllegalArgumentException(
+                    "features carries no grid: " + rows + "x" + columns + "x" + dim);
+        }
+        byte[] bytes = Base64.getDecoder().decode((String) field.get("data"));
+        int expected = rows * columns * dim * 2;
+        if (bytes.length != expected) {
+            throw new IllegalArgumentException(
+                    "features carries "
+                            + bytes.length
+                            + " bytes for a "
+                            + rows
+                            + "x"
+                            + columns
+                            + "x"
+                            + dim
+                            + " grid, expected "
+                            + expected);
+        }
+        float[][][] grid = new float[rows][columns][dim];
+        int at = 0;
+        for (int row = 0; row < rows; row++) {
+            for (int column = 0; column < columns; column++) {
+                for (int dimension = 0; dimension < dim; dimension++) {
+                    int bits = (bytes[at] & 0xff) | ((bytes[at + 1] & 0xff) << 8);
+                    grid[row][column][dimension] = HALF[bits];
+                    at += 2;
+                }
+            }
+        }
+        return new Features(rows, columns, dim, grid);
+    }
+
+    /**
+     * The float value of every half-precision bit pattern, built once.
+     *
+     * <p>Java's {@code Float.float16ToFloat} arrived in a recent release and this file runs on the
+     * JDK a participant already has, so the conversion is here: a 65 536-entry table costs 256 KB
+     * and one {@code pow} per entry at class load, and no per-value arithmetic.
+     */
+    private static final float[] HALF = new float[65536];
+
+    static {
+        for (int bits = 0; bits < 65536; bits++) {
+            int sign = (bits & 0x8000) != 0 ? -1 : 1;
+            int exponent = (bits >> 10) & 0x1f;
+            int fraction = bits & 0x3ff;
+            if (exponent == 0) {
+                HALF[bits] = sign * (fraction / 1024.0f) * (1.0f / 16384.0f);
+            } else if (exponent == 31) {
+                HALF[bits] = fraction == 0 ? sign * Float.POSITIVE_INFINITY : Float.NaN;
+            } else {
+                HALF[bits] = (float) (sign * (1 + fraction / 1024.0) * Math.pow(2, exponent - 15));
+            }
+        }
     }
 
     /** Attach each object's decoded {@code mask}, in place. */
