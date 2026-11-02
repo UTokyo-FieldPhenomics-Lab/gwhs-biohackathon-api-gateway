@@ -540,8 +540,8 @@ class ImageFeatures(BaseModel):
         reads it rather than assuming it.
     data : str
         Base64 of the grid, row-major and channels-last, little-endian. The decoder is
-        ``numpy.frombuffer(base64.b64decode(data), "<f2").reshape(rows, columns, dim)``, and the same
-        three calls in the other two client languages.
+        ``numpy.frombuffer(base64.b64decode(data), "<f2").reshape(rows, columns, dim)``, and the
+        same three calls in the other two client languages.
     """
 
     size: list[int]
