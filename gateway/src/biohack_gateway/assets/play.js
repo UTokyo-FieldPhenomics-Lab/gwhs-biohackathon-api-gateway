@@ -18,10 +18,18 @@
   // legend, which is where the class names and scores then live, opens shown.
   //
   // The order is the order a reader builds the picture in: the photograph, the model's pixel layer
-  // over it, the rectangle geometry on top, then the two annotations the page adds.
-  const VIEW_BASE = {image: true, masks: true, boxes: true, legend: false, watermark: true};
+  // over it, a backbone's feature field, the rectangle geometry on top, then the two annotations the
+  // page adds.
+  const VIEW_BASE = {image: true, masks: true, features: false, boxes: true, legend: false, watermark: true};
   const VIEW_BY_MODEL = {
-    "gwfss-segformer-b4": {boxes: false, legend: true},
+    // `landing` is which model the page opens on when a URL names none: the one a first-time reader
+    // can run with no parameters. It is a presentation default, kept in the one table allowed to
+    // name a model, not a second id in the connect path.
+    "gwfss-segformer-b4": {boxes: false, legend: true, landing: true},
+    // A backbone has no objects and no mask; what it publishes is the grid this layer draws. The
+    // features eye is hidden again for every model without this entry.
+    "dinov3-vitl16": {boxes: false, masks: false, features: true},
+    "dinov3-vith16plus": {boxes: false, masks: false, features: true},
   };
   let view = {...VIEW_BASE};
 
@@ -81,7 +89,12 @@
       input.type = "range";
       input.min = String(parameter.minimum);
       input.max = String(parameter.maximum);
-      input.step = "0.01";
+      // A parameter whose bounds and default are all integers is stepped by one: a `side` in pixels
+      // has no meaning between integers, and a hundredth makes every arrow key a no-op. The rest keep
+      // a hundredth, which is what a confidence threshold wants.
+      const integral = [parameter.default, parameter.minimum, parameter.maximum]
+        .every((bound) => bound === null || bound === undefined || Number.isInteger(Number(bound)));
+      input.step = integral ? "1" : "0.01";
       input.value = String(
         typeof value === "number" ? value : (parameter.minimum + parameter.maximum) / 2,
       );
@@ -121,9 +134,10 @@
   };
 
   // A slider says nothing about the number it is on. The declaration carries the bounds and the
-  // default but no step, so the page chooses one — and the readout shows as many decimals as that
-  // step has places, which is what makes `0.5` read as `0.50` beside a step of `0.01`. No parameter
-  // name appears here either.
+  // default but no step, so the page chooses one: one for integer bounds, a hundredth otherwise. The
+  // readout shows as many decimals as that step has places, which is what makes `0.5` read as `0.50`
+  // beside a step of `0.01` and `512` read as an integer beside a step of one. No parameter name
+  // appears here either.
   const readoutFor = (input) => {
     const decimals = (input.step.split(".")[1] || "").length;
     const output = document.createElement("output");
@@ -291,6 +305,14 @@
     // Applied with the declaration, so the eye buttons describe the answer that is about to be asked
     // for. Nothing on screen is redrawn here: the picture there belongs to the previous answer.
     view = {...VIEW_BASE, ...(VIEW_BY_MODEL[id] || {})};
+    // A view only this answer can fill: the eyes are hidden where the layer would always be empty, so
+    // the row names what the model actually publishes. A backbone has no objects and no mask; its
+    // page shows the photograph, its field and the two annotations, and nothing that would be a
+    // no-op button.
+    const backbone = Boolean((VIEW_BY_MODEL[id] || {}).features);
+    document.querySelector('[data-view="features"]').hidden = !backbone;
+    document.querySelector('[data-view="masks"]').hidden = backbone;
+    document.querySelector('[data-view="boxes"]').hidden = backbone;
     // The switch follows the layer: a model whose boxes open hidden also opens locked, because a drag
     // that draws into a hidden layer is a gesture with no visible result.
     if (!view.boxes) boxesEditable = false;
@@ -347,7 +369,14 @@
       // reader here with the choice already made. An id this gateway does not serve is ignored
       // rather than shown: the directory is the list of what answers, and a URL is not.
       const wanted = new URLSearchParams(location.search).get("model");
-      const chosen = directory.models.find((entry) => entry.id === wanted) || directory.models[0];
+      // The directory is in id order, so a backbone sorts first and its answer is a grid to decode
+      // before it is a picture. The landing model stays the one a first-time reader can run with no
+      // parameters; the table marks it, and the fallback is the directory's own first entry.
+      const landing = Object.keys(VIEW_BY_MODEL).find((id) => VIEW_BY_MODEL[id].landing);
+      const chosen =
+        directory.models.find((entry) => entry.id === wanted) ||
+        directory.models.find((entry) => entry.id === landing) ||
+        directory.models[0];
       if (chosen) {
         model.value = chosen.id;
         await loadModel(chosen.id);
@@ -475,6 +504,9 @@
   // One alpha for every mask: a class differs from another by hue, never by opacity, because a
   // fainter tint would read as a less certain one.
   const TINT = 110;
+  // A feature field is not an answer over the picture but a reading of it, so it sits under the
+  // photograph rather than replacing it; with the photograph off it is the whole picture.
+  const FEATURE_TINT = 0.55;
 
   // A category the picture's dataset declares is painted in the dataset's own colour: `GET
   // /datasets/<id>` publishes the palette its mask images and its own page use, and a colour invented
@@ -952,7 +984,7 @@
   // no second decode. The mask layer was composited once, at display size, when the answer arrived.
   const render = () => {
     if (!last) return;
-    const {image, objects, colours, layer, url} = last;
+    const {image, objects, colours, layer, url, feature} = last;
     const scale = Math.min(1, MAX_SIDE / Math.max(image.naturalWidth, image.naturalHeight));
     canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
     canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
@@ -963,9 +995,16 @@
     // pane's light grey reads as nothing at all.
     if (view.image) {
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    } else if (view.masks) {
+    } else if (view.masks || view.features) {
       context.fillStyle = FIELD_BACKDROP;
       context.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    if (view.features && feature) {
+      context.globalAlpha = view.image ? FEATURE_TINT : 1;
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = "high";
+      context.drawImage(feature.layer, 0, 0, canvas.width, canvas.height);
+      context.globalAlpha = 1;
     }
     if (view.masks) context.drawImage(layer, 0, 0, canvas.width, canvas.height);
 
@@ -1066,6 +1105,124 @@
     return layer;
   };
 
+  // A backbone's patches as three principal components: the standard way to see what an encoder
+  // without a head has learned. The grid is rows×columns vectors of 1024 or 1280 numbers; projecting
+  // it onto its first three components and mapping those to red, green and blue shows structure —
+  // heads, stems, soil — that no single channel carries. The colours mean nothing between two
+  // pictures: each answer supplies its own basis, which is why the caption says so.
+  //
+  // The components are found by power iteration on the data matrix, never by forming a covariance:
+  // a 1024×1024 covariance is a billion multiply-adds, while one iteration here is two passes over
+  // the patches. Ten iterations and three components are enough for a picture, and the seeds are
+  // fixed, so the same answer draws the same colours twice.
+  const FEATURE_COMPONENTS = 3;
+  const FEATURE_ITERATIONS = 10;
+
+  /** Scale a vector to unit length; answer its norm before scaling, or zero if it had none. */
+  const unit = (vector) => {
+    let squares = 0;
+    for (let index = 0; index < vector.length; index += 1) squares += vector[index] * vector[index];
+    const norm = Math.sqrt(squares);
+    if (!(norm > 0)) return 0;
+    for (let index = 0; index < vector.length; index += 1) vector[index] /= norm;
+    return norm;
+  };
+
+  const featureLayer = (grid, rows, columns, dim) => {
+    const patches = rows * columns;
+    const mean = new Float32Array(dim);
+    for (let patch = 0; patch < patches; patch += 1) {
+      const base = patch * dim;
+      for (let d = 0; d < dim; d += 1) mean[d] += grid[base + d];
+    }
+    for (let d = 0; d < dim; d += 1) mean[d] /= patches;
+    const centred = new Float32Array(patches * dim);
+    for (let patch = 0; patch < patches; patch += 1) {
+      const base = patch * dim;
+      for (let d = 0; d < dim; d += 1) centred[base + d] = grid[base + d] - mean[d];
+    }
+
+    const components = [];
+    for (let k = 0; k < FEATURE_COMPONENTS; k += 1) {
+      let vector = new Float32Array(dim);
+      for (let d = 0; d < dim; d += 1) vector[d] = Math.sin((d + 1) * (k + 1) * 0.7);
+      unit(vector);
+      for (let iteration = 0; iteration < FEATURE_ITERATIONS; iteration += 1) {
+        // y = X v, then w = X^T y: the covariance operator applied without ever forming it.
+        const projection = new Float32Array(patches);
+        for (let patch = 0; patch < patches; patch += 1) {
+          const base = patch * dim;
+          let sum = 0;
+          for (let d = 0; d < dim; d += 1) sum += centred[base + d] * vector[d];
+          projection[patch] = sum;
+        }
+        const next = new Float32Array(dim);
+        for (let patch = 0; patch < patches; patch += 1) {
+          const base = patch * dim;
+          const weight = projection[patch];
+          for (let d = 0; d < dim; d += 1) next[d] += centred[base + d] * weight;
+        }
+        // Keep it out of the components already found; twice, because one pass loses a little when
+        // two eigenvalues are close.
+        for (let pass = 0; pass < 2; pass += 1) {
+          for (const component of components) {
+            let dot = 0;
+            for (let d = 0; d < dim; d += 1) dot += next[d] * component[d];
+            for (let d = 0; d < dim; d += 1) next[d] -= dot * component[d];
+          }
+        }
+        if (!unit(next)) break;
+        vector = next;
+      }
+      // An eigenvector's sign is arbitrary; the sum fixes it, so the colours do not flip between runs.
+      let total = 0;
+      for (let d = 0; d < dim; d += 1) total += vector[d];
+      if (total < 0) for (let d = 0; d < dim; d += 1) vector[d] = -vector[d];
+      components.push(vector);
+    }
+
+    const channels = [
+      new Float32Array(patches), new Float32Array(patches), new Float32Array(patches),
+    ];
+    for (let patch = 0; patch < patches; patch += 1) {
+      const base = patch * dim;
+      for (let d = 0; d < dim; d += 1) {
+        const value = centred[base + d];
+        channels[0][patch] += value * components[0][d];
+        channels[1][patch] += value * components[1][d];
+        channels[2][patch] += value * components[2][d];
+      }
+    }
+
+    // A percentile stretch rather than the range: one unusual patch must not flatten every other
+    // colour into the middle of the ramp.
+    const stretch = (values) => {
+      const sorted = Float32Array.from(values).sort();
+      const low = sorted[Math.floor((sorted.length - 1) * 0.02)];
+      const high = sorted[Math.floor((sorted.length - 1) * 0.98)];
+      const span = high - low || 1;
+      return (value) => Math.max(0, Math.min(1, (value - low) / span));
+    };
+    const red = stretch(channels[0]);
+    const green = stretch(channels[1]);
+    const blue = stretch(channels[2]);
+
+    const layer = document.createElement("canvas");
+    layer.width = columns;
+    layer.height = rows;
+    const context = layer.getContext("2d");
+    const pixels = context.createImageData(columns, rows);
+    for (let patch = 0; patch < patches; patch += 1) {
+      const at = patch * 4;
+      pixels.data[at] = Math.round(red(channels[0][patch]) * 255);
+      pixels.data[at + 1] = Math.round(green(channels[1][patch]) * 255);
+      pixels.data[at + 2] = Math.round(blue(channels[2][patch]) * 255);
+      pixels.data[at + 3] = 255;
+    }
+    context.putImageData(pixels, 0, 0);
+    return layer;
+  };
+
   /** Decode one answer into a mask layer once, then let `render` draw it in whatever view is on. */
   const paint = async (url, objects, palette = new Map(), answer = {}) => {
     const image = await loadImage(url);
@@ -1074,14 +1231,14 @@
     const height = Math.max(1, Math.round(image.naturalHeight * scale));
 
     const colours = objects.map((object, order) => colourOf(object, order, palette));
-    const decoder = typeof GlobalWheat?.rle_decode === "function";
+    const maskDecoder = typeof GlobalWheat?.rle_decode === "function";
     const layer = document.createElement("canvas");
     layer.width = width;
     layer.height = height;
     const painting = layer.getContext("2d");
     let decoded = 0, declared = 0, checked = 0;
     objects.forEach((object, order) => {
-      if (!object.rle || !decoder) return;
+      if (!object.rle || !maskDecoder) return;
       const drawn = overlayFor(object, colours[order].colour);
       painting.drawImage(drawn.overlay, 0, 0, width, height);
       decoded += drawn.painted;
@@ -1099,6 +1256,31 @@
       if (field) painting.drawImage(field, 0, 0);
     }
 
+    // A backbone's grid is decoded and projected once, here, so a view toggle redraws the colours the
+    // answer arrived with rather than decoding 2 MB again. A failure is kept as a sentence for the
+    // caption: the response body is complete either way, and the photograph is still the one thing on
+    // screen nobody has to decode.
+    let feature = null;
+    let featureError = null;
+    if (answer.features) {
+      if (typeof GlobalWheat?.decode_features === "function") {
+        try {
+          const [rows, columns] = answer.features.size;
+          const dim = answer.features.dim;
+          const grid = GlobalWheat.decode_features(answer.features);
+          feature = {
+            layer: featureLayer(grid, rows, columns, dim),
+            rows, columns, dim,
+            bytes: rows * columns * dim * 2,
+          };
+        } catch (error) {
+          featureError = error.message;
+        }
+      } else {
+        featureError = "the client does not decode features";
+      }
+    }
+
     // A counting answer's two fields travel with the picture exactly as `objects` does, so a view
     // toggle redraws them from the answer rather than from the response body.
     last = {
@@ -1109,11 +1291,13 @@
       url: url,
       count: answer.count,
       points: answer.points,
+      feature: feature,
+      featureError: featureError,
       warnings: Array.isArray(answer.warnings) ? answer.warnings : [],
     };
     render();
     return {
-      decoder: decoder,
+      decoder: maskDecoder,
       decoded: decoded,
       declared: declared,
       checked: checked,
@@ -1147,13 +1331,40 @@
     // Written before the picture, so the watermark is there when `paint` renders it.
     showMachine(answer);
     const painted = await paint(url, objects, palette, answer);
-    $("response-body").textContent = JSON.stringify(answer, null, 2);
+    // The body is printed for transparency, but a feature grid is 2.6 MB of base64 and a text node
+    // that size makes the page unusable. The length is the useful fact; the numbers are in the API's
+    // own answer and in `features.grid` beside it.
+    $("response-body").textContent = JSON.stringify(
+      answer,
+      (name, value) => {
+        if (name === "data" && typeof value === "string" && value.length > 4096) {
+          return "… " + value.length + " base64 characters";
+        }
+        if (name === "embedding" && Array.isArray(value) && value.length > 64) {
+          return ["… " + value.length + " floats"];
+        }
+        return value;
+      },
+      2,
+    );
     $("response").hidden = false;
 
     // The caption is one line beside four view buttons, so it says the one thing worth checking —
     // that the decoded mask covers exactly the area the answer declared — in as few words as it can.
     const tally = objects.length + (objects.length === 1 ? " object" : " objects");
-    if (!objects.length) {
+    if (last.featureError) {
+      say($("check"), "features: " + last.featureError, false);
+    } else if (last.feature) {
+      // What a feature answer can be checked against: the grid the response declared, its own byte
+      // size, and the fact that the colours are this picture's own projection rather than classes.
+      const warning = last.warnings[0];
+      const grid = last.feature;
+      const megabytes = (grid.bytes / 1e6).toFixed(1);
+      say($("check"), warning ? warning.message :
+        grid.rows + " × " + grid.columns + " × " + grid.dim + " · " + megabytes +
+        " MB · colours: PCA of this image", null);
+      $("check").classList.toggle("warn", Boolean(warning));
+    } else if (!objects.length) {
       // A counting answer has no geometry to check: the count beside this line is the answer, and
       // "0 objects" would read as a model that found nothing. What is left to say is a warning —
       // an exemplar past the model's finest window, for one — and it belongs here, not in a toast.

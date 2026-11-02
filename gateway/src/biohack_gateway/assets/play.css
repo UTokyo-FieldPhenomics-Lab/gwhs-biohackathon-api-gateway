@@ -257,7 +257,7 @@ body {
   align-items: center;
   gap: 0.9rem;
   white-space: nowrap;
-  /* Five eyes, a count and the raw-image link share this line, and the guide's pane is narrower than
+  /* The eyes, a count and the raw-image link share this line, and the guide's pane is narrower than
      a desktop page: wrapping keeps a toggle from being pushed out of reach. */
   flex-wrap: wrap;
 }
@@ -284,6 +284,11 @@ body {
   stroke-width: 1.5;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+#play .eye[hidden] {
+  /* `display: inline-flex` above would otherwise beat the user agent's `[hidden]` rule, and a
+     backbone's eye would show on a model that publishes no grid. */
+  display: none;
 }
 #play .eye[aria-pressed="true"] {
   color: var(--ink);
@@ -509,6 +514,11 @@ body {
   border: 1px solid var(--line);
   border-radius: 6px;
   overflow: hidden;
+}
+/* `display: inline-flex` above would otherwise beat the user agent's `[hidden] { display: none }`,
+   and a model that declares no `boxes` would show an edit switch with nothing to edit. */
+#play #boxes-mode[hidden] {
+  display: none;
 }
 #play #boxes-mode button {
   padding: 0.25rem 0.6rem;

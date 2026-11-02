@@ -438,21 +438,24 @@ def test_the_model_page_names_no_model_and_no_parameter(client: TestClient) -> N
 
 
 def test_the_model_page_has_one_view_toggle_per_layer(client: TestClient) -> None:
-    """The photograph, masks, boxes, legend and the machine watermark each have their own eye.
+    """Each layer the picture can show has its own eye.
 
-    The state is `aria-pressed` on the button, and the defaults are the table at the top of the
-    script — the one place the page names a model, and only to choose what is shown first. The
-    photograph comes first because it is what every other layer is drawn over.
+    The photograph, masks, a backbone's features, boxes, legend and the machine watermark. The state
+    is `aria-pressed` on the button, and the defaults are the table at the top of the script — the
+    one place the page names a model, and only to choose what is shown first. The photograph comes
+    first because it is what every other layer is drawn over; the features layer is off by default
+    because only a backbone answers one.
     """
     page = client.get(PLAY_PATH).text
 
-    for layer in ("image", "masks", "boxes", "legend", "watermark"):
+    for layer in ("image", "masks", "features", "boxes", "legend", "watermark"):
         assert f'data-view="{layer}"' in page
     assert (
         "const VIEW_BASE = "
-        "{image: true, masks: true, boxes: true, legend: false, watermark: true};" in page
+        "{image: true, masks: true, features: false, boxes: true, legend: false, watermark: true};"
+        in page
     )
-    assert '"gwfss-segformer-b4": {boxes: false, legend: true},' in page
+    assert '"gwfss-segformer-b4": {boxes: false, legend: true, landing: true},' in page
 
 
 def test_the_model_page_takes_a_class_colour_from_the_dataset(client: TestClient) -> None:
