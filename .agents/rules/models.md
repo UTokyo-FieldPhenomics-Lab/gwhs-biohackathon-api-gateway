@@ -40,3 +40,8 @@ contents were inspected in an uninitialised clone. Shared constraints are in [`p
   `density` is that map, cell by cell, and its sum is the count. A point set belongs to a
   point-counting model that emits its own points; nothing derives them from a field.
   [Counting contract](../plans/2026103015_✅density-field-instead-of-points.md).
+- **A backbone publishes its own tokens, never a head's output.** DINOv3 has no class list, box or
+  mask, so it answers `embedding` — the CLS vector — and `features` — the patch grid as base64 of
+  little-endian float16, row-major and channels-last — with `objects` empty so one client parses
+  every model. A head that turns those numbers into masks belongs to whoever fits it.
+  [Feature grids](../references/2026110215_dinov3-backbones.md).

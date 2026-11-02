@@ -106,6 +106,11 @@ Package: `gateway/`. Shared constraints are in [`project.md`](project.md).
   forwarded fields on the same body, and `objects` stays required — empty for a counting model — so
   one client parses both. The gateway relays them; it never derives a cell, a point or a count itself.
   [Counting contract](../plans/2026103015_✅density-field-instead-of-points.md).
+- **A prediction may carry a backbone's tokens instead of geometry.** `embedding` and `features` are
+  optional forwarded fields on the same body; the gateway relays the grid byte for byte and decodes
+  nothing, so a feature encoding is the container's decision and one place to change it. One folder
+  may build several checkpoints as separate model ids, each with its own declaration.
+  [Feature grids](../references/2026110215_dinov3-backbones.md).
 
 ## Framed pages
 
