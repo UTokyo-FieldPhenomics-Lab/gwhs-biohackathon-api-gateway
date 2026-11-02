@@ -70,6 +70,14 @@ body {
 #play #form > form {
   display: contents;
 }
+/* A row is `display: contents`, which outranks the user agent's `[hidden] { display: none }` — so a
+   row the page hides would otherwise keep showing its label with nothing beside it. The hidden state
+   has to be stated wherever the display is, which is the same trap the image row's own controls
+   document. */
+#play #form > .row[hidden],
+#play #form > form[hidden] {
+  display: none;
+}
 #play #form > .row > label,
 #play #form > form > label,
 #play #form > .row > .legend {
@@ -246,6 +254,12 @@ body {
 }
 #play #parameters > label > .control > textarea {
   width: 100%;
+  max-width: 34rem;
+}
+/* A text input that is not a sentence field is a value the reader types — a geometry list, mostly —
+   and it wants a line's width rather than twenty characters. */
+#play #parameters > label > .control > input[type="text"] {
+  flex: 1 1 20rem;
   max-width: 34rem;
 }
 #play #parameters output {

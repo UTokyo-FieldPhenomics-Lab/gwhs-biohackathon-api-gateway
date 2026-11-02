@@ -699,6 +699,10 @@ def test_the_model_page_lines_every_control_up_on_one_column(client: TestClient)
     assert "grid-template-columns: max-content minmax(0, 1fr);" in page
     assert "#play #form > .row," in page and "display: contents;" in page
     assert "grid-template-columns: subgrid;" in page
+    # `display: contents` outranks the user agent's `[hidden]`, so a hidden row keeps showing its
+    # label with nothing beside it unless the hidden state is stated where the display is. A model
+    # that declares no parameters and carries no example is the case that finds this.
+    assert "#play #form > .row[hidden]," in page
 
 
 def test_a_bounded_parameter_shows_the_number_it_is_set_to(client: TestClient) -> None:
