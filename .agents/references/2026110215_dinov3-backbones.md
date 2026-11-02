@@ -60,7 +60,7 @@ End to end through the API, cold (image fetch included) and warm (cache hit): 2.
 
 ## Deployment
 
-`models.json` on `gwhs-host` gained two entries pointing at `192.168.250.228`, ports 12714 and 12715;
+`models.json` on `gwhs-host` gained two entries pointing at `lab-3090`, ports 12714 and 12715;
 the gateway was restarted and both ids appear in `GET /models` with their `side` declaration read from
 the container. The gateway contract change (two optional `ModelPrediction` fields) is `6a0d5d8`, the
 docstring wrap `f15cd79`, both pulled onto the host.
