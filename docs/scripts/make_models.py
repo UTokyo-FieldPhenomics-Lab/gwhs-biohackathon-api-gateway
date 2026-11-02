@@ -80,7 +80,12 @@ def _accepts(parameter: dict[str, Any]) -> str:
     if kind == "number":
         low, high = parameter.get("minimum"), parameter.get("maximum")
         if low is not None and high is not None:
-            return f"`{_number(low)}` – `{_number(high)}`"
+            span = f"`{_number(low)}` – `{_number(high)}`"
+            # A ceiling the container clamps is a different offer from one the gateway refuses:
+            # saying only the range would hide the sentence the answer will carry.
+            if parameter.get("above_maximum") == "clamp":
+                span += f"; a larger value runs at `{_number(high)}`"
+            return span
         if low is not None:
             return f"at least `{_number(low)}`"
         if high is not None:

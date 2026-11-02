@@ -163,6 +163,24 @@ wrote it, with no `grid`; the Java client always shapes it, as it always decodes
 `values` yourself, it is **row-major** — unlike the COCO counts a mask is decoded from, which are
 column-major. [Counting results](http.md#counting-results) says what the number and the grid mean.
 
+A **backbone** brings a different pair of fields: `embedding`, the CLS vector as a list of floats,
+and `features`, the patch grid. The grid is handed over shaped too, as `features.grid`: a
+`(rows, columns, dim)` float32 array in Python, one flat `Float32Array` of `rows * columns * dim`
+values in JavaScript — a 32 × 32 × 1024 grid would otherwise be 1024 small arrays — and a
+`GlobalWheat.Features` in Java. `features.size`, `dim`, `dtype` and `data` stay beside it, in wire
+order, so the encoding is still checkable:
+
+```python
+answer = client.predict("dinov3-vitl16", "gwfss", 0, side=512)
+grid = answer["features"]["grid"]          # rows × columns × dim, float32
+patch = grid[12, 20]
+cosine = (grid @ patch) / (np.linalg.norm(grid, axis=-1) * np.linalg.norm(patch))
+```
+
+The vectors are not unit length, so the division is what makes it a cosine. The same `decode` switch
+applies; [Backbone results](http.md#backbone-results) has the wire shape and the model page has the
+recipes.
+
 ## When it goes wrong
 
 A refusal is one body, `{"error": {"code": …, "message": …}}`, and every client raises it as one

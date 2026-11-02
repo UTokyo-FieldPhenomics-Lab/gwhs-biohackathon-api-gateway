@@ -186,6 +186,35 @@ A counting model's prompt is **exemplar boxes**: `boxes`, one array of `[x, y, w
 [Geometry](#geometry-boxes-and-points) describes. Draw a few around examples of what you want counted;
 the model matches their appearance across the picture. Without them it has nothing to count.
 
+### Backbone results
+
+A backbone has no head, so it reports no objects, no count and no points. It answers its own tokens,
+and `objects` is present and empty for the same reason a counting answer's is:
+
+```json
+{"model": "dinov3-vitl16", "resolution_used": 512,
+ "objects": [],
+ "embedding": [-1.10202, 0.27331, "…"],
+ "features": {"size": [32, 32], "dim": 1024, "dtype": "float16", "data": "AAAA…"}}
+```
+
+`embedding` is the CLS token: one float per dimension, the whole-image descriptor. `features` is the
+patch grid; `size` is the frame the network ran at divided by the patch side — 16 — **not your
+image's size**, so a 4:6 picture at 512 gives `[32, 21]`. `dim` is 1024 on `dinov3-vitl16` and 1280
+on `dinov3-vith16plus`, and the two are different spaces; do not compare them. `data` is base64 of
+the grid, row-major and channels-last, little-endian float16, and the decoder is three calls:
+
+```python
+grid = np.frombuffer(base64.b64decode(features["data"]), dtype="<f2")
+grid = grid.reshape(*features["size"], features["dim"]).astype(np.float32)
+```
+
+The vectors are not normalized; use cosine, not a raw dot product. `side` is the longer side of the
+frame and preserves the aspect ratio, each dimension floored to a multiple of the patch; a value
+above the declared maximum is answered at it with `resolution_clamped`, because the answer's size is
+the constraint. [The model page](../models/dinov3-vitl16.md) explains what the tokens are and what
+can be built on them; the fields here are the whole contract.
+
 ## Limits
 
 | what | limit | over it |

@@ -169,6 +169,7 @@ def main() -> None:
         draw_bbox_diagram()
         draw_gwfss(images["gwfss"], images["gwfss_mask"], classes)
         draw_prediction(images["gwfss4"], images["gwfss4_mask"], classes)
+        draw_dinov3(images["gwfss4"])
         draw_instance(images["instance"], objects, rles)
     draw_known_good()
 
@@ -283,6 +284,45 @@ def draw_prediction(
             (panel(tint(measured), 420, 420), "the dataset's mask"),
         ),
         PAGES / "models" / "gwfss-row4-prediction.jpg",
+    )
+
+
+def principal_colours(grid: np.ndarray) -> np.ndarray:
+    """Project a patch grid onto its three leading directions, as an RGB picture.
+
+    Parameters
+    ----------
+    grid : numpy.ndarray
+        ``(rows, columns, dim)``, as the client decodes ``features``.
+
+    Returns
+    -------
+    numpy.ndarray
+        ``(rows, columns, 3)`` uint8. The directions are the grid's own, so the colours describe one
+        picture and mean nothing on another.
+    """
+    rows, columns, dim = grid.shape
+    flat = grid.reshape(-1, dim).astype(np.float32)
+    centred = flat - flat.mean(axis=0, keepdims=True)
+    _, _, directions = np.linalg.svd(centred, full_matrices=False)
+    projected = centred @ directions[:3].T
+    low = np.percentile(projected, 2, axis=0)
+    high = np.percentile(projected, 98, axis=0)
+    stretched = np.clip((projected - low) / np.maximum(high - low, 1e-6), 0, 1)
+    return (stretched.reshape(rows, columns, 3) * 255).astype(np.uint8)
+
+
+def draw_dinov3(image: Image.Image) -> None:
+    """A backbone's answer: the photograph, and the patch grid as three principal components."""
+    answer = global_wheat.Client().predict("dinov3-vitl16", "gwfss", 4, side=512)
+    grid = answer["features"]["grid"]
+    colours = Image.fromarray(principal_colours(grid), "RGB").resize((420, 420), Image.LANCZOS)
+    save(
+        figure(
+            (panel(image, 420, 420), "the input"),
+            (colours, "PCA of its " + " × ".join(str(value) for value in grid.shape[:2]) + " patch grid"),
+        ),
+        PAGES / "models" / "dinov3-row4-features.jpg",
     )
 
 
