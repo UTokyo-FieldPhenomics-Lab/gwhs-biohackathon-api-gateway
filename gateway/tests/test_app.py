@@ -680,10 +680,25 @@ def test_the_model_page_puts_the_image_before_the_model(client: TestClient) -> N
     assert (
         page.index('id="source"')
         < page.index('id="model"')
+        < page.index('id="examples"')
         < page.index('id="parameters"')
         < page.index('id="run"')
     )
-    assert ">Parameters<" in page
+
+
+def test_the_model_page_lines_every_control_up_on_one_column(client: TestClient) -> None:
+    """One label column and one control edge, from the key to Run.
+
+    A row is a grouping for the markup and the reader, not a box: `display: contents` is what lets a
+    row's label and its control group be the form grid's own children, so a model declaring three
+    parameters and one declaring none look like the same page. The parameter rows reuse the same
+    tracks through `subgrid`, which is why they are not a block of their own.
+    """
+    page = client.get(PLAY_PATH).text
+
+    assert "grid-template-columns: max-content minmax(0, 1fr);" in page
+    assert "#play #form > .row," in page and "display: contents;" in page
+    assert "grid-template-columns: subgrid;" in page
 
 
 def test_a_bounded_parameter_shows_the_number_it_is_set_to(client: TestClient) -> None:

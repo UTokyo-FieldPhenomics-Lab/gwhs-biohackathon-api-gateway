@@ -121,13 +121,58 @@
   // declaration, so a model it has never heard of needs no change here — and an unmapped
   // parameter degrades to a text field rather than to nothing, because the backend is the
   // validator.
+  // A declared set of a few exclusive values, as buttons. The control carries a `value` like any
+  // other input, so nothing downstream — the request, the curl, an example chip — has to know it is
+  // not one. Which sets qualify is decided by the declaration (an `enum` of four or fewer), never by
+  // a name, so a model this page has never heard of gets the same treatment.
+  const segmented = (parameter, choices) => {
+    const box = document.createElement("span");
+    box.className = "seg";
+    box.setAttribute("role", "radiogroup");
+    box.setAttribute("aria-label", parameter.name);
+    let current = parameter.default === null || parameter.default === undefined
+      ? null
+      : String(parameter.default);
+    const buttons = [];
+    const paint = () => {
+      for (const button of buttons) {
+        button.setAttribute("aria-checked", String(button.dataset.value === current));
+      }
+    };
+    for (const choice of choices) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("role", "radio");
+      button.dataset.value = String(choice);
+      button.textContent = String(choice);
+      button.addEventListener("click", () => {
+        box.value = String(choice);
+        delete box.dataset.untouched;
+        box.dispatchEvent(new Event("input", {bubbles: true}));
+      });
+      buttons.push(button);
+      box.append(button);
+    }
+    Object.defineProperty(box, "value", {
+      get: () => (current === null ? "" : current),
+      set: (next) => {
+        current = String(next);
+        paint();
+      },
+    });
+    paint();
+    return box;
+  };
+
   const controlFor = (parameter) => {
     const value = parameter.default;
     const bounded = typeof parameter.minimum === "number" && typeof parameter.maximum === "number";
     const numeric = bounded || typeof value === "number";
     const choices = parameter.values || parameter.enum;
     let input;
-    if (Array.isArray(choices) && choices.length) {
+    if (Array.isArray(choices) && choices.length && parameter.type === "enum" && choices.length <= 4) {
+      input = segmented(parameter, choices);
+    } else if (Array.isArray(choices) && choices.length) {
       // A declared set — the sizes a model was measured at, or the words it accepts — is a choice,
       // not a number to type. This is why `values` exists in the declaration: a stride formula would
       // invite a value nobody has run, and the page would have no way to show that.
@@ -238,19 +283,22 @@
     // `boxes` parameter has nothing to draw, while the list itself stays for the next one that has.
     boxInput = null;
     const declared = declaration.parameters || [];
-    // A model that declares nothing has no controls to label, and the row is then only the button.
-    $("parameters-legend").hidden = !declared.length;
     fields = [];
     for (const parameter of declared) {
       const label = document.createElement("label");
       const name = document.createElement("span");
       name.textContent = parameter.name;
-      const input = controlFor(parameter);
       // The description goes on the name, not the label: the label is `display: contents`, so it has
       // no box of its own and a tooltip hung on it would never appear.
       if (parameter.description) name.title = parameter.description;
-      label.append(name, input);
-      if (input.type === "range") label.append(readoutFor(input));
+      const input = controlFor(parameter);
+      // One cell per row: the control and, for a slider, the number it is on. A grid places cells,
+      // not controls, and a readout left loose would take a row of its own.
+      const cell = document.createElement("span");
+      cell.className = "control";
+      cell.append(input);
+      if (input.type === "range") cell.append(readoutFor(input));
+      label.append(name, cell);
       parameters.append(label);
       fields.push({name: parameter.name, type: parameter.type, input, read: () => readValue(input)});
       // A `boxes` parameter is a list the picture can be drawn on: the input and the overlay are

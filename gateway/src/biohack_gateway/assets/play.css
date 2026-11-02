@@ -55,26 +55,55 @@ body {
   font-weight: 700;
 }
 
-/* The four rows. Each is one line of controls that wraps rather than scrolling sideways, which is
-   what makes the same markup work in a narrow frame and on a phone. */
-#play .row {
+/* The form is one grid, two columns: every label in the first and every control group in the second,
+   so a reader's eye travels down a single edge from the key to Run. `display: contents` on a row is
+   what lets its label and its controls be the grid's own children — a row is a grouping for the
+   markup and the reader, not a box, and a box per row is what put the controls on five edges. */
+#play #form {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: 0.55rem 0.9rem;
+  margin: 0 0 0.6rem;
+}
+#play #form > .row,
+#play #form > form {
+  display: contents;
+}
+#play #form > .row > label,
+#play #form > form > label,
+#play #form > .row > .legend {
+  grid-column: 1;
+}
+#play #form .controls {
+  grid-column: 2;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem 0.75rem;
-  margin: 0 0 0.6rem;
+  gap: 0.5rem 0.6rem;
+  min-width: 0;
+}
+/* A control is as wide as what it holds, not as wide as the page: `image` is five characters and a
+   select two feet long reads as one nobody has looked at. The two that grow are the two a reader
+   types into — a key and a sentence field — and both stop growing at a width a sentence fits in. */
+#play #key {
+  flex: 1 1 16rem;
+}
+#play #run-row {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+#play #boxes-mode {
+  grid-column: 2;
+  justify-self: start;
 }
 #play label,
 #play .legend {
   font-weight: 600;
   margin: 0;
-}
-/* One label column for every row. The labels are what tells a reader where the controls begin, so
-   they end at the same x wherever the row is — a form whose controls start at five different
-   columns reads as five unrelated forms. */
-#play .row > label,
-#play .row > .legend {
-  min-width: 7rem;
 }
 #play input,
 #play select {
@@ -108,7 +137,8 @@ body {
   border-color: var(--bad);
 }
 #play select {
-  flex: 0 1 20rem;
+  flex: 0 1 auto;
+  max-width: 20rem;
 }
 /* The controls under the image dropdown, which come and go with it. `display` has to be stated for
    the hidden state too: a rule that makes this a flex row would otherwise override `[hidden]`, and
@@ -134,7 +164,8 @@ body {
   display: none;
 }
 #play #row-choice #dataset {
-  flex: 0 1 18rem;
+  flex: 0 1 auto;
+  max-width: 18rem;
 }
 #play #row-choice input[type="number"] {
   flex: 0 0 5rem;
@@ -184,17 +215,16 @@ body {
   color: var(--bad);
 }
 
-/* The model's own parameters, generated from what it declares. Two columns, one per parameter: the
-   name in the first and the control in the second, so a text area and two selects line up on the
-   same edge however many of them a model declares. `display: contents` on the label is what lets a
-   wrapped control sit in the grid rather than beside its name — the label still names it. */
+/* The model's own parameters, generated from what it declares, are rows of the same form rather than
+   a block of their own: `subgrid` puts each name in the form's label column and each control on the
+   form's control edge, so a model declaring three parameters and one declaring none look like the
+   same page. `display: contents` on the label is what lets a wrapped control sit in the column. */
 #play #parameters {
+  grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  grid-template-columns: subgrid;
   align-items: center;
-  gap: 0.4rem 0.75rem;
-  flex: 1;
-  min-width: 0;
+  gap: inherit;
 }
 #play #parameters label {
   display: contents;
@@ -204,24 +234,55 @@ body {
   grid-column: 1;
   color: var(--muted);
   font-size: 0.9em;
-  text-align: right;
 }
-#play #parameters > label > input,
-#play #parameters > label > select {
+/* The control and whatever reads it out are one cell: a range's number belongs beside the slider,
+   not on a row of its own, and the grid places cells rather than controls. */
+#play #parameters > label > .control {
   grid-column: 2;
-  justify-self: start;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
 }
-#play #parameters > label > textarea {
-  grid-column: 2;
+#play #parameters > label > .control > textarea {
   width: 100%;
+  max-width: 34rem;
 }
 #play #parameters output {
-  grid-column: 3;
   min-width: 2.5rem;
   color: var(--muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.85em;
-  justify-self: start;
+}
+
+/* A set of two to four exclusive values is a segmented control rather than a dropdown: every choice
+   is on screen, so a reader sees the shape of the decision instead of the one value it happens to
+   hold. This is the page's rule for a declared `enum`, not for any one model's parameter. */
+#play .seg {
+  display: inline-flex;
+  gap: 0.15rem;
+  padding: 0.15rem;
+  background: var(--band);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+#play .seg button {
+  font: inherit;
+  font-size: 0.9em;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  border-radius: 5px;
+  padding: 0.2rem 0.7rem;
+  cursor: pointer;
+}
+#play .seg button:hover {
+  color: var(--ink);
+}
+#play .seg button[aria-checked="true"] {
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line);
 }
 
 /* A text parameter is a sentence rather than a token: it is the one control a reader types into, and

@@ -12,51 +12,60 @@ __PLAY_CSS__
 <main id="play">
   <h1>Run one model</h1>
 
-  <form id="connect" class="row" autocomplete="off">
-    <label for="key">Your key</label>
-    <input id="key" name="key" type="password" autocomplete="off" spellcheck="false"
-           placeholder="X-API-Key" aria-describedby="connect-state">
-    <span class="key-buttons">
-      <button type="submit">Use key</button>
-      <button id="forget" type="button">Forget</button>
-    </span>
-    <span id="connect-state" class="state" role="status"></span>
-  </form>
+  <div id="form">
+    <form id="connect" class="row" autocomplete="off">
+      <label for="key">Your key</label>
+      <span class="controls">
+        <input id="key" name="key" type="password" autocomplete="off" spellcheck="false"
+               placeholder="X-API-Key" aria-describedby="connect-state">
+        <span class="key-buttons">
+          <button type="submit">Use key</button>
+          <button id="forget" type="button">Forget</button>
+        </span>
+        <span id="connect-state" class="state" role="status"></span>
+      </span>
+    </form>
 
-  <div class="row">
-    <label for="source">Image</label>
-    <select id="source">
-      <option value="row">a published row</option>
-      <option value="upload">your own photograph</option>
-    </select>
-    <span id="row-choice">
-      <select id="dataset" disabled aria-label="dataset"></select>
-      <input id="row" type="number" min="0" step="1" value="0" disabled aria-label="row number">
-    </span>
-    <input id="file" type="file" accept="image/*" hidden aria-label="your photograph">
-    <label id="resize-choice" hidden><input id="resize" type="checkbox" checked> resize before sending</label>
-  </div>
+    <div class="row">
+      <label for="source">Image</label>
+      <span class="controls">
+        <select id="source">
+          <option value="row">a published row</option>
+          <option value="upload">your own photograph</option>
+        </select>
+        <span id="row-choice">
+          <select id="dataset" disabled aria-label="dataset"></select>
+          <input id="row" type="number" min="0" step="1" value="0" disabled aria-label="row number">
+        </span>
+        <input id="file" type="file" accept="image/*" hidden aria-label="your photograph">
+        <label id="resize-choice" hidden><input id="resize" type="checkbox" checked> resize before sending</label>
+      </span>
+    </div>
 
-  <div class="row">
-    <label for="model">Model</label>
-    <select id="model" disabled></select>
-    <span id="model-state" class="state" role="status"></span>
-  </div>
+    <div class="row">
+      <label for="model">Model</label>
+      <span class="controls">
+        <select id="model" disabled></select>
+        <span id="model-state" class="state" role="status"></span>
+      </span>
+    </div>
 
-  <div class="row" id="examples-row" hidden>
-    <span class="legend">Examples</span>
-    <span id="examples"></span>
-  </div>
+    <div class="row" id="examples-row" hidden>
+      <span class="legend">Examples</span>
+      <span class="controls" id="examples"></span>
+    </div>
 
-  <div class="row" id="parameters-row">
-    <span class="legend" id="parameters-legend" hidden>Parameters</span>
     <span id="parameters"></span>
+
     <span id="boxes-mode" class="switch" role="group" aria-label="boxes on the picture" hidden>
       <button type="button" data-mode="edit" aria-pressed="true">edit</button>
       <button type="button" data-mode="locked" aria-pressed="false">locked</button>
     </span>
-    <button id="run" type="button" class="primary" disabled>Run</button>
-    <span id="run-state" class="state" role="status"></span>
+
+    <span id="run-row">
+      <button id="run" type="button" class="primary" disabled>Run</button>
+      <span id="run-state" class="state" role="status"></span>
+    </span>
   </div>
 
   <figure hidden>
