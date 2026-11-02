@@ -691,6 +691,21 @@ def test_the_model_page_says_what_came_back_once(client: TestClient) -> None:
     assert 'say(state, "")' in page  # nothing is left beside the button once the run has answered
 
 
+def test_an_empty_answer_names_the_levers_the_model_declares(client: TestClient) -> None:
+    """Zero objects with no warning is the one moment the page owes the reader a next step.
+
+    An empty answer reads as a threshold set too high, so a reader lowers it, gets nothing again,
+    and concludes the model cannot see the picture — measured on `sam3.1-meta`, where the phrase was
+    the problem and the threshold was not. The hint is built from the declaration, so a model that
+    declares neither a prompt nor boxes is told nothing rather than something false, and a counting
+    answer keeps its blank because its count is the answer.
+    """
+    page = client.get(PLAY_PATH).text
+
+    assert "try another phrase, or draw an example " in page
+    assert 'typeof last.count === "number" ? "" : emptyHint()' in page
+
+
 def test_the_reference_and_the_model_page_share_one_reporter(client: TestClient) -> None:
     """A second copy of a messaging contract is a second thing to keep true."""
     reference = client.get("/docs").text

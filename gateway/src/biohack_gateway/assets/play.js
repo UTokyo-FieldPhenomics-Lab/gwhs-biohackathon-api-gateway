@@ -4,7 +4,7 @@
   // nowhere else; the browser remembers it in the one store both this page and the reference share,
   // and nothing else on this page writes it anywhere.
   let key = "";
-  let fields = [];   // one entry per declared parameter: {name, read}
+  let fields = [];   // one entry per declared parameter: {name, type, read}
 
   const $ = (id) => document.getElementById(id);
   const model = $("model"), dataset = $("dataset"), parameters = $("parameters");
@@ -164,7 +164,7 @@
       label.append(name, input);
       if (input.type === "range") label.append(readoutFor(input));
       parameters.append(label);
-      fields.push({name: parameter.name, read: () => readValue(input)});
+      fields.push({name: parameter.name, type: parameter.type, read: () => readValue(input)});
       // A `boxes` parameter is a list the picture can be drawn on: the input and the overlay are
       // two views of one list, so both directions are wired here and nowhere else.
       if (parameter.type === "boxes") {
@@ -1123,6 +1123,25 @@
     };
   };
 
+  // What to try when an answer is empty, in the controls this model actually declares. Zero objects
+  // with no warning is the one moment the page owes the reader a next step: an empty answer otherwise
+  // reads as a threshold set too high, which is the wrong lever to spend a request on. A model that
+  // declares no free text and no geometry has nothing to name, and says nothing rather than something
+  // false.
+  const emptyHint = () => {
+    // Declared types, not names: a page built from `GET /models` cannot mention today's parameters.
+    // Free text is what "another phrase" means; a boxes or points parameter is what "another
+    // example" means, named as the control that parameter gives the reader.
+    const types = new Set(fields.map((field) => field.type));
+    const example = types.has("boxes") ? "box" : types.has("points") ? "point" : null;
+    if (types.has("text")) {
+      return example
+        ? "0 objects · try another phrase, or draw an example " + example
+        : "0 objects · try another phrase";
+    }
+    return example ? "0 objects · try another example " + example : "";
+  };
+
   const draw = async (url, answer, palette) => {
     const objects = answer.objects || [];
     // Written before the picture, so the watermark is there when `paint` renders it.
@@ -1138,8 +1157,10 @@
       // A counting answer has no geometry to check: the count beside this line is the answer, and
       // "0 objects" would read as a model that found nothing. What is left to say is a warning —
       // an exemplar past the model's finest window, for one — and it belongs here, not in a toast.
+      // A warning outranks the hint, because it already says why the answer is empty.
       const warning = last.warnings[0];
-      say($("check"), warning ? warning.message : "", null);
+      const hint = typeof last.count === "number" ? "" : emptyHint();
+      say($("check"), warning ? warning.message : hint, null);
       $("check").classList.toggle("warn", Boolean(warning));
     } else if (!painted.decoder) {
       // Said rather than left blank: an empty canvas would read as a model that found nothing.
