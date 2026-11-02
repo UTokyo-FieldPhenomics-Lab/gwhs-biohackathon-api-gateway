@@ -40,7 +40,8 @@ the reason the Windows machine uses Desktop.
 Conventions that hold everywhere and are not re-decided per machine:
 
 - **A model's port is the model's, and the same number on every machine.** `12711` is
-  `sam3.1-meta`, `12712` is `gwfss-segformer-b4`, wherever they run. Inside a container the port is
+  `sam3.1-meta`, `12712` is `gwfss-segformer-b4`, `12713` is `tasselnetv4`, `12714` is
+  `dinov3-vitl16`, `12715` is `dinov3-vith16plus`, wherever they run. Inside a container the port is
   always `12711` — each container has its own network namespace, so two models on one host do not
   collide there — and the host side carries the model's number. It sits outside both ephemeral
   ranges (`32768–60999` on Linux, `49152–65535` on Windows), and it is deliberately **not 8000**,
@@ -230,7 +231,7 @@ VM*, where the router cannot reach them.
 
    ```powershell
    New-NetFirewallRule -Name biohack-backends -DisplayName "biohack backends" -Direction Inbound `
-     -Protocol TCP -Action Allow -LocalPort 12711,12712 `
+     -Protocol TCP -Action Allow -LocalPort 12711,12712,12713,12714,12715 `
      -RemoteAddress <the backend's LAN>/24,100.64.0.0/10
    ```
 
@@ -311,7 +312,8 @@ not in the image**, which is why `docker run` is written out in full:
   equal the gateway host's `BIOHACK_BACKEND_TOKEN`. A different value is not a stale backend, it is a
   dead model: it answers `401` and the gateway abandons the whole model rather than trying the next
   machine (§4).
-- `-e SAM31_MACHINE=…` is **what every answer calls this machine.** It is copied into `computed_by` in
+- `-e SAM31_MACHINE=…` (or `GWFSS_MACHINE`, `TNV4_MACHINE`, `DINOV3_MACHINE`) is **what every
+  answer calls this machine.** It is copied into `computed_by` in
   `/health` and in every prediction, so a participant comparing two answers can see they came from
   different cards — and an operator reading one can tell which host said it. Left unset, a container
   reports its own host name, which in Docker is a random id. A name is not an address and not a
