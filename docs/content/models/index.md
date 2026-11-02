@@ -17,6 +17,10 @@ your machine, and there is no environment to set up.
 | [`dinov3-vitl16`](dinov3.md) | DINOv3 ViT-L/16 — a **backbone** for dense features and a CLS descriptor, [the LVD-1689M checkpoint](https://huggingface.co/facebook/dinov3-vitl16-pretrain-lvd1689m); no head, no classes | 224–768 px on the longer side, default 512 | 0.039 s per inference on a 3090 at 512; 2.8 MB answer at the default, 6.3 MB at the ceiling; numbers on the model page |
 | [`dinov3-vith16plus`](dinov3.md) | DINOv3 ViT-H+/16 — the same backbone at 1280 dimensions, [the LVD-1689M checkpoint](https://huggingface.co/facebook/dinov3-vith16plus-pretrain-lvd1689m); no head, no classes | 224–640 px on the longer side, default 384 | 0.026 s on a 4:6 frame at 384 on a 3090; 2.0 MB answer at the default, 5.5 MB at the ceiling; numbers on the model page |
 
+**Built with DINOv3.** The two DINOv3 backbones are served under the [DINOv3
+License](https://ai.meta.com/resources/models-and-libraries/dinov3-license/), which requires this
+notice when the models are made available to a third party.
+
 An id names **whose weights these are**, not where they run: a collaborator's fine-tune of the same
 model appears as an id of its own, named after the data it was trained on. Every id this API serves is
 something it answers — a model with no machine behind it answers `0` and a call is refused rather than

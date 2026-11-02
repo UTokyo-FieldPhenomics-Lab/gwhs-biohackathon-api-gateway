@@ -45,3 +45,8 @@ contents were inspected in an uninitialised clone. Shared constraints are in [`p
   little-endian float16, row-major and channels-last — with `objects` empty so one client parses
   every model. A head that turns those numbers into masks belongs to whoever fits it.
   [Feature grids](../references/2026110215_dinov3-backbones.md).
+- **A served model carries its license notice.** DINOv3's license requires a copy of the agreement
+  and a prominent “Built with DINOv3” notice when the materials are made available to a third party;
+  the models index and the backbone page display the notice and link the canonical terms. A model
+  with an attribution clause is not served until its page states the clause and links the terms.
+  [DINOv3 License](https://ai.meta.com/resources/models-and-libraries/dinov3-license/).

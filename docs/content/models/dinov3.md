@@ -2,6 +2,10 @@
 
 <!-- models: dinov3-vitl16 dinov3-vith16plus -->
 
+**Built with DINOv3.** These models are served under the [DINOv3
+License](https://ai.meta.com/resources/models-and-libraries/dinov3-license/), which requires this
+notice when the models are made available to a third party.
+
 DINOv3 ViT-L/16 and ViT-H+/16 — the same encoder at two sizes, from [Meta's DINOv3
 release](https://github.com/facebookresearch/dinov3). Both checkpoints are the **LVD-1689M** ones,
 pretrained on web images. The `sat493m` satellite variant is a different checkpoint, trained on

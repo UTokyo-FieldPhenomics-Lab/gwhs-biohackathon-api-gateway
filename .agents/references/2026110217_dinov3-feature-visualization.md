@@ -90,6 +90,17 @@ photograph; nothing else breaks.
   reports a soft upload at a non-default side, or the clients are touched again for another reason.
 - **The 7B checkpoint.** Still out: 25 GiB, one card to itself, 4096 dimensions.
 
+## License notice
+
+The live DINOv3 License page (checked 2026-11-02) requires, when the materials are made available to
+a third party, **(A)** a copy of the agreement and **(B)** a prominent “Built with DINOv3” notice on
+a related website, user interface, blogpost, about page, or product documentation. The `LICENSE.md`
+in the GitHub repository, dated 2025-08-19, still carries only (A); the live page is the authority,
+so the models index and the backbone page now display the notice and link the terms. The service
+distributes inference, not weights, but the clause names product documentation as a place for the
+notice, and that is where it is. A new model with a similar clause follows the same rule before it
+is served.
+
 ## Open
 
 - **`5947970` still carries a private address in public history.** The alias fix is `2c3e247`; the
