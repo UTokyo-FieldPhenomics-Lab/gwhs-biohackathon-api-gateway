@@ -111,6 +111,12 @@ Package: `gateway/`. Shared constraints are in [`project.md`](project.md).
   nothing, so a feature encoding is the container's decision and one place to change it. One folder
   may build several checkpoints as separate model ids, each with its own declaration.
   [Feature grids](../references/2026110215_dinov3-backbones.md).
+- **A prediction may carry prose and a picture instead of geometry.** `answer` and `image`
+  (`media_type`, `width`, `height`, base64 `data`) are optional forwarded fields on the same body,
+  with `objects` empty. The container owns the picture's format and its size; the gateway re-encodes
+  nothing, and a picture's bytes are bounded in the container because an oversized answer is a
+  machine failure here, not a request failure.
+  [Prose and pictures](../references/2026110219_internvl-u-prose-and-picture-answers.md).
 
 ## Framed pages
 

@@ -50,3 +50,8 @@ contents were inspected in an uninitialised clone. Shared constraints are in [`p
   the models index and the backbone page display the notice and link the canonical terms. A model
   with an attribution clause is not served until its page states the clause and links the terms.
   [DINOv3 License](https://ai.meta.com/resources/models-and-libraries/dinov3-license/).
+- **A model that answers in prose or pixels still answers with `objects: []`.** It publishes `answer`
+  and `image` beside the empty list, so one client parses every model. The picture is bounded to what
+  the card was measured to carry — an edit of a 3456×5184 frame will otherwise ask the decoder for
+  17.9 megapixels and die — and the bound is imposed before the model runs, with the answer saying so.
+  [Measurement](../references/2026110219_internvl-u-prose-and-picture-answers.md).
