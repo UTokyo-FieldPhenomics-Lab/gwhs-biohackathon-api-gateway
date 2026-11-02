@@ -429,11 +429,12 @@ class Client:
         dict
             The answer as the API wrote it: ``model``, ``objects``, ``resolution_used`` and
             ``computed_by`` always, plus what this model answered with — ``count`` and ``density``
-            for a counting model, ``embedding`` and ``features`` for a backbone, ``warnings``
-            where it reported one. ``mask`` is on every object, ``density["grid"]`` is the field
-            shaped to its ``size`` and ``features["grid"]`` is the patch grid shaped to its
-            ``size``, all when ``decode`` is true; a counting or backbone answer has no objects,
-            so only the field is added.
+            for a counting model, ``embedding`` and ``features`` for a backbone, ``answer`` and
+            ``image`` for a model that answers in prose or pixels, ``warnings`` where it reported
+            one. ``mask`` is on every object, ``density["grid"]`` is the field shaped to its
+            ``size``, ``features["grid"]`` is the patch grid shaped to its ``size`` and
+            ``image["picture"]`` is the picture opened, all when ``decode`` is true; a counting,
+            backbone or picture answer has no objects, so only the field is added.
 
         Raises
         ------
@@ -451,6 +452,7 @@ class Client:
             _decode_objects(body)
             _decode_density(body)
             _decode_features(body)
+            _decode_image(body)
         return body
 
     def predict_file(
@@ -518,6 +520,7 @@ class Client:
             _decode_objects(body)
             _decode_density(body)
             _decode_features(body)
+            _decode_image(body)
         return body
 
     def _declaration(self, model: str) -> dict[str, Any] | None:
@@ -878,6 +881,64 @@ def decode_features(field: Mapping[str, Any]) -> np.ndarray:
         )
     grid = np.frombuffer(payload, dtype="<f2").astype(np.float32)
     return cast("np.ndarray", grid.reshape(rows, columns, dim))
+
+
+def decode_image(field: Mapping[str, Any]) -> Image.Image:
+    """Decode a model's ``image`` object into a Pillow image.
+
+    Parameters
+    ----------
+    field : mapping
+        The ``image`` object as the API publishes it: ``media_type``, ``width``, ``height`` and
+        ``data``.
+
+    Returns
+    -------
+    PIL.Image.Image
+        The picture the model produced, opened from the encoded file the answer carried.
+
+    Raises
+    ------
+    ValueError
+        The object carries no content type, a type that is not an image, or a payload Pillow cannot
+        read. Each is a body the contract does not describe, and guessing would publish a picture
+        whose format nobody declared.
+
+    Notes
+    -----
+    The wire is base64 of the encoded file and nothing is re-encoded here: a decode and a re-encode
+    would change the answer's bytes, and the bytes are the model's output. ``media_type`` is checked
+    rather than sniffed, because the container is where a picture's format is decided.
+    """
+    media_type = field.get("media_type")
+    if not isinstance(media_type, str) or not media_type.startswith("image/"):
+        raise ValueError(f"image.media_type must be an image type, not {media_type!r}")
+    payload = base64.b64decode(cast(str, field["data"]), validate=True)
+    try:
+        picture = Image.open(io.BytesIO(payload))
+        picture.load()
+    except (UnidentifiedImageError, OSError) as error:
+        raise ValueError(f"image carries {len(payload)} bytes that are not a picture: {error}") from None
+    return picture
+
+
+def _decode_image(body: dict[str, Any]) -> None:
+    """Attach a model's decoded ``image.picture``, in place.
+
+    Parameters
+    ----------
+    body : dict
+        A prediction. A model that answers in geometry, a count or prose carries no ``image`` and is
+        left alone.
+
+    Raises
+    ------
+    ValueError
+        When the object's header and payload disagree, which a correct backend cannot send.
+    """
+    image = body.get("image")
+    if isinstance(image, dict):
+        image["picture"] = decode_image(image)
 
 
 def _decode_objects(body: dict[str, Any]) -> None:

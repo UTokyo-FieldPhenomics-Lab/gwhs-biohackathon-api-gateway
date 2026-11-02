@@ -109,6 +109,28 @@ public final class Checks {
             }
             check("a short feature payload is refused", refusedShort);
 
+            Map<String, Object> pictured = client.predict("internvl-u", "gwfss", 5, null);
+            Map<String, Object> image = (Map<String, Object>) pictured.get("image");
+            byte[] picture = (byte[]) image.get("picture");
+            check(
+                    "a picture crosses as its bytes",
+                    picture != null
+                            && picture.length == 70
+                            && (picture[0] & 0xff) == 0x89
+                            && (picture[1] & 0xff) == 0x50);
+            check("the picture's type is kept", "image/png".equals(image.get("media_type")));
+            check("the answer's prose is kept", "warmer light".equals(pictured.get("answer")));
+
+            Map<String, Object> wrongType = new LinkedHashMap<>(image);
+            wrongType.put("media_type", "text/plain");
+            boolean refusedPicture = false;
+            try {
+                GlobalWheat.decode_image(wrongType);
+            } catch (IllegalArgumentException expected) {
+                refusedPicture = true;
+            }
+            check("a picture that is not one is refused", refusedPicture);
+
             client.predict(
                     "sam3.1-meta",
                     "gwhs-temp",
@@ -399,6 +421,13 @@ public final class Checks {
                                     + "\"features\":{\"size\":[2,2],\"dim\":3,\"dtype\":\"float16\","
                                     + "\"data\":\"AAAAPABAAEIARABFAEYARwBIgEgASYBJ\"},"
                                     + "\"resolution_used\":32}";
+            case "/models/internvl-u/predict" ->
+                    answer =
+                            "{\"model\":\"internvl-u\",\"objects\":[],\"answer\":\"warmer light\","
+                                    + "\"image\":{\"media_type\":\"image/png\",\"width\":2,\"height\":1,"
+                                    + "\"data\":\"iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAADUlEQVR4"
+                                    + "nGM4UWEDRAALgwL5Z6uxbgAAAABJRU5ErkJggg==\"},"
+                                    + "\"resolution_used\":1024}";
             default -> {
                 status = 401;
                 answer = "{\"error\":{\"code\":\"invalid_key\",\"message\":\"that key is not in the pool\"}}";

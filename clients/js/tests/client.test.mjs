@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {test} from "node:test";
 
-import {ApiError, Client, decode_features, label_masks, rle_decode} from "../global-wheat.js";
+import {ApiError, Client, decode_features, decode_image, label_masks, rle_decode} from "../global-wheat.js";
 
 const EXAMPLE = new URL("../../../clients/fixtures/example-prediction.json", import.meta.url);
 // A recorded call: eighteen objects of a 512x512 prediction, each with its area and its RLE.
@@ -130,6 +130,38 @@ test("decode false leaves a backbone answer as it arrived", async () => {
 test("a feature grid whose payload is short is refused", () => {
   assert.throws(() => decode_features({...FEATURES, data: FEATURES.data.slice(0, -4)}), /bytes/);
   assert.throws(() => decode_features({...FEATURES, dtype: "float32"}), /dtype/);
+});
+
+const PICTURE = {
+  media_type: "image/png",
+  width: 2,
+  height: 1,
+  data:
+    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAADUlEQVR4nGM4UWEDRAALgwL5Z6uxbgAAAABJRU5ErkJggg==",
+};
+
+test("a generated picture arrives as the bytes of its file", () => {
+  const bytes = decode_image(PICTURE);
+  assert.ok(bytes instanceof Uint8Array);
+  assert.equal(bytes[0], 0x89);
+  assert.equal(bytes[1], 0x50);
+});
+
+test("a picture answer arrives with its bytes, and decode false does not add them", async () => {
+  const body = {model: "internvl-u", objects: [], answer: "warmer light", image: {...PICTURE}};
+  const {client: api} = client([{status: 200, body}]);
+  const answer = await api.predict("internvl-u", "gwfss", 0, {prompt: "warm the light"});
+  assert.equal(answer.image.picture.length, 70);
+  assert.equal(answer.image.media_type, "image/png");
+  assert.equal(answer.answer, "warmer light");
+
+  const {client: off} = client([{status: 200, body: {model: "internvl-u", objects: [], image: {...PICTURE}}}]);
+  const undecoded = await off.predict("internvl-u", "gwfss", 0, {prompt: "warm", decode: false});
+  assert.equal(undecoded.image.picture, undefined);
+});
+
+test("a picture whose content type is not one is refused", () => {
+  assert.throws(() => decode_image({...PICTURE, media_type: "text/plain"}), /media_type/);
 });
 
 test("a refusal becomes an ApiError with the API's own words", async () => {

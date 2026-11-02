@@ -207,6 +207,7 @@ class Client {
       decode_objects(body);
       decode_density(body);
       decode_body_features(body);
+      decode_body_image(body);
     }
     return body;
   }
@@ -239,6 +240,7 @@ class Client {
       decode_objects(body);
       decode_density(body);
       decode_body_features(body);
+      decode_body_image(body);
     }
     return body;
   }
@@ -493,6 +495,38 @@ function decode_body_features(body) {
   }
 }
 
+/**
+ * Decode a model's `image` object into the bytes of the file it published.
+ *
+ * Bytes rather than a rendered image: a browser turns them into a `Blob` and an object URL, and Node
+ * writes them to a file, and neither of those belongs in a decoder shared by both. Nothing is
+ * re-encoded, so what a caller saves is what the model produced.
+ * @param {object} field The `image` object, verbatim.
+ * @returns {Uint8Array} The encoded file, exactly as the answer carried it.
+ */
+function decode_image(field) {
+  if (!field || typeof field !== "object") throw new TypeError("image must be an object");
+  const mediaType = field.media_type;
+  if (typeof mediaType !== "string" || !mediaType.startsWith("image/")) {
+    throw new Error(`image.media_type must be an image type, not ${mediaType}`);
+  }
+  const base64 = String(field.data ?? "");
+  if (typeof atob === "function") {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    return bytes;
+  }
+  return new Uint8Array(Buffer.from(base64, "base64"));
+}
+
+/** Attach a model's decoded `image.picture`, in place. */
+function decode_body_image(body) {
+  if (body.image && typeof body.image === "object") {
+    body.image.picture = decode_image(body.image);
+  }
+}
+
 /** One table for every half-precision bit pattern, built on the first decode and reused. */
 let HALF_TABLE;
 function half_table() {
@@ -579,9 +613,9 @@ async function error(response) {
   return new ApiError(response.status, detail.code ?? fallback, detail.message ?? text.trim());
 }
 
-const api = {ApiError, Client, decode_features, label_masks, rle_decode};
+const api = {ApiError, Client, decode_features, decode_image, label_masks, rle_decode};
 
-export {ApiError, Client, decode_features, label_masks, rle_decode};
+export {ApiError, Client, decode_features, decode_image, label_masks, rle_decode};
 export default api;
 
 // A plain <script> has no import, so the same names are left where the pages that use one decoder

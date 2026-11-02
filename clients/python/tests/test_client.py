@@ -276,6 +276,58 @@ def test_a_feature_grid_whose_header_and_payload_disagree_is_refused() -> None:
         global_wheat.decode_features(field)
 
 
+PICTURE = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAADUlEQVR4nGM4UWEDRAALgwL5Z6uxbgAAAABJ"
+    "RU5ErkJggg=="
+)
+"""A real 2×1 PNG: the gateway publishes the file, so a fixture that claims to be one had better be."""
+
+
+def picture_body() -> dict:
+    """Build a generating model's answer as the API writes one.
+
+    Returns
+    -------
+    dict
+        The body, rebuilt per test because decoding adds to it in place.
+    """
+    return {
+        "model": "internvl-u",
+        "objects": [],
+        "answer": "Warmed the light and left the crop in place.",
+        "image": {"media_type": "image/png", "width": 2, "height": 1, "data": PICTURE},
+        "resolution_used": 1024,
+    }
+
+
+def test_a_generated_picture_arrives_openable() -> None:
+    """The participant gets an image object, not a base64 string, and the encoding stays beside it."""
+    client, _ = make([Reply(200, picture_body())])
+    body = client.predict("internvl-u", "gwfss", 0, prompt="warm the light")
+    picture = body["image"]["picture"]
+    assert picture.size == (2, 1)
+    assert body["answer"].startswith("Warmed")
+    assert body["image"]["data"] == PICTURE
+    assert body["image"]["media_type"] == "image/png"
+
+
+def test_decode_false_leaves_a_generated_picture_as_it_arrived() -> None:
+    """The same switch the masks and the two grids follow: nothing is opened."""
+    body = picture_body()
+    client, _ = make([Reply(200, body)])
+    answer = client.predict("internvl-u", "gwfss", 0, prompt="warm the light", decode=False)
+    assert answer == body
+    assert "picture" not in answer["image"]
+
+
+def test_a_picture_that_is_not_one_is_refused() -> None:
+    """A payload Pillow cannot read is a body outside the contract, not something to pass through."""
+    field = picture_body()["image"]
+    field["data"] = base64.b64encode(b"not a picture").decode("ascii")
+    with pytest.raises(ValueError, match="not a picture"):
+        global_wheat.decode_image(field)
+
+
 def test_an_upload_sends_the_file_as_the_field_named_file(tmp_path: Path) -> None:
     """The route's contract is one multipart field, and the name and type are only what it needs."""
     photo = tmp_path / "photo.png"

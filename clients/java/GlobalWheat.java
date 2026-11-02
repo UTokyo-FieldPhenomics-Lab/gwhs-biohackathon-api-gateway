@@ -394,6 +394,7 @@ public final class GlobalWheat {
             decodeObjects(answer);
             decodeDensity(answer);
             decodeFeatures(answer);
+            decodeImage(answer);
             return answer;
         }
 
@@ -485,6 +486,7 @@ public final class GlobalWheat {
             decodeObjects(answer);
             decodeDensity(answer);
             decodeFeatures(answer);
+            decodeImage(answer);
             return answer;
         }
 
@@ -1216,6 +1218,37 @@ public final class GlobalWheat {
             }
         }
         return new Features(rows, columns, dim, grid);
+    }
+
+    /**
+     * Decode a model's {@code image} object into the bytes of the file it published.
+     *
+     * <p>Bytes rather than a rendered image: a caller opens them with {@code ImageIO}, writes them
+     * to disk, or hands them to a viewer, and none of that belongs in a decoder. Nothing is
+     * re-encoded, so what is saved is what the model produced.
+     *
+     * @param field the {@code image} object, verbatim
+     * @return the encoded file, exactly as the answer carried it
+     */
+    public static byte[] decode_image(Map<String, Object> field) {
+        Object mediaType = field.get("media_type");
+        if (!(mediaType instanceof String type) || !type.startsWith("image/")) {
+            throw new IllegalArgumentException("image.media_type must be an image type, not " + mediaType);
+        }
+        Object data = field.get("data");
+        if (!(data instanceof String encoded)) {
+            throw new IllegalArgumentException("image carries no data");
+        }
+        return Base64.getDecoder().decode(encoded);
+    }
+
+    /** Attach a model's decoded {@code image.picture}, in place. */
+    @SuppressWarnings("unchecked")
+    private static void decodeImage(Map<String, Object> body) {
+        if (body.get("image") instanceof Map<?, ?>) {
+            Map<String, Object> image = (Map<String, Object>) body.get("image");
+            image.put("picture", decode_image(image));
+        }
     }
 
     /**
