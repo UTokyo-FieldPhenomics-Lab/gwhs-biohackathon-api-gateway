@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render a model page's parameter table from a recorded ``GET /models``.
+"""Render a model's parameter table from a recorded ``GET /models``.
 
 The table is mechanical — it is the model's own declaration, laid out — so it is generated rather
 than transcribed. ``docs/scripts/fixtures/model-directory.json`` is a real answer from the live API,
@@ -7,13 +7,18 @@ recorded once; this script rewrites the block between two markers in the page, a
 fails on a model-page diff. Unlike the automatically synchronized notebook, these tables must be
 reviewed and committed with their recorded declaration.
 
+A page may cover one id or a family. A family declares its ids in an HTML comment —
+``<!-- models: id-one id-two -->`` — and carries one ``parameters:<id>`` block per id, so the shared
+prose is written once and the declarations cannot overwrite one another. A page without the comment
+is a single-model page named after its id.
+
 Generation instead of execution at build time is deliberate: the API answers ``GET /models`` only
 with a key, and a docs build that held one would make a participant-facing site depend on a secret
 and on a host being up. The fixture is the record, the script is the transcription, and the stale
 check is the refresh mechanism.
 
     python3 docs/scripts/make_models.py
-    python3 docs/scripts/make_models.py --model sam3.1-meta --check   # for a dry run
+    python3 docs/scripts/make_models.py --model sam3.1-meta   # one id, for a quicker check
 
 To re-record the fixture, point a gateway at the running container and ask once:
 
@@ -24,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import tomllib
 from pathlib import Path
@@ -40,7 +46,17 @@ SITE = REPO / "zensical.toml"
 
 START = "<!-- parameters:start -->"
 END = "<!-- parameters:end -->"
-"""The markers the generated table lives between. Everything outside them is written by a person."""
+"""The markers a single-model page uses for its table. Everything outside them is written by a person."""
+
+MODELS = re.compile(r"<!--\s*models:\s*([^>]*?)\s*-->")
+"""The comment a page uses to declare the ids it covers.
+
+A page per **model family** is the right shape when the ids differ only in a checkpoint: the
+contract, the output and the analysis are shared, and copying them once per id produces two pages
+that drift. A page that declares several ids carries one generated block per id, named
+``parameters:<id>``; a page without the comment is a single-model page named after its id, which is
+what the three task-model pages are.
+"""
 
 
 def _number(value: float) -> str:
@@ -107,7 +123,7 @@ def render(entry: dict[str, Any]) -> str:
     Returns
     -------
     str
-        Markdown: a table, then one line saying where it came from.
+        Markdown: one table of the model's parameters, or a sentence saying it has none.
     """
     parameters = entry.get("parameters") or []
     if not parameters:
@@ -171,8 +187,8 @@ def navigation() -> set[str]:
     return walk(document["project"]["nav"])
 
 
-def rewrite(page: Path, table: str) -> bool:
-    """Put a rendered table between the page's markers.
+def rewrite(page: Path, table: str, start: str = START, end: str = END) -> bool:
+    """Put a rendered table between one pair of the page's markers.
 
     Parameters
     ----------
@@ -180,6 +196,9 @@ def rewrite(page: Path, table: str) -> bool:
         The page carrying the markers.
     table : str
         What :func:`render` produced.
+    start, end : str
+        The pair to write between. A single-model page uses the bare pair; a page covering several
+        ids names the id in each pair, so its blocks cannot overwrite one another.
 
     Returns
     -------
@@ -189,18 +208,98 @@ def rewrite(page: Path, table: str) -> bool:
     Raises
     ------
     SystemExit
-        When the page has no markers, which would otherwise silently drop the table.
+        When the page has no such pair, which would otherwise silently drop the table.
     """
     text = page.read_text(encoding="utf-8")
-    if START not in text or END not in text:
-        raise SystemExit(f"{page} has no {START} … {END} block to write into")
-    head, rest = text.split(START, 1)
-    _, tail = rest.split(END, 1)
-    updated = f"{head}{START}\n{table}\n{END}{tail}"
+    if start not in text or end not in text:
+        raise SystemExit(f"{page} has no {start} … {end} block to write into")
+    head, rest = text.split(start, 1)
+    _, tail = rest.split(end, 1)
+    updated = f"{head}{start}\n{table}\n{end}{tail}"
     if updated == text:
         return False
     page.write_text(updated, encoding="utf-8")
     return True
+
+
+def model_pages(models: set[str]) -> dict[str, Path]:
+    """Find the page that covers each model id.
+
+    Parameters
+    ----------
+    models : set of str
+        The ids the recorded directory lists.
+
+    Returns
+    -------
+    dict of str to Path
+        One page per id. A page declares a family with ``<!-- models: … -->``; a page without the
+        comment covers the id its filename names.
+
+    Raises
+    ------
+    SystemExit
+        When a declared id is not in the directory, when two pages claim one id, or when an id has
+        no page. Each is a page that would build and answer without saying what the model is.
+    """
+    pages: dict[str, Path] = {}
+    for page in sorted((REPO / "docs" / "content" / "models").glob("*.md")):
+        text = page.read_text(encoding="utf-8")
+        declared = MODELS.search(text)
+        if declared:
+            claimed = declared.group(1).split()
+        elif page.stem in models:
+            claimed = [page.stem]
+        else:
+            continue
+        if not claimed:
+            raise SystemExit(f"{page} declares no model id")
+        unknown = [model for model in claimed if model not in models]
+        if unknown:
+            raise SystemExit(
+                f"{page} declares {unknown}, which the recorded directory does not list"
+            )
+        for model in claimed:
+            if model in pages:
+                raise SystemExit(f"{model} is claimed by both {pages[model]} and {page}")
+            pages[model] = page
+    missing = sorted(models - set(pages))
+    if missing:
+        raise SystemExit(f"no page covers {missing}; every model in the directory has a page")
+    return pages
+
+
+def markers(page: Path, model: str) -> tuple[str, str]:
+    """Return the marker pair one model's table lives between.
+
+    Parameters
+    ----------
+    page : Path
+        The page, which may cover one id or a family.
+    model : str
+        The id whose block is wanted.
+
+    Returns
+    -------
+    tuple of str
+        ``(start, end)``. A family page uses ``parameters:<id>:start`` and its end; a single-model
+        page keeps the bare pair.
+
+    Raises
+    ------
+    SystemExit
+        When a family page has no block for one of the ids it declares. Falling back to the bare
+        pair would make the second id's table overwrite the first.
+    """
+    text = page.read_text(encoding="utf-8")
+    start = f"<!-- parameters:{model}:start -->"
+    end = f"<!-- parameters:{model}:end -->"
+    if start in text:
+        return start, end
+    declared = MODELS.search(text)
+    if declared and len(declared.group(1).split()) > 1:
+        raise SystemExit(f"{page} covers several ids and needs a {start} … {end} block")
+    return START, END
 
 
 def main() -> int:
@@ -221,30 +320,35 @@ def main() -> int:
     args = parser.parse_args()
 
     directory = json.loads(args.fixture.read_text(encoding="utf-8"))
+    pages = model_pages({model["id"] for model in directory["models"]})
     if args.model:
         entries = [model for model in directory["models"] if model["id"] == args.model]
         if not entries:
             raise SystemExit(f"{args.model} is not in {args.fixture}; re-record it")
     else:
-        # Every id the directory lists is a model the API answers, so every one of them has a page.
-        # Iterating is what makes CI notice a deployed model whose page was never written: the run
-        # fails on the missing file rather than printing "already current" for the one page it knows.
+        # Every id the directory lists is a model the API answers, so every one of them has a page
+        # (alone or in a family). Iterating is what makes CI notice a deployed model whose page was
+        # never written: the run fails on the missing page rather than printing "already current"
+        # for the one page it knows.
         entries = directory["models"]
 
     reachable = navigation()
     for entry in entries:
-        page = args.page if (args.page and args.model) else (
-            REPO / "docs" / "content" / "models" / f"{entry['id']}.md"
-        )
+        model = entry["id"]
+        page = args.page if (args.page and args.model) else pages[model]
         if not page.is_file():
             raise SystemExit(f"{page} does not exist; every model in the directory has a page")
-        if not args.page and f"models/{entry['id']}.md" not in reachable:
+        if not args.page and f"models/{page.name}" not in reachable:
             raise SystemExit(
-                f"models/{entry['id']}.md is not in zensical.toml's nav: the page builds and "
+                f"models/{page.name} is not in zensical.toml's nav: the page builds and "
                 "answers its URL, and no reader can reach it"
             )
-        changed = rewrite(page, render(entry))
-        print(f"{page.relative_to(REPO)}: {'rewritten' if changed else 'already current'}")
+        start, end = markers(page, model)
+        changed = rewrite(page, render(entry), start, end)
+        print(
+            f"{page.relative_to(REPO)} [{model}]: "
+            f"{'rewritten' if changed else 'already current'}"
+        )
     return 0
 
 

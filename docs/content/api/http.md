@@ -212,7 +212,7 @@ grid = grid.reshape(*features["size"], features["dim"]).astype(np.float32)
 The vectors are not normalized; use cosine, not a raw dot product. `side` is the longer side of the
 frame and preserves the aspect ratio, each dimension floored to a multiple of the patch; a value
 above the declared maximum is answered at it with `resolution_clamped`, because the answer's size is
-the constraint. [The model page](../models/dinov3-vitl16.md) explains what the tokens are and what
+the constraint. [The backbone page](../models/dinov3.md) explains what the tokens are and what
 can be built on them; the fields here are the whole contract.
 
 ## Limits

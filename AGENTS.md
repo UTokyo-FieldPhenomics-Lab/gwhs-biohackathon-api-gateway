@@ -58,7 +58,7 @@ of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-layout.md
 │   └── content/           the site's pages and assets: the only thing Zensical builds
 │       ├── api/           the contract, the clients, the framed reference, and the frame's script
 │       ├── datasets/      what a row is, then one page per dataset, with their figures
-│       ├── models/        the GPUs behind the API, then one page per model
+│       ├── models/        the GPUs behind the API, then one page per model or family
 │       └── examples/      the live demo, and the notebook page the .ipynb is generated from
 ├── clients/               the API as a function, one directory per language; routes.json is shared
 │   ├── python/            global_wheat.py + its pyproject, lock, and the pytest checks

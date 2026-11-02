@@ -21,9 +21,11 @@ visible and explains it.
   passes over the patches. Three components, ten iterations, a fixed seed and a sum-fixed sign; the
   whole projection measured **178 ms** for 32 × 32 × 1024 in Node, and the page does it once per
   answer. The docs figure uses NumPy's SVD offline and matched the page's picture.
-- **Documents.** Two model pages (`dinov3-vitl16.md`, `dinov3-vith16plus.md`), the models index
-  (five models, three tasks and two backbones), a two-panel figure of `gwfss` row 4, a
-  "Backbone results" section in `api/http.md`, and a `features.grid` paragraph in `api/clients.md`.
+- **Documents.** One page for both ids (`dinov3.md`, with `<!-- models: … -->` naming the family and
+  one generated parameter table per id), the models index (five models, three tasks and two
+  backbones), a two-panel figure of `gwfss` row 4, a "Backbone results" section in `api/http.md`,
+  and a `features.grid` paragraph in `api/clients.md`. The two ids are one encoder at two widths;
+  two pages would have copied the shared half and let it drift.
   The pages say what the output **is** — last hidden state, `[CLS]` + four registers + patch tokens,
   patches row-major at 16 px, no softmax, no class, no mask — and what can be built on it: patch and
   region cosine, kNN segmentation, a linear probe or fine-tune, CLS retrieval/clustering, change

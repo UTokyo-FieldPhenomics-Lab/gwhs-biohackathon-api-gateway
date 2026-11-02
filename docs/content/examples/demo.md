@@ -20,7 +20,7 @@ rather than letting a stale count pass for a live one.
 A backbone answers with a feature grid instead of geometry: its `features` eye draws the first three
 principal components of the patch grid over the photograph, and the `image` eye turns the photograph
 off so the field is read on its own. The colours belong to that one picture; the [backbone model
-page](../models/dinov3-vitl16.md) says what the grid is and what can be computed from it.
+page](../models/dinov3.md) says what the grid is and what can be computed from it.
 
 The page also prints the call it would make as a `curl` command, with your key left as `$KEY`, so
 anything you set up here can be taken straight to a shell.
