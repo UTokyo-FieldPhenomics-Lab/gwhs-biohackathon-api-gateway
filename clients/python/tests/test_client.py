@@ -280,7 +280,8 @@ PICTURE = (
     "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAADUlEQVR4nGM4UWEDRAALgwL5Z6uxbgAAAABJ"
     "RU5ErkJggg=="
 )
-"""A real 2×1 PNG: the gateway publishes the file, so a fixture that claims to be one had better be."""
+"""A real 2×1 PNG: the gateway publishes the file, so a fixture that claims to be one had
+better be."""
 
 
 def picture_body() -> dict:
@@ -301,7 +302,10 @@ def picture_body() -> dict:
 
 
 def test_a_generated_picture_arrives_openable() -> None:
-    """The participant gets an image object, not a base64 string, and the encoding stays beside it."""
+    """The participant gets an image object, not a base64 string.
+
+    The encoding stays beside it.
+    """
     client, _ = make([Reply(200, picture_body())])
     body = client.predict("internvl-u", "gwfss", 0, prompt="warm the light")
     picture = body["image"]["picture"]
@@ -321,7 +325,10 @@ def test_decode_false_leaves_a_generated_picture_as_it_arrived() -> None:
 
 
 def test_a_picture_that_is_not_one_is_refused() -> None:
-    """A payload Pillow cannot read is a body outside the contract, not something to pass through."""
+    """A payload Pillow cannot read is a body outside the contract.
+
+    It is not something to pass through.
+    """
     field = picture_body()["image"]
     field["data"] = base64.b64encode(b"not a picture").decode("ascii")
     with pytest.raises(ValueError, match="not a picture"):
@@ -410,3 +417,21 @@ def test_label_masks_uses_the_dataset_s_palette() -> None:
     pixels[0, 0] = (0x32, 0xFF, 0x84)
     assert client.label_masks(pixels, "gwfss")["head"][0, 0]
     assert len(session.calls) == 1
+
+
+def test_generate_asks_the_generate_route_with_no_body() -> None:
+    """A generation is the query string alone, on its own longer timeout.
+
+    The picture in the answer is opened.
+    """
+    client, session = make([Reply(200, picture_body())])
+
+    answer = client.generate("nano-banana-2.1", prompt="wheat", image_size="1K")
+
+    call = session.calls[0]
+    assert call["method"] == "POST"
+    assert call["url"] == "https://api.test/models/nano-banana-2.1/generate"
+    assert call["params"] == {"prompt": "wheat", "image_size": "1K"}
+    assert call["json"] is None
+    assert call["timeout"] == max(client.timeout, global_wheat.GENERATE_TIMEOUT)
+    assert answer["image"]["picture"].size == (2, 1)

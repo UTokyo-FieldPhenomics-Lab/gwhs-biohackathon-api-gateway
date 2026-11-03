@@ -34,6 +34,7 @@ const BASE_ENV = "GLOBAL_WHEAT_API";
 const KEY_ENV = "GLOBAL_WHEAT_API_KEY";
 const API_KEY_HEADER = "X-API-Key";
 const DEFAULT_TIMEOUT = 60; // seconds; a predict route answers 504 long before this
+const GENERATE_TIMEOUT = 180; // seconds; the gateway caps a declared image budget at three minutes
 const DEFAULT_PAGE_SIZE = 100; // the API's own default; its ceiling is 1000
 
 /** One refusal, in the API's own terms. */
@@ -213,6 +214,26 @@ class Client {
   }
 
   /**
+   * Make a picture from a prompt, with no image of your own.
+   *
+   * The request is the query string alone: there is no body and no published address. `prompt` is
+   * required by every model that declares this route; the API refuses a request without one. The
+   * query is capped at 2 KB, which is roughly 200 Chinese characters once percent-encoded.
+   * @param {string} model The model id.
+   * @param {object} [options] `decode`, plus the model's own parameters — `prompt`,
+   *   `aspect_ratio`, `image_size`. `model(id).parameters` lists them with their bounds.
+   * @returns {Promise<object>} The answer, with `objects` empty and the picture in `image`.
+   */
+  async generate(model, {decode = true, ...params} = {}) {
+    const body = await this.#call("POST", `/models/${segment(model)}/generate`, {
+      params: modelParams(params),
+      timeout: Math.max(this.timeout, GENERATE_TIMEOUT),
+    });
+    if (decode) decode_body_image(body);
+    return body;
+  }
+
+  /**
    * Run one model on your own photograph.
    *
    * When the client has a `resizer` — which the browser and Node entries supply — the photograph is
@@ -328,7 +349,7 @@ class Client {
 
   // -- transport -------------------------------------------------------------
 
-  async #call(method, path, {params, json, form} = {}) {
+  async #call(method, path, {params, json, form, timeout} = {}) {
     const url = new URL(this.base + path);
     for (const [name, value] of Object.entries(params ?? {})) {
       for (const item of Array.isArray(value) ? value : [value]) {
@@ -347,7 +368,7 @@ class Client {
       method,
       headers,
       body,
-      signal: timeout_signal(this.timeout),
+      signal: timeout_signal(timeout ?? this.timeout),
     });
     if (!response.ok) throw await error(response);
     return response.json();

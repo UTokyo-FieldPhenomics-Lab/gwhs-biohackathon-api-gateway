@@ -121,6 +121,18 @@ public final class Checks {
             check("the picture's type is kept", "image/png".equals(image.get("media_type")));
             check("the answer's prose is kept", "warmer light".equals(pictured.get("answer")));
 
+            Map<String, Object> generated =
+                    client.generate("internvl-u", Map.of("prompt", "wheat", "image_size", "1K"));
+            Map<String, Object> generatedImage =
+                    (Map<String, Object>) generated.get("image");
+            check(
+                    "generate answers a picture",
+                    ((byte[]) generatedImage.get("picture")).length == 70);
+            String generateCall = seen.get(seen.size() - 1);
+            check("generate asks its own route", generateCall.startsWith("/models/internvl-u/generate?"));
+            check("generate sends the prompt", generateCall.contains("prompt=wheat"));
+            check("generate sends no body", !generateCall.contains("{"));
+
             Map<String, Object> wrongType = new LinkedHashMap<>(image);
             wrongType.put("media_type", "text/plain");
             boolean refusedPicture = false;
@@ -421,6 +433,13 @@ public final class Checks {
                                     + "\"features\":{\"size\":[2,2],\"dim\":3,\"dtype\":\"float16\","
                                     + "\"data\":\"AAAAPABAAEIARABFAEYARwBIgEgASYBJ\"},"
                                     + "\"resolution_used\":32}";
+            case "/models/internvl-u/generate" ->
+                    answer =
+                            "{\"model\":\"internvl-u\",\"objects\":[],\"answer\":\"here it is\","
+                                    + "\"image\":{\"media_type\":\"image/png\",\"width\":2,\"height\":1,"
+                                    + "\"data\":\"iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAADUlEQVR4"
+                                    + "nGM4UWEDRAALgwL5Z6uxbgAAAABJRU5ErkJggg==\"},"
+                                    + "\"resolution_used\":1024}";
             case "/models/internvl-u/predict" ->
                     answer =
                             "{\"model\":\"internvl-u\",\"objects\":[],\"answer\":\"warmer light\","

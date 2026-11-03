@@ -160,6 +160,19 @@ test("a picture answer arrives with its bytes, and decode false does not add the
   assert.equal(undecoded.image.picture, undefined);
 });
 
+test("generate asks the generate route with no body", async () => {
+  const body = {model: "nano-banana-2.1", objects: [], image: {...PICTURE}};
+  const {client: api, calls} = client([{status: 200, body}]);
+  const answer = await api.generate("nano-banana-2.1", {prompt: "wheat", image_size: "1K"});
+  assert.equal(calls[0].options.method, "POST");
+  assert.equal(
+    calls[0].url,
+    "https://api.test/models/nano-banana-2.1/generate?prompt=wheat&image_size=1K",
+  );
+  assert.equal(calls[0].options.body, undefined);
+  assert.equal(answer.image.picture.length, 70);
+});
+
 test("a picture whose content type is not one is refused", () => {
   assert.throws(() => decode_image({...PICTURE, media_type: "text/plain"}), /media_type/);
 });

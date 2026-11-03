@@ -72,6 +72,8 @@ public final class GlobalWheat {
     /** Where the token travels. It is sent to the API's own origin and to nothing else. */
     public static final double DEFAULT_TIMEOUT_SECONDS = 60.0;
     /** Seconds to wait for an answer. A predict route gives up on a backend long before this. */
+    public static final double GENERATE_TIMEOUT_SECONDS = 180.0;
+    /** Seconds a generation may take, whatever the client's default timeout is. */
     public static final int DEFAULT_PAGE_SIZE = 100;
     /** Rows per page. The API's own default, and its ceiling is 1000. */
 
@@ -398,6 +400,32 @@ public final class GlobalWheat {
             return answer;
         }
 
+        /**
+         * Make a picture from a prompt, with no image of your own.
+         *
+         * <p>The request is the query string alone: there is no body and no published address.
+         * {@code prompt} is required by every model that declares this route; the API refuses a
+         * request without one. The query is capped at 2 KB, which is roughly 200 Chinese characters
+         * once percent-encoded.
+         *
+         * @param model the model id
+         * @param params the model's own parameters — {@code prompt}, {@code aspect_ratio},
+         *     {@code image_size}; {@code model(id).get("parameters")} lists them
+         * @return the answer, with {@code objects} empty and the picture in {@code image}
+         */
+        public Map<String, Object> generate(String model, Map<String, ?> params) {
+            Map<String, Object> answer =
+                    call(
+                            "POST",
+                            "/models/" + segment(model) + "/generate",
+                            modelQuery(params),
+                            null,
+                            null,
+                            Math.max(timeoutSeconds, GENERATE_TIMEOUT_SECONDS));
+            decodeImage(answer);
+            return answer;
+        }
+
         /** Run one model on your own photograph, read from a file. */
         public Map<String, Object> predict_file(String model, File image, Map<String, ?> params) {
             return predict_file(model, image, params, true);
@@ -601,6 +629,16 @@ public final class GlobalWheat {
                 Map<String, ?> query,
                 Map<String, ?> json,
                 byte[] upload) {
+            return call(method, path, query, json, upload, timeoutSeconds);
+        }
+
+        private Map<String, Object> call(
+                String method,
+                String path,
+                Map<String, ?> query,
+                Map<String, ?> json,
+                byte[] upload,
+                double timeout) {
             HttpURLConnection connection = null;
             try {
                 connection =
@@ -610,7 +648,7 @@ public final class GlobalWheat {
                                         .openConnection();
                 connection.setRequestMethod(method);
                 connection.setConnectTimeout((int) (timeoutSeconds * 1000));
-                connection.setReadTimeout((int) (timeoutSeconds * 1000));
+                connection.setReadTimeout((int) (timeout * 1000));
                 connection.setRequestProperty(API_KEY_HEADER, key);
                 connection.setRequestProperty("Accept", "application/json");
                 connection.setRequestProperty("Accept-Encoding", "identity");

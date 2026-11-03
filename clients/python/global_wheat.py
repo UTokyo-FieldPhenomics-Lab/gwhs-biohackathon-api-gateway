@@ -49,6 +49,7 @@ __all__ = [
     "DEFAULT_BASE",
     "DEFAULT_PAGE_SIZE",
     "DEFAULT_TIMEOUT",
+    "GENERATE_TIMEOUT",
     "KEY_ENV",
     "UPLOAD_QUALITY",
     "ApiError",
@@ -75,6 +76,14 @@ DEFAULT_TIMEOUT = 60.0
 
 A predict route gives up on a backend after ten seconds and answers ``504``, so this is slack rather
 than a budget: an upload from a phone on a slow link is the case it is sized for.
+"""
+
+GENERATE_TIMEOUT = 180.0
+"""Seconds a generation may take, whatever the client's default timeout is.
+
+A picture is not a segmentation: the gateway gives an image model the budget it declared (up to
+three minutes), and one 1K call measured 15 s. A client that gave up at the default sixty would
+blame the network for a model that is still working, so this route gets its own floor.
 """
 
 DEFAULT_PAGE_SIZE = 100
@@ -455,6 +464,58 @@ class Client:
             _decode_image(body)
         return body
 
+    def generate(
+        self,
+        model: str,
+        *,
+        decode: bool = True,
+        **params: object,
+    ) -> dict[str, Any]:
+        """Make a picture from a prompt, with no image of your own.
+
+        Parameters
+        ----------
+        model : str
+            The model id.
+        decode : bool, optional
+            Attach ``image["picture"]``, the picture opened, when the answer carries one.
+        **params
+            The model's own control parameters — ``prompt="..."``, ``aspect_ratio="16:9"``,
+            ``image_size="1K"``. ``prompt`` is required by every model that declares this route;
+            the API refuses a request without one rather than inventing a default. The query string
+            is capped at 2 KB, which is roughly 200 Chinese characters or 600 Latin ones once
+            percent-encoded.
+
+        Returns
+        -------
+        dict
+            The answer as the API wrote it: ``model``, ``objects`` (empty), ``image``,
+            ``resolution_used``, ``computed_by``, and ``answer`` where the model said something
+            alongside the picture. ``image["picture"]`` is the picture opened when ``decode`` is
+            true.
+
+        Raises
+        ------
+        ApiError
+            ``400`` for a parameter the model refused, ``429`` when your team is at its image quota
+            or the model is at capacity, ``503`` when no backend is answering, ``504`` when it took
+            too long.
+
+        Notes
+        -----
+        The route has no body and no cache: a generation is a paid sample rather than a fact about a
+        published row, so asking twice can produce two different pictures and two charges.
+        """
+        body: dict[str, Any] = self._call(
+            "POST",
+            f"/models/{_segment(model)}/generate",
+            params=_model_params(params),
+            timeout=max(self.timeout, GENERATE_TIMEOUT),
+        )
+        if decode:
+            _decode_image(body)
+        return body
+
     def predict_file(
         self,
         model: str,
@@ -624,6 +685,7 @@ class Client:
         params: Mapping[str, Any] | None = None,
         json: Any = None,
         files: Mapping[str, Any] | None = None,
+        timeout: float | None = None,
     ) -> Any:
         """Send one request and decode its answer.
 
@@ -639,6 +701,8 @@ class Client:
             A JSON body.
         files : mapping or None, optional
             A multipart body.
+        timeout : float or None, optional
+            Seconds to wait, where this call has its own budget. `None` uses the client's.
 
         Returns
         -------
@@ -656,7 +720,7 @@ class Client:
             params=params,
             json=json,
             files=files,
-            timeout=self.timeout,
+            timeout=self.timeout if timeout is None else timeout,
         )
         if response.status_code >= 400:
             raise _error(response)
@@ -918,7 +982,9 @@ def decode_image(field: Mapping[str, Any]) -> Image.Image:
         picture = Image.open(io.BytesIO(payload))
         picture.load()
     except (UnidentifiedImageError, OSError) as error:
-        raise ValueError(f"image carries {len(payload)} bytes that are not a picture: {error}") from None
+        raise ValueError(
+            f"image carries {len(payload)} bytes that are not a picture: {error}"
+        ) from None
     return picture
 
 

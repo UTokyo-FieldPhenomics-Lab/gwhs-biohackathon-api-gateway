@@ -6,5 +6,6 @@
   "models": {"method": "GET", "path": "/models"},
   "model": {"method": "GET", "path": "/models/{model}"},
   "predict": {"method": "POST", "path": "/models/{model}/predict"},
+  "generate": {"method": "POST", "path": "/models/{model}/generate"},
   "predict_file": {"method": "POST", "path": "/models/{model}/predict/upload"}
 }
