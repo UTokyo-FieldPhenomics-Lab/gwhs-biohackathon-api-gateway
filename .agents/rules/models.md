@@ -2,10 +2,28 @@
 
 `models/` links a private repository; these are requirements on that repository, not a claim its
 contents were inspected in an uninitialised clone. Shared constraints are in [`project.md`](project.md).
+It holds two kinds of model service: a **GPU container**, and a **managed-API wrapper** that calls a
+hosted model with its own credential and budget. Both are private implementations of an id the
+public contract publishes; neither is gateway code.
 
-- **Keep containers, model code, weights and their access links private; publish only the contract.**
-  Participants need nothing under `models/`. The submodule's entry point must link this repository's
-  AGENTS/rules rather than copy them. [Split](../references/2026101605_models-submodule-and-weight-distribution.md).
+- **Keep implementations, model code, weights and their access links private; publish only the
+  contract.** Participants need nothing under `models/`. The submodule's entry point must link this
+  repository's AGENTS/rules rather than copy them.
+  [Split](../references/2026101605_models-submodule-and-weight-distribution.md).
+- **A managed-API wrapper is a model service, not gateway code.** It runs as its own container on the
+  gateway host, answers the same declaration and the same three routes, and is reached on
+  `127.0.0.1` with the backend credential. It holds no weights. Its service account is least
+  privilege — `roles/aiplatform.user`, or a custom role holding only `aiplatform.endpoints.predict`
+  — never an owner credential, and its key is a read-only file mount, never an image layer or an
+  environment value. [Runbook](../../deploy/nanobanana.md).
+- **Keep the spend gate inside the wrapper.** A hosted model costs money per call, so the team
+  allowance, the daily breaker and the pot floor are the wrapper's: it is the thing that spends and
+  the only place that knows a price. The gateway forwards the authenticated team id and nothing
+  else. [Budget](../../deploy/nanobanana.md#7-the-money).
+- **Declare the response budget the model needs.** A hosted model that takes 15–40 s declares
+  `response_timeout_seconds`; the gateway's ten-second default is for a segmentation answer and is
+  not raised globally. The declaration is capped at three minutes.
+  [Gateway rules](gateway.md#routing-and-resources).
 - **Keep `.gitmodules` at `update = none`, and build/test with the submodule empty.** Public and fork
   builds cannot authenticate to it; no parent build may import, read or generate from it.
   [Configuration](../../.gitmodules).
@@ -49,6 +67,8 @@ contents were inspected in an uninitialised clone. Shared constraints are in [`p
   and a prominent “Built with DINOv3” notice when the materials are made available to a third party;
   the models index and the backbone page display the notice and link the canonical terms. A model
   with an attribution clause is not served until its page states the clause and links the terms.
+  A hosted model's page says that it is served through the provider and links the provider's terms;
+  the weights are not ours to distribute, and the page must not imply otherwise.
   [DINOv3 License](https://ai.meta.com/resources/models-and-libraries/dinov3-license/).
 - **A model that answers in prose or pixels still answers with `objects: []`.** It publishes `answer`
   and `image` beside the empty list, so one client parses every model. The picture is bounded to what

@@ -119,6 +119,7 @@ and a counting answer's field as an array of rows — which the
 | `mask_bytes(id, row)` | the row's mask image, where the dataset ships one |
 | `models()` / `model(id)` | the directory / one model, with the parameters it accepts |
 | `predict(id, dataset, row, …)` | run a model on a published row |
+| `generate(id, …)` | make a picture from a prompt, with no image of your own |
 | `predict_file(id, image, …)` | run a model on your own photograph, resized before it is sent |
 | `label_masks(pixels, …, id)` | one mask per class, from a palette mask and the dataset's palette |
 | `fetch(url)` | any `image_url` or `mask_url` a response carried, with no key sent |
@@ -128,6 +129,13 @@ Filter pairs are ordinary keyword arguments — `images("gwhd", split="train")` 
 narrows the result rather than widening it, exactly as the API defines it. A model's parameters are
 passed the same way, by their own names, and are encoded for you:
 `predict("sam3.1-meta", "gwhd", 0, prompt="wheat head", confidence_threshold=0.5)`.
+
+A model that makes a picture instead of reading one has no row and no upload to name, so it has its
+own call: `generate("nano-banana-2.1", prompt="a wheat field at golden hour", aspect_ratio="16:9",
+image_size="1K")`. The parameters ride in the query string, exactly as they do on a predict; the
+difference is that the client waits longer for this call, because the gateway may give an image
+model up to three minutes rather than ten seconds. To edit a picture you already have — a published
+row or your own file — use `predict` or `predict_file`, where `prompt` says what to change.
 
 One difference is worth knowing, because it is the only place the two conventions meet. A **geometry
 parameter is one value**: `predict("sam3.1-meta", "gwhd", 0, boxes=[[480, 290, 110, 360, 1]])` goes

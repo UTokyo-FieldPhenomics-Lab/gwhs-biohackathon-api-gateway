@@ -10,6 +10,11 @@ Package: `gateway/`. Shared constraints are in [`project.md`](project.md).
 - **Authenticate by default in middleware.** Check `X-API-Key` before routing, including unknown
   paths. Only explicitly named `OPEN_PATHS` are anonymous; absent state never opens the gate, and
   an unreadable initial pool answers `503`. [Authentication](../references/2026101415_first-live-endpoints.md).
+- **Forward the authenticated team id, not the key.** A backend that spends money per call reads
+  `X-Biohack-Team`, the same identity the gateway counts lanes against; the participant's key never
+  leaves the gateway. The header is set only after authentication and is not a second credential:
+  the backend still requires `X-Backend-Token`.
+  [Budget](../../deploy/nanobanana.md#7-the-money).
 - **Cap teams at three inferences by policy, independent of pool width.**
   `BIOHACK_MAX_CONCURRENT_PER_TOKEN` overrides the startup default; `0` disables it. Refuse excess
   work immediately with `429`: upload lanes are acquired in middleware, row lanes only after a
@@ -37,6 +42,12 @@ Package: `gateway/`. Shared constraints are in [`project.md`](project.md).
   container. No provider special-casing, weighted routing or separate circuit-breaker layer.
   [Burst](../references/2026101714_what-a-burst-does-to-the-pool.md),
   [score](../references/202610192300_lane-width-and-the-score.md).
+- **Give each model the response budget it declares.** A backend may declare
+  `response_timeout_seconds`; the gateway gives the whole request that budget, capped at three
+  minutes, and passes the backend over for at least as long as it cost. A model that declares none
+  keeps ten seconds. The default is not raised globally: a segmentation answer and a hosted
+  image generation are different work, and one number for both would either cut the picture short
+  or make a dead card cost a minute. [Image backend](../../deploy/nanobanana.md).
 - **Probe backend health off the request path.** One cancellable task uses
   `PROBE_INTERVAL_SECONDS`; publish `backends_up` and `checked_seconds_ago`. Retry undeclared
   containers on that clock; once read, a declaration requires a restart to change.
@@ -47,6 +58,12 @@ Package: `gateway/`. Shared constraints are in [`project.md`](project.md).
   three consecutive application failures pass the backend over. Connection failures, read timeouts
   and `502`/`503`/`504` allow failover; the exclusion window covers at least the failed attempt's
   response budget. [Failure policy](../references/2026102115_availability-and-failure-policy.md).
+- **Pass a backend's `429` through as this contract's `429`.** It is the one refusal that is neither
+  the request's fault nor the machine's: a backend at its own capacity is working, and a
+  hosted-model wrapper may also refuse for a team allowance or an exhausted pot. The machine keeps
+  its place, the body's sentence is relayed, and no other backend is asked — an identical request
+  would meet the same ceiling. This is also how the image backend's spend gate speaks to a
+  participant. [Capacity](../../deploy/nanobanana.md#9-when-something-is-wrong).
 - **Name what a failed attempt was, and let only a failure a dropped packet cannot produce retire a
   machine.** The transport classifies each one as `timeout`, `refused`, `unreachable` or `oversized`.
   A refusal, an unreachable host and an oversized answer pass the backend over at once; a `timeout`
@@ -70,6 +87,12 @@ Package: `gateway/`. Shared constraints are in [`project.md`](project.md).
   at 24 MB and wait at most 20 s; `BIOHACK_UPLOAD_BYTES` and `BIOHACK_UPLOAD_WAIT_SECONDS` override
   the last two. Refusals include `Retry-After`. Rows bypass this queue; increasing workers does not
   replace admission. [Admission](../references/2026102105_gateway-resource-bound-fixes.md).
+- **Skip the byte budget for a model whose backends are all on loopback.** The queue measures the
+  gateway's link to the pool; a process on `127.0.0.1` does not cross it. Charging it there is wrong
+  twice: a slow hosted-generation call holds a reservation for its whole duration, and the rate
+  estimate divides bytes by that same elapsed time, dragging the budget down for every other model.
+  The receive slot and the team lane still bound the request.
+  [Admission](../references/2026102105_gateway-resource-bound-fixes.md).
 - **Cache only successful published-row predictions.** Key by canonical dataset, revision, row,
   model and query text, never a digest. Only a changed revision changes revision-based cache keys;
   a hit preserves original `computed_by`, adds cache provenance and takes no lane. Uploads are not
@@ -81,6 +104,11 @@ Package: `gateway/`. Shared constraints are in [`project.md`](project.md).
 - **Use separate address and upload predict routes plus model list/detail routes.** Metadata and
   model surfaces share one process, auth, configuration and error contract; datasets call no GPU.
   [Contract](../../docs/data-layout.md).
+- **A generation has its own route.** `POST /models/{model}/generate` carries the whole request in
+  the query string — `prompt` and whatever the model declares — with no body and no published
+  address. It is never cached: a generation is a paid sample, not a fact about a row. It exists
+  because a hosted image model has no input image to address, and forcing it into `predict` would
+  require a fake dataset row. [Contract](../../docs/data-layout.md).
 - **Serve dataset metadata from the publisher's startup index, without another store.** Derive facets
   once; infer filters, geometry, masks and optional fields from the index, never dataset-specific
   configuration. Use one response family with `response_model_exclude_unset=True`; index directory

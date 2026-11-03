@@ -18,6 +18,11 @@ Package: `clients/`. Shared constraints are in [`project.md`](project.md); distr
   container shape varies naturally: a mask as a NumPy array, `{data, width, height}` or a Java
   `Mask`, and a counting field as an array of rows.
   [API guide](../../docs/content/api/clients.md).
+- **A generation is a method on every client, with its own timeout.** `generate(model, prompt=…)`
+  posts to `/models/{id}/generate` with the parameters in the query and no body, and it waits
+  longer than a predict: the gateway may give a hosted image model up to three minutes, while the
+  client's default is 60. The method decodes `image` like a predict answer; it does not invent a dataset or
+  a row to make a generation look like one.
 - **Own RLE, palette and field decoding here, once per language.** Decode COCO column-major masks
   into row-major containers on receipt, retaining raw `rle` and other fields so area remains
   checkable; reshape a counting answer's `density.values` into `density.grid`, retaining `size` and

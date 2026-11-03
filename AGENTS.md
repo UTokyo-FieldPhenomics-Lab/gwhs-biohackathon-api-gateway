@@ -21,13 +21,14 @@ The API contract joins the image, metadata and compute surfaces:
   revision; the gateway loads it at startup and serves it from memory, so a republish arrives as a
   restart. This is the one deliberate exception to static-first.
 - **Compute plane** (implemented and deployed; see the [deployment record](.agents/references/2026102105_gateway-resource-bound-fixes.md)) — the
-  same gateway on one EC2 host authenticates and routes inference work to GPU backends. Its region is
-  environment configuration: the host runs in `eu-central-1`. A backend is any Docker-capable GPU resource reachable over an
-  authenticated, non-public link — a lab machine, a GPU VPS, or a rented GPU container; the provider
-  is a deployment choice, not a fixed route. The backends' containers live in a **private**
-  repository that this one links as the submodule at `models/`, so the containers and the weights
-  they load stay private while the contract stays public;
-  [`rules/models.md`](.agents/rules/models.md) is what that link must and must not do.
+  same gateway on one EC2 host authenticates and routes inference work to model backends. Its region is
+  environment configuration: the host runs in `eu-central-1`. A backend is any service that
+  implements the backend protocol over an authenticated, non-public link — a GPU container on a lab
+  machine or a rented VPS, or a managed-API wrapper on the gateway host itself, which calls a hosted
+  model with its own credential and budget. The provider is a deployment choice, not a fixed route.
+  The implementations live in a **private** repository that this one links as the submodule at
+  `models/`, so the code, the containers and the weights they load stay private while the contract
+  stays public; [`rules/models.md`](.agents/rules/models.md) is what that link must and must not do.
 - **Contract plane** — this repository: the OpenAPI surface, the data layout, examples, and the
   participant-facing site at <https://docs.global-wheat.com>.
 
@@ -67,7 +68,8 @@ of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-layout.md
 ├── gateway/               FastAPI gateway: auth, datasets, model routing, cache and upload admission
 │   └── src/biohack_gateway/  installed app package, framed pages, and token CLI
 ├── datasets/              upstream parquet cache + publisher CLI: parquet → image objects in S3 + metadata index
-├── models/                submodule: the private container repository the GPU backends run
+├── models/                submodule: private implementations of every served model — GPU
+│                          containers and the managed-API wrapper on the gateway host
 ├── deploy/                host bring-up, the dataset bucket and its CDN, bootstrap scripts
 └── .github/workflows/     docs.yml builds and publishes the site
 ```
@@ -149,7 +151,7 @@ of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-layout.md
 - Binding constraints for this repo: [`.agents/rules/project.md`](.agents/rules/project.md)
 - Per-package constraints: [`.agents/rules/`](.agents/rules) — `clients.md` is what the three client
   files must and must not be (no response models, identical names, decoders only here)
-- The containers behind the GPU backends, and the link to their private repository:
+- The implementations behind the model ids, and the link to their private repository:
   [`.agents/rules/models.md`](.agents/rules/models.md) — what `models/` is for, and the constraints
   that keep it inert for this repository's own build and tests.
 - The machines that serve a model, and who may reach them:

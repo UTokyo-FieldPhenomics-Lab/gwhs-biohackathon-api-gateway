@@ -16,6 +16,11 @@ repo-wide invariants are in [`project.md`](project.md) and are not repeated here
 - **Run models in containers and leave overlay routing at room routers.** Publish each model's
   assigned host port on its LAN interface; do not require a tailscale client or unmanaged model
   process on the GPU host. [Run lines](../../deploy/gpu-backends-local.md#32-the-run-line).
+- **A managed-API family may share one loopback port with path prefixes.** One process on the gateway
+  host serves `nano-banana-2`, `nano-banana-2.1` and `nano-banana-pro` on `127.0.0.1:8010`, each
+  prefix its own base URL and declaration, because one process owns one upstream quota and one
+  ledger. A GPU container keeps one host port per model.
+  [Runbook](../../deploy/nanobanana.md).
 - **A rented `eu-central-1` node arrives by the second path** — the gateway's own VPC and security
   group, without a tailnet dependency. The path is built and rehearsed, but no instance runs by
   default: a row below is a machine only while its instance exists.
@@ -54,6 +59,7 @@ repo-wide invariants are in [`project.md`](project.md) and are not repeated here
 | a second 5090 | borrowed from a company | ? | RTX 5090, 32 GB | likely laboratory | not delivered — as recorded 2026-10-17 |
 | ~3 more 90-class | laboratory | ? | unknown, ~24 GB | laboratory | not measured |
 | `aws-euc1-l4` — EC2 `g6.xlarge` in the gateway's VPC | AWS `eu-central-1` | the gateway's subnet; group `biohack-gpu-backend`, `22` and `12711`–`12713` from the host's group only | NVIDIA L4, 23034 MiB | AWS | not running — the artifacts are a base AMI and a digest, not a machine; last served 2026-10-27 ([rehearsal](../references/20261027_aws-gpu-backend.md)) |
+| `vertex-global` — the managed-API wrapper on `gwhs-host` | the gateway host; Google global through its egress | loopback `127.0.0.1:8010`, prefixes `nano-banana-2`, `nano-banana-2.1`, `nano-banana-pro` | no GPU | AWS | implemented 2026-11-03, no container runs yet — [runbook](../../deploy/nanobanana.md) |
 | ETH hosts | Zurich | not negotiated | unknown | ETH | not negotiated |
 
 Location groups are conservative labels, not proven independent fault domains. Separate laboratory

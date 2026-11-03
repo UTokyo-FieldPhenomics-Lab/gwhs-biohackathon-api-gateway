@@ -53,6 +53,12 @@ Package: `docs/`. Shared constraints are in [`project.md`](project.md).
   table blocks from `fixtures/model-directory.json`; CI retains the model-page diff check. Refresh
   the fixture from authenticated `GET /models`, never handwrite the schema or require live access
   during a build. [Parameters](../references/2026101811_model-parameter-validation.md).
+- **A hosted model family is one page, one table per id.** Declare the ids in
+  `<!-- models: … -->` and carry a `parameters:<id>` block for each; the prose is shared because the
+  contract is. The page says the model is served through the provider and links the provider's
+  terms; it never describes the private wrapper or its source. Its measured table is filled from
+  the host after deployment, not from the upstream's marketing page.
+  [Runbook](../../deploy/nanobanana.md).
 
 ## Integration and presentation
 

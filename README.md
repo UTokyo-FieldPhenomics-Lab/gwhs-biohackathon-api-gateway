@@ -16,7 +16,7 @@ are in [`deploy/gpu-backends-local.md`](deploy/gpu-backends-local.md) for the on
 |---|---|---|
 | Images | Public image and mask bytes | Private S3 in `eu-central-1`, served through CloudFront with OAC; write-once object paths |
 | Metadata | Dataset discovery, facets, annotations and row addressing | Publisher-built SQLite indices loaded into gateway memory at startup |
-| Compute | Authentication, inference routing, row-result caching and upload admission | FastAPI on one EC2 host, reaching private Docker GPU backends |
+| Compute | Authentication, inference routing, row-result caching and upload admission | FastAPI on one EC2 host, reaching private model backends: Docker GPU containers and one managed-API wrapper on the host |
 | Contract | API schema, data layout, clients and participant documentation | Pydantic models, [`docs/data-layout.md`](docs/data-layout.md), this repository and its documentation site |
 
 The dataset and model surfaces are implemented and deployed. Deployment evidence and measurements

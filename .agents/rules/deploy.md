@@ -5,6 +5,16 @@ Package: `deploy/`. Shared constraints are in [`project.md`](project.md).
 - **Deploy the gateway with systemd, not Docker.** Supply the unit and bootstrap scripts; a gateway
   Dockerfile is added only for an actual hosted-platform requirement.
   [Unit](../../deploy/systemd/biohack-gateway.service).
+- **A model service on the gateway host runs as a container; the gateway stays systemd.** Docker
+  exists on that host for the one managed-API backend, exactly as it does on a GPU host. The public
+  host holds the image and the ledger, not the private source and not a registry credential: build
+  on the workstation and `docker load` the image, recording the submodule commit and the image id.
+  [Runbook](../../deploy/nanobanana.md).
+- **Mount a hosted model's credential; never bake it in.** A service-account JSON is a read-only
+  file mount owned by the container's uid, not an `ENV` value (visible in `docker inspect`) and not a
+  `COPY` (visible in every pulled image). It is least privilege — `roles/aiplatform.user`, or a
+  custom role holding only `aiplatform.endpoints.predict` — and rotation is a file replace plus a
+  container restart. [Runbook](../../deploy/nanobanana.md#8-rotate-and-revoke).
 - **Inject credentials at deployment; commit names only.** Keep examples value-free. Host-private
   state lives outside git in the service user's `~/.config/biohack-gateway/`, directory mode 0700.
   Create existing state only once; reruns must not overwrite tokens, env or credentials.
@@ -34,7 +44,10 @@ Package: `deploy/`. Shared constraints are in [`project.md`](project.md).
 - **Host replacement must be reconstructible.** Code comes from git, index/cache from pinned
   publishing, certificates from ACME and credentials from external state. No second volume or pinned
   availability zone is required. Tokens are the authoritative exception: maintain an off-host copy
-  after changes; without it a replacement requires reissuing participant keys.
+  after changes; without it a replacement requires reissuing participant keys. The managed-API
+  backend's spend ledger is the second: it is the only record of what was spent and by which team,
+  and a copy lost with the host resets every allowance and overstates the balance.
+  [Ledger](../../deploy/nanobanana.md#7-the-money).
   [State recovery](../../deploy/README.md#where-the-gateways-settings-and-tokens-live).
 - **Grant the publisher writes only to dataset prefixes; keep the instance role read-only.** The
   publisher reads its 0600 access-key CSV into a boto3 session; only its bucket, region and CSV path
