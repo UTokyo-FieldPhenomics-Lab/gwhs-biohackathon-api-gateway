@@ -413,8 +413,13 @@ a path or a parameter, and a model left in the short form is offered as a plain 
 `family` is the product line, `label` what this member is called inside it, and `order` where it sits
 in the second dropdown. **A family needs two served ids to become a dropdown**, so one member alone
 stays a plain id. A `label` or an `order` without a `family` is refused, because nothing would read
-it. **Deploy the code before writing this form:** a gateway older than the loader change skips every
-object-valued entry and serves only the models still in list form.
+it.
+
+**Changing the file's shape and the code that reads it is one restart, not two.** A gateway older
+than the loader that accepts this form skips every object-valued entry and serves only the models
+still in list form, so a restart between the two leaves a directory with models missing and a picker
+with every id flat. Stop the service, pull the code, write the file, then start it once — five
+seconds of no answers, instead of a service that answers wrongly while it looks healthy.
 
 A file that does not parse means **no models**, never all of them, so a typo in host configuration
 cannot become a gateway that answers for models nobody configured. **Order is preference:** routing
