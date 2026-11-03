@@ -135,6 +135,10 @@ Package: `gateway/`. Shared constraints are in [`project.md`](project.md).
   presentation defaults may depend on model id; unknown ids use the base view. Preview a resolved
   image before inference. Print `$KEY`, never a token, in the generated command.
   [Playground](../references/2026101622_play-page-layout-annotations-and-curl.md).
+- **Let a family group the picker, never the request.** Two checkpoints stay two model ids; the
+  second control chooses one, and the sample curl names that id. A family value is a page label and
+  must not reach a path or a parameter.
+  [Picker](../references/2026110311_play-model-family-picker.md).
 - **Reuse the site's client module for decoding and dataset declarations for class colour.** Copy
   row-major masks without another transpose; categories without a dataset palette are coloured per
   object. No parallel decoder or hardcoded class palette.

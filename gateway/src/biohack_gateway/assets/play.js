@@ -8,7 +8,8 @@
   let datasetRows = new Map();   // dataset id -> its row count, as the surface last reported it
 
   const $ = (id) => document.getElementById(id);
-  const model = $("model"), dataset = $("dataset"), parameters = $("parameters");
+  const model = $("model"), variant = $("variant");
+  const dataset = $("dataset"), parameters = $("parameters");
   const canvas = $("canvas"), figure = document.querySelector("#play figure");
   const pane = $("pane"), stage = $("stage"), marks = $("marks");
 
@@ -27,6 +28,12 @@
   // presentation default, kept in the one table allowed to name a model, not a second id in the
   // connect path.
   //
+  // `family` groups ids that are the same model at different checkpoints. The first dropdown then
+  // names the family once and a second names the checkpoint; what is sent is still the id, never the
+  // family, so the wire contract keeps its two ids. `label` is what the checkpoint is called,
+  // `order` puts the cheaper one first. A family with one served id stays a plain id, because a
+  // second control with one choice is a click that decides nothing.
+  //
   // View order is the order a reader builds the picture in: the photograph, the model's pixel layer
   // over it, the rectangle geometry on top, then the two annotations the page adds.
   const VIEW_BASE = {image: true, masks: true, results: false, boxes: true, legend: false, watermark: true};
@@ -36,8 +43,12 @@
     // `results` is the layer for a model's pixel output, whatever shape it takes: a feature grid
     // tinted over the photograph, or a picture that replaces it. The eye is hidden again for every
     // model without this entry.
-    "dinov3-vitl16": {boxes: false, masks: false, results: true},
-    "dinov3-vith16plus": {boxes: false, masks: false, results: true},
+    "dinov3-vitl16": {
+      family: "DINOv3", label: "ViT-L/16", order: 1, boxes: false, masks: false, results: true,
+    },
+    "dinov3-vith16plus": {
+      family: "DINOv3", label: "ViT-H+/16", order: 2, boxes: false, masks: false, results: true,
+    },
     "internvl-u": {
       boxes: false,
       masks: false,
@@ -92,6 +103,90 @@
       if (name in VIEW_BASE) defaults[name] = value;
     }
     return {...VIEW_BASE, ...defaults};
+  };
+
+  // The first dropdown's choices, rebuilt from `GET /models`. A family is a value of its own that no
+  // model answers: the second dropdown holds the ids, and `selectedModel` is the only reader of the
+  // pair. Only families with two served ids become a family choice — a second control with one
+  // option would ask the reader to confirm the only thing they can choose.
+  let familyOfId = new Map();     // checked id -> the first dropdown's family value
+  let familyChoices = new Map();  // family value -> {label, members: [{id, label}]}
+
+  const buildModelChoices = (entries) => {
+    const served = new Map();  // family label -> its entries, in the directory's order
+    for (const entry of entries) {
+      const family = presetFor(entry.id).family;
+      if (!family) continue;
+      if (!served.has(family)) served.set(family, []);
+      served.get(family).push(entry);
+    }
+    familyOfId = new Map();
+    familyChoices = new Map();
+    for (const [family, members] of served) {
+      if (members.length < 2) continue;
+      const value = "family:" + family;
+      const ordered = members
+        .map((entry) => {
+          const preset = presetFor(entry.id);
+          return {id: entry.id, label: preset.label || entry.id, order: preset.order || 0};
+        })
+        .sort((left, right) => left.order - right.order);
+      familyChoices.set(value, {label: family, members: ordered});
+      for (const member of ordered) familyOfId.set(member.id, value);
+    }
+    model.replaceChildren();
+    const placed = new Set();
+    const option = (value, label) => {
+      const element = document.createElement("option");
+      element.value = value;
+      element.textContent = label;
+      return element;
+    };
+    for (const entry of entries) {
+      const family = familyOfId.get(entry.id);
+      if (!family) {
+        model.append(option(entry.id, entry.id));
+        continue;
+      }
+      if (placed.has(family)) continue;
+      placed.add(family);
+      model.append(option(family, familyChoices.get(family).label));
+    }
+    model.disabled = !model.options.length;
+  };
+
+  // Fill the checkpoint dropdown for the chosen family, or hide it when the choice is a plain id.
+  // `preferred` is the id to land on — the one a URL named, or the family's first member when the
+  // reader changed only the family.
+  const syncVariant = (preferred) => {
+    const family = (preferred && familyOfId.get(preferred)) || model.value;
+    const choice = familyChoices.get(family);
+    variant.replaceChildren();
+    if (!choice) {
+      variant.hidden = true;
+      variant.disabled = true;
+      return;
+    }
+    for (const member of choice.members) {
+      const element = document.createElement("option");
+      element.value = member.id;
+      element.textContent = member.label;
+      variant.append(element);
+    }
+    variant.hidden = false;
+    variant.disabled = false;
+    variant.value = choice.members.some((member) => member.id === preferred)
+      ? preferred
+      : choice.members[0].id;
+  };
+
+  /** The model id the controls name: the checkpoint when a family is chosen, otherwise the id. */
+  const selectedModel = () => (familyChoices.has(model.value) ? variant.value : model.value);
+
+  /** Point both dropdowns at one id, which is how a URL or the landing choice arrives. */
+  const selectModel = (id) => {
+    model.value = familyOfId.get(id) || id;
+    syncVariant(id);
   };
 
   const say = (element, text, ok) => {
@@ -388,10 +483,11 @@
   const shell = (text) => "'" + String(text).replace(/'/g, "'\\''") + "'";
 
   const requestText = () => {
-    if (!model.value) return "";
+    const id = selectedModel();
+    if (!id) return "";
     const upload = $("source").value === "upload";
     const search = query();
-    const address = location.origin + "/models/" + encodeURIComponent(model.value);
+    const address = location.origin + "/models/" + encodeURIComponent(id);
     const lines = ["curl -s -X POST \\", '  -H "X-API-Key: $KEY" \\'];
     if (upload) {
       if ($("resize").checked) {
@@ -470,8 +566,15 @@
     renderFacts();
   };
 
+  // A declaration that arrives after the reader has chosen another model belongs to a control the
+  // page no longer shows; applying it would leave the parameters of one id under the other id's name.
+  // The counter is per call, and the latest call is the only one that may write.
+  let modelLoad = 0;
+
   const loadModel = async (id) => {
+    const token = ++modelLoad;
     const declaration = await call("/models/" + encodeURIComponent(id));
+    if (token !== modelLoad) return;
     // Applied with the declaration, so the eye buttons describe the answer that is about to be asked
     // for. Nothing on screen is redrawn here: the picture there belongs to the previous answer.
     const preset = presetFor(id);
@@ -535,11 +638,11 @@
       syncSource();
       preview();
       const directory = await call("/models");
-      fill(model, directory.models, (entry) => entry.id);
-      model.disabled = !directory.models.length;
+      buildModelChoices(directory.models);
       // A link may name the model it wants — `/play?model=<id>` — which is how a model page sends a
-      // reader here with the choice already made. An id this gateway does not serve is ignored
-      // rather than shown: the directory is the list of what answers, and a URL is not.
+      // reader here with the choice already made. The id picks both dropdowns, so a family link lands
+      // on the checkpoint it named. An id this gateway does not serve is ignored rather than shown:
+      // the directory is the list of what answers, and a URL is not.
       const wanted = new URLSearchParams(location.search).get("model");
       // The directory is in id order, so a backbone sorts first and its answer is a grid to decode
       // before it is a picture. The landing model stays the one a first-time reader can run with no
@@ -550,7 +653,7 @@
         directory.models.find((entry) => entry.id === landing) ||
         directory.models[0];
       if (chosen) {
-        model.value = chosen.id;
+        selectModel(chosen.id);
         await loadModel(chosen.id);
       } else {
         clearFacts();
@@ -567,6 +670,11 @@
     for (const id of ["model-state", "run-state", "check"]) say($(id), "");
     model.replaceChildren();
     model.disabled = true;
+    variant.replaceChildren();
+    variant.hidden = true;
+    variant.disabled = true;
+    familyOfId = new Map();
+    familyChoices = new Map();
     dataset.replaceChildren();
     parameters.replaceChildren();
     fields = [];
@@ -614,13 +722,24 @@
     say($("connect-state"), "no key — paste your team's token", false);
   });
 
-  model.addEventListener("change", () => {
-    loadModel(model.value).catch((error) => {
+  const loadChosen = () => {
+    const id = selectedModel();
+    if (!id) return;
+    loadModel(id).catch((error) => {
       // The row now holds a message the ticker did not write, so the tick has to stop writing over it.
       clearFacts();
       say($("model-state"), error.message, false);
     });
+  };
+
+  // Changing the family fills the checkpoint dropdown and lands on its first member; changing the
+  // checkpoint leaves the family where it is. Neither path writes the family anywhere: both end at
+  // the id `selectedModel` reads from the pair.
+  model.addEventListener("change", () => {
+    syncVariant();
+    loadChosen();
   });
+  variant.addEventListener("change", loadChosen);
 
   $("source").addEventListener("change", () => {
     syncSource();
@@ -1771,7 +1890,9 @@
     // to draw over the result.
     previewToken += 1;
     try {
-      const chosen = encodeURIComponent(model.value);
+      // The id, read once with the rest: the controls may change while the request is in flight, and
+      // this run must keep naming the model it started with.
+      const chosen = encodeURIComponent(selectedModel());
       // Read once: a run outlives the control it started from, and the image, the body and the
       // palette must all describe the same dataset.
       const source = dataset.value;
@@ -1856,10 +1977,14 @@
   let running = false;
 
   const poll = async () => {
-    if (!key || !model.value || document.visibilityState !== "visible") return;
+    const id = selectedModel();
+    if (!key || !id || document.visibilityState !== "visible") return;
     try {
       const directory = await call("/models");
-      const entry = directory.models.find((candidate) => candidate.id === model.value);
+      // The reader may have changed the pair while the directory was in flight; an answer about the
+      // model they left must not write over the facts of the one they chose.
+      if (id !== selectedModel()) return;
+      const entry = directory.models.find((candidate) => candidate.id === id);
       if (!entry) return;
       showFacts(entry);
       $("run").disabled = running || !entry.backends_up;

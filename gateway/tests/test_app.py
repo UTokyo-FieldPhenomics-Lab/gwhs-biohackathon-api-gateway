@@ -434,12 +434,36 @@ def test_the_model_page_names_no_model_and_no_parameter_outside_its_presets(
     end = page.index("let view = {...VIEW_BASE};")
     presets, rest = page[start:end], page[:start] + page[end:]
 
-    named = ("sam3.1-meta", "gwfss-segformer-b4", "internvl-u", "prompt", "confidence_threshold")
+    named = (
+        "sam3.1-meta",
+        "gwfss-segformer-b4",
+        "internvl-u",
+        "dinov3-vitl16",
+        "dinov3-vith16plus",
+        "prompt",
+        "confidence_threshold",
+    )
     for name in named:
         assert name in presets, f"{name} left the preset table, so this test is stale"
         assert name not in rest, f"{name} appears outside the preset table"
     assert "imgsz" not in page  # a parameter the page has no preset for, so it stays unnamed
     assert "/models/" in page and "/datasets/" in page  # it asks the surface instead
+
+
+def test_a_checkpoint_family_is_chosen_in_two_steps(client: TestClient) -> None:
+    """The family names the row once; the checkpoint is the id that is actually called.
+
+    A family is a presentation label, not a third id. The first dropdown carries a `family:` value,
+    the second carries an id from `GET /models`, and every path that calls a model reads the pair
+    through `selectedModel` — so a future family needs no change to the request.
+    """
+    page = client.get(PLAY_PATH).text
+
+    assert 'id="variant" hidden' in page
+    assert 'aria-label="checkpoint"' in page
+    assert page.count('family: "DINOv3"') == 2
+    assert "encodeURIComponent(selectedModel())" in page
+    assert "encodeURIComponent(model.value)" not in page
 
 
 def test_the_model_page_has_one_view_toggle_per_layer(client: TestClient) -> None:
