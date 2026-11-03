@@ -74,20 +74,20 @@
   //
   // View order is the order a reader builds the picture in: the photograph, the model's pixel layer
   // over it, the rectangle geometry on top, then the two annotations the page adds.
-  const VIEW_BASE = {image: true, masks: true, results: false, boxes: true, legend: false, watermark: true};
+  const VIEW_BASE = {image: true, masks: true, results: false, geometry: true, legend: false, watermark: true};
   const MODEL_PRESETS = {
-    "gwfss-segformer-b4": {boxes: false, legend: true, landing: true},
+    "gwfss-segformer-b4": {geometry: false, legend: true, landing: true},
     // A backbone has no objects and no mask; what it publishes is the grid its `results` eye draws.
     // `results` is the layer for a model's pixel output, whatever shape it takes: a feature grid
     // tinted over the photograph, or a picture that replaces it. The eye is hidden again for every
     // model without this entry.
-    "dinov3-vitl16": {boxes: false, masks: false, results: true},
-    "dinov3-vith16plus": {boxes: false, masks: false, results: true},
+    "dinov3-vitl16": {geometry: false, masks: false, results: true},
+    "dinov3-vith16plus": {geometry: false, masks: false, results: true},
     // One product line, three tiers: 2.1 is the cheaper default, 2 the earlier checkpoint, Pro the
     // largest. They are different upstream models, not checkpoints of one; the picker still sends
     // the id, and the answer is the same `ModelPrediction` every model answers.
     "nano-banana-2.1": {
-      boxes: false, masks: false, results: true,
+      geometry: false, masks: false, results: true,
       examples: [
         {
           label: "segmentation masks",
@@ -101,10 +101,10 @@
         },
       ],
     },
-    "nano-banana-2": {boxes: false, masks: false, results: true},
-    "nano-banana-pro": {boxes: false, masks: false, results: true},
+    "nano-banana-2": {geometry: false, masks: false, results: true},
+    "nano-banana-pro": {geometry: false, masks: false, results: true},
     "internvl-u": {
-      boxes: false,
+      geometry: false,
       masks: false,
       results: true,
       examples: [
@@ -154,11 +154,11 @@
     // One family, one model with and without a mask head: Ultralytics' COCO checkpoints. Neither is
     // trained on wheat — a `gwhd` row answers an empty list, which the model page says — so these
     // carry no example chip: a chip that answers nothing would read as a broken page rather than as
-    // a general detector on a picture outside its classes. `boxes: false` because the parameter of
+    // a general detector on a picture outside its classes. `geometry: false` because the parameter of
     // that name is a prompt, and these take no prompt; the mask answer is drawn by the `masks` layer
     // the base view already opens.
-    "yolo26-ultralytics": {boxes: false, masks: false},
-    "yolo26-seg-ultralytics": {boxes: false},
+    "yolo26-ultralytics": {geometry: false, masks: false},
+    "yolo26-seg-ultralytics": {geometry: false},
     // The call the documentation keeps as its known-good one: eighteen heads on this row, at this
     // threshold. A participant reproducing it here and in a client is testing both.
     "sam3.1-meta": {
@@ -485,9 +485,9 @@
     selected = null;
     // Editing a layer nobody can see would draw marks that vanish as they are made, so asking to
     // edit shows the geometry layer, which both lists share.
-    if (editor && !view.boxes) {
-      view.boxes = true;
-      document.querySelector('[data-view="boxes"]').setAttribute("aria-pressed", "true");
+    if (editor && !view.geometry) {
+      view.geometry = true;
+      document.querySelector('[data-view="geometry"]').setAttribute("aria-pressed", "true");
     }
     showMode();
     showBoxes();
@@ -758,10 +758,10 @@
     const publishesPixels = Boolean(preset.results);
     document.querySelector('[data-view="results"]').hidden = !publishesPixels;
     document.querySelector('[data-view="masks"]').hidden = publishesPixels;
-    document.querySelector('[data-view="boxes"]').hidden = publishesPixels;
+    document.querySelector('[data-view="geometry"]').hidden = publishesPixels;
     // The switch follows the layer: a model whose geometry opens hidden also opens locked, because a
     // drag that draws into a hidden layer is a gesture with no visible result.
-    if (!view.boxes) {
+    if (!view.geometry) {
       editor = null;
       selected = null;
     }
@@ -952,7 +952,7 @@
     button.setAttribute("aria-pressed", String(view[key]));
     // Hiding the geometry layer locks the picture: a drag would make a mark nobody can see, and the
     // page would look as if the gesture had failed rather than the layer being off.
-    if (key === "boxes" && !view.boxes) {
+    if (key === "geometry" && !view.geometry) {
       editor = null;
       selected = null;
     }
@@ -1297,7 +1297,7 @@
     const layer = $("boxes");
     // One toggle for every rectangle on the picture — the exemplars a reader drew and the boxes a
     // model answered — so the layer is hidden as a whole, handles and rubber band included.
-    layer.hidden = !view.boxes;
+    layer.hidden = !view.geometry;
     if (!last || !boxInput) {
       layer.replaceChildren();
       return;
@@ -1344,6 +1344,7 @@
     if (boxInput) {
       boxInput.value = "";
       boxInput.removeAttribute("aria-invalid");
+      boxInput.removeAttribute("title");
       // No write-back event: an empty field is the parameter sent nowhere, and the gateway's
       // "boxes is required" refusal is what a reader should meet if they run it like this.
     }
@@ -1364,38 +1365,65 @@
   // 1 (positive) or 0 (negative), in the image's own pixels. Checked here the way the gateway checks
   // it, so a typo is marked in the field rather than discovered by a request; the gateway's copy
   // stays the authority, and this one only decides what the picture draws.
-  const parseGeometry = (text, type) => {
-    if (text.trim() === "") return [];   // nothing typed yet, or everything deleted
+  //
+  // The picture's size is the second half, and only this page has it: the gateway leaves bounds to
+  // the backend, and nothing below the page decodes the image. A coordinate past the edge becomes a
+  // normalized value outside [0, 1], which the encoder samples as padding — no error, and an answer
+  // about nothing. Returns `{value}` or `{error}`; the error's sentence goes on the field's title,
+  // because a red border can say that something is wrong but not what.
+  const parseGeometry = (text, type, image) => {
+    if (text.trim() === "") return {value: []};   // nothing typed yet, or everything deleted
     let value;
     try {
       value = JSON.parse(text);
     } catch {
-      return null;
+      return {error: `params.${type} must be a JSON array of arrays`};
     }
-    if (!Array.isArray(value) || !value.length) return null;
+    if (!Array.isArray(value) || !value.length) {
+      return {error: `params.${type} must be a non-empty JSON array of arrays`};
+    }
     const coordinates = type === "boxes" ? 4 : 2;
-    const whole = value.every((entry) =>
+    const shaped = value.every((entry) =>
       Array.isArray(entry) &&
       (entry.length === coordinates || entry.length === coordinates + 1) &&
       entry.slice(0, coordinates).every((number) =>
         typeof number === "number" && Number.isFinite(number)) &&
       (entry.length === coordinates || entry[coordinates] === 0 || entry[coordinates] === 1));
-    return whole ? value : null;
+    if (!shaped) {
+      return {error: `each params.${type} entry is ${coordinates} numbers and an optional 1/0 label`};
+    }
+    if (image && !value.every((entry) => inside(entry, type, image))) {
+      return {error: `params.${type} coordinates must be inside the picture`};
+    }
+    return {value};
   };
 
-  // The input's text as a list of boxes, or null when it is not one: null is a value still being
-  // typed rather than an error, and the caller keeps what it already has.
-  const parseBoxes = (text) => parseGeometry(text, "boxes");
+  // Whether one entry lies inside the picture, in the image's own pixels. A box must also have a
+  // width and a height: a negative or empty extent is not a box any model can use.
+  const inside = (entry, type, image) => {
+    const [x, y] = entry;
+    if (type === "points") {
+      return x >= 0 && y >= 0 && x <= image.naturalWidth && y <= image.naturalHeight;
+    }
+    const width = entry[2], height = entry[3];
+    return width > 0 && height > 0 && x >= 0 && y >= 0 &&
+      x + width <= image.naturalWidth && y + height <= image.naturalHeight;
+  };
+
+  // The input's text as a list of boxes: `{value}` when it is one, a sentence when it is not.
+  const parseBoxes = (text) => parseGeometry(text, "boxes", last && last.image);
 
   /** Take the input's text as the boxes on the picture, marking the field when it is not one. */
   const syncBoxes = () => {
     const parsed = parseBoxes(boxInput.value);
-    if (!parsed) {
+    if (!parsed.value) {
       boxInput.setAttribute("aria-invalid", "true");
+      boxInput.title = parsed.error;
       return;
     }
     boxInput.removeAttribute("aria-invalid");
-    boxes = parsed;
+    boxInput.removeAttribute("title");
+    boxes = parsed.value;
     showBoxes();
   };
 
@@ -1512,7 +1540,7 @@
     const layer = $("points");
     // One eye for the reader's geometry, the same one the boxes answer to: the two lists are the
     // same kind of thing on the picture, and a second eye would be a control with no new question.
-    layer.hidden = !view.boxes;
+    layer.hidden = !view.geometry;
     layer.classList.toggle("editing", editor === "points");
     if (!last || !pointInput) {
       pointMarks = [];
@@ -1614,13 +1642,15 @@
 
   /** Take the input's text as the points on the picture, marking the field when it is not one. */
   const syncPoints = () => {
-    const parsed = parseGeometry(pointInput.value, "points");
-    if (!parsed) {
+    const parsed = parseGeometry(pointInput.value, "points", last && last.image);
+    if (!parsed.value) {
       pointInput.setAttribute("aria-invalid", "true");
+      pointInput.title = parsed.error;
       return;
     }
     pointInput.removeAttribute("aria-invalid");
-    points = parsed;
+    pointInput.removeAttribute("title");
+    points = parsed.value;
     showPoints();
     showSelection();
   };
@@ -1632,6 +1662,7 @@
     if (pointInput) {
       pointInput.value = "";
       pointInput.removeAttribute("aria-invalid");
+      pointInput.removeAttribute("title");
     }
     showPoints();
     showSelection();
@@ -1741,7 +1772,7 @@
         ? String(object.category) : "";
 
     marks.replaceChildren();
-    if (view.boxes) {
+    if (view.geometry) {
       const anchors = new Map();        // how many labels already claim one point
       objects.forEach((object, order) => {
         if (!object.bbox) return;
@@ -1773,8 +1804,11 @@
     tally.hidden = typeof last.count !== "number";
     tally.textContent = tally.hidden
       ? "" : "count " + last.count.toLocaleString(undefined, {maximumFractionDigits: 1});
-    showBoxes();
-    showPoints();
+    // The picture's size is what a coordinate is judged against, so the lists are validated again now
+    // that it is known: a value typed while the image was still loading arrives here, and a list
+    // that was fine for the old picture cannot be — that picture's list was already cleared.
+    if (boxInput) syncBoxes();
+    if (pointInput) syncPoints();
     const machine = $("watermark");
     machine.hidden = !view.watermark || !machine.textContent;
     const full = $("full");

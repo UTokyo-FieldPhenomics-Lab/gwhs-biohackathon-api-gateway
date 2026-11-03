@@ -92,11 +92,24 @@ Verified through Chrome against the local gateway: mutually exclusive switches, 
 hollow marker, right-click drops a point and a box, Delete drops the selection, and changing the row
 clears the list with the actions hidden.
 
+## Bounds, and the eye's name
+
+- **The page is the only place that can judge a coordinate against the picture.** `parseGeometry`
+  now takes the image on screen and refuses an entry past its edge — a point outside `[0, w] × [0, h]`,
+  a box with a non-positive extent or an edge past the picture. The gateway deliberately leaves bounds
+  to the backend and the backend does not check them: the encoder samples a normalized coordinate
+  past `1` as padding, so the answer is about nothing rather than an error. The field turns red and
+  its `title` carries the sentence a border cannot — the shape reason or the bounds reason.
+- The lists are validated again when the picture lands (`render`), because a value typed while an
+  image was still loading is only then judgeable.
+- **The eye is `geometry`**, label and key: `view.geometry`, `data-view="geometry"`, and the presets'
+  view defaults say `geometry` too. It was named for boxes when it was the only layer of that kind;
+  it now carries the reader's boxes, the reader's points and the model's boxes.
+
 ## What is still open
 
-- **A bounds check**, if it is wanted: the page has the image, the gateway deliberately does not, and
-  the container could clamp or refuse after decoding. Each is a different promise; none is made yet.
-- **The `boxes` eye's name** now covers points too. Renaming it to "geometry" is a label change with
-  its own test, not a fact this change had to settle.
 - **A next-label selector** for adding several negative points in a row: the row's `0` acts on a
   selection, so a negative point costs an add and a click. Not measured as a need yet.
+- **The container still trusts the coordinates it is handed.** A client calling the API directly — not
+  through the page — can still send a point past the edge and get an answer about nothing. Refusing or
+  clamping after decoding is a container decision nobody has made.

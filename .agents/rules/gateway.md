@@ -168,9 +168,10 @@ Package: `gateway/`. Shared constraints are in [`project.md`](project.md).
   no second renderer; the page writes `1` or `0` and grows no class list of its own.
   [Points on the picture](../references/2026110316_play-points-on-the-picture.md).
 - **Check a geometry value in the field before the request.** The page parses `boxes` and `points`
-  by the same shape the gateway refuses — arity, finite coordinates, a `1`/`0` label — marks the
-  field and keeps the last list that parsed. The gateway's copy stays the authority; this one only
-  decides what the picture draws.
+  by the same shape the gateway refuses — arity, finite coordinates, a `1`/`0` label — and against
+  the picture on screen, whose size nothing below the page applies: an entry past its edge turns the
+  field red with the reason in its `title`, and the last list that parsed stays drawn. The gateway's
+  copy stays the authority; this one only decides what the picture draws.
   [Points on the picture](../references/2026110316_play-points-on-the-picture.md).
 - **Keep a geometry switch in the row of the list it switches, and let it drop its words before its
   place.** Each list's switch is moved into that parameter's cell and the pair takes the control

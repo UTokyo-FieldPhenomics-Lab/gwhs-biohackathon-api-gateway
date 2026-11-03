@@ -488,22 +488,23 @@ def test_changing_the_model_takes_the_previous_answer_off(client: TestClient) ->
 def test_the_model_page_has_one_view_toggle_per_layer(client: TestClient) -> None:
     """Each layer the picture can show has its own eye.
 
-    The photograph, masks, the model's pixel layer, boxes, legend and the machine watermark. The
-    state is `aria-pressed` on the button, and the defaults are the table at the top of the script —
-    the one place the page names a model, and only to choose what is shown first. The photograph
-    comes first because it is what every other layer is drawn over; `results` is off by default
-    because only a model that produces pixels answers one.
+    The photograph, masks, the model's pixel layer, geometry (the reader's boxes and points and the
+    model's boxes), legend and the machine watermark. The state is `aria-pressed` on the button, and
+    the defaults are the table at the top of the script — the one place the page names a model, and
+    only to choose what is shown first. The photograph comes first because it is what every other
+    layer is drawn over; `results` is off by default because only a model that produces pixels
+    answers one.
     """
     page = client.get(PLAY_PATH).text
 
-    for layer in ("image", "masks", "results", "boxes", "legend", "watermark"):
+    for layer in ("image", "masks", "results", "geometry", "legend", "watermark"):
         assert f'data-view="{layer}"' in page
     assert (
         "const VIEW_BASE = "
-        "{image: true, masks: true, results: false, boxes: true, legend: false, watermark: true};"
-        in page
+        "{image: true, masks: true, results: false, geometry: true, legend: false, "
+        "watermark: true};" in page
     )
-    assert '"gwfss-segformer-b4": {boxes: false, legend: true, landing: true},' in page
+    assert '"gwfss-segformer-b4": {geometry: false, legend: true, landing: true},' in page
 
 
 def test_the_boxes_switch_sits_beside_the_list_it_switches(client: TestClient) -> None:
@@ -536,7 +537,9 @@ def test_a_points_list_is_drawn_where_its_numbers_say(client: TestClient) -> Non
     assert 'input.addEventListener("input", syncPoints)' in page
     assert "element.textContent = String(label)" in page
     assert "point-mark" in page
-    assert 'parseGeometry(pointInput.value, "points")' in page
+    assert 'parseGeometry(pointInput.value, "points", last && last.image)' in page
+    # The picture's own size is the bound nothing below the page can apply.
+    assert "params.${type} coordinates must be inside the picture" in page
 
 
 def test_the_boxes_switch_drops_its_words_before_it_leaves_the_line(client: TestClient) -> None:
