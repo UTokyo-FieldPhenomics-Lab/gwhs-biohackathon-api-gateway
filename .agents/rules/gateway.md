@@ -163,6 +163,15 @@ Package: `gateway/`. Shared constraints are in [`project.md`](project.md).
   presentation defaults may depend on model id; unknown ids use the base view. Preview a resolved
   image before inference. Print `$KEY`, never a token, in the generated command.
   [Playground](../references/2026101622_play-page-layout-annotations-and-curl.md).
+- **Draw a geometry mark with the value the entry carries, and edit only the values the contract
+  has.** A point's circle and a box's badge show that entry's own label, so a wider vocabulary needs
+  no second renderer; the page writes `1` or `0` and grows no class list of its own.
+  [Points on the picture](../references/2026110316_play-points-on-the-picture.md).
+- **Check a geometry value in the field before the request.** The page parses `boxes` and `points`
+  by the same shape the gateway refuses — arity, finite coordinates, a `1`/`0` label — marks the
+  field and keeps the last list that parsed. The gateway's copy stays the authority; this one only
+  decides what the picture draws.
+  [Points on the picture](../references/2026110316_play-points-on-the-picture.md).
 - **Keep a geometry switch in the row of the list it switches, and let it drop its words before its
   place.** The `boxes` switch is moved into that parameter's cell and the pair takes the control
   column; in a narrow row the two icons stay and the labels go, each button keeping an `aria-label`

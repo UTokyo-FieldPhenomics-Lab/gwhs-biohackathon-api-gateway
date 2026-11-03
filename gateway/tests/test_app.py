@@ -520,6 +520,22 @@ def test_the_boxes_switch_sits_beside_the_list_it_switches(client: TestClient) -
     assert "#play #boxes-mode {\n  grid-column: 2;" not in page
 
 
+def test_a_points_list_is_drawn_where_its_numbers_say(client: TestClient) -> None:
+    """A geometry value typed into the field is the picture's other view, for points as for boxes.
+
+    The marker carries the entry's own label rather than a vocabulary of its own: `1` and `0` are
+    what this contract publishes, and a wider one would need no second renderer. The overlay is
+    read-only for now — the gesture lands with the editor that shares one mode between the lists.
+    """
+    page = client.get(PLAY_PATH).text
+
+    assert 'id="points" aria-hidden="true"' in page
+    assert 'input.addEventListener("input", syncPoints)' in page
+    assert "element.textContent = String(label)" in page
+    assert "point-mark" in page
+    assert 'parseGeometry(pointInput.value, "points")' in page
+
+
 def test_the_boxes_switch_drops_its_words_before_it_leaves_the_line(client: TestClient) -> None:
     """A narrow row keeps the switch beside the list: the icons stay, the words go.
 

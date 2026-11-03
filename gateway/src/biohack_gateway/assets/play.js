@@ -463,6 +463,7 @@
     // A declaration replaces the controls, and with them the picture's editor: a model without a
     // `boxes` parameter has nothing to draw, while the list itself stays for the next one that has.
     boxInput = null;
+    pointInput = null;
     const declared = declaration.parameters || [];
     fields = [];
     for (const parameter of declared) {
@@ -496,12 +497,25 @@
         }
         syncBoxes();
         input.addEventListener("input", syncBoxes);
+      } else if (parameter.type === "points") {
+        // Read-only: the picture redraws from the text as it is typed, and does not edit the list
+        // yet. The switch stays the boxes' until the two share one editor, which is a gesture change
+        // rather than this one.
+        pointInput = input;
+        cell.classList.add("geometry");
+        if (!input.value && points.length) {
+          input.value = JSON.stringify(points);
+          delete input.dataset.untouched;   // a list restored here is the reader's, so it is sent
+        }
+        syncPoints();
+        input.addEventListener("input", syncPoints);
       }
     }
     showMode();
     // The overlay follows the editor: a model that takes no boxes must not leave another model's
     // boxes drawn on the picture it is about to replace.
     showBoxes();
+    showPoints();
   };
 
   // A preset's examples, as chips. Which ones exist is the model's own, and each is checked against
@@ -1243,6 +1257,15 @@
       const element = document.createElement("div");
       element.className = "box";
       place(element, last.image, box[0], box[1], box[2], box[3]);
+      // A box is positive unless the list says otherwise, so only the value that changes what it
+      // means is written on it; a badge on every box would repeat what an absent one already says.
+      if (box.length > 4 && box[4] === 0) {
+        const badge = document.createElement("span");
+        badge.className = "box-label";
+        badge.textContent = "0";
+        badge.title = "label 0: not the object";
+        element.append(badge);
+      }
       if (boxesEditable) {
         moveBy(element, index);
         element.append(
@@ -1278,21 +1301,32 @@
     boxInput.dispatchEvent(new Event("input", {bubbles: true}));
   };
 
-  // The input's text as a list of boxes, or null when it is not one: null is a value still being
-  // typed rather than an error, and the caller keeps what it already has.
-  const parseBoxes = (text) => {
-    if (text.trim() === "") return [];   // nothing drawn yet, or everything deleted
+  // The shape this contract publishes for a geometry value: N coordinates and an optional label of
+  // 1 (positive) or 0 (negative), in the image's own pixels. Checked here the way the gateway checks
+  // it, so a typo is marked in the field rather than discovered by a request; the gateway's copy
+  // stays the authority, and this one only decides what the picture draws.
+  const parseGeometry = (text, type) => {
+    if (text.trim() === "") return [];   // nothing typed yet, or everything deleted
     let value;
     try {
       value = JSON.parse(text);
     } catch {
       return null;
     }
-    if (!Array.isArray(value)) return null;
-    const whole = value.every((box) => Array.isArray(box) && box.length >= 4 &&
-      box.slice(0, 4).every((number) => typeof number === "number" && Number.isFinite(number)));
+    if (!Array.isArray(value) || !value.length) return null;
+    const coordinates = type === "boxes" ? 4 : 2;
+    const whole = value.every((entry) =>
+      Array.isArray(entry) &&
+      (entry.length === coordinates || entry.length === coordinates + 1) &&
+      entry.slice(0, coordinates).every((number) =>
+        typeof number === "number" && Number.isFinite(number)) &&
+      (entry.length === coordinates || entry[coordinates] === 0 || entry[coordinates] === 1));
     return whole ? value : null;
   };
+
+  // The input's text as a list of boxes, or null when it is not one: null is a value still being
+  // typed rather than an error, and the caller keeps what it already has.
+  const parseBoxes = (text) => parseGeometry(text, "boxes");
 
   /** Take the input's text as the boxes on the picture, marking the field when it is not one. */
   const syncBoxes = () => {
@@ -1391,6 +1425,62 @@
     if (event.key === "Escape" && drag) endDrag();
   });
 
+  // The reader's points, as a second view of the `points` input and nothing more: every entry is
+  // drawn where its numbers say, carrying the entry's own label. That label is the contract's — 1 and
+  // 0 today — so the marker prints the value it was given rather than turning it into a vocabulary
+  // of its own; a wider contract later would need no second renderer here.
+  let pointInput = null;   // the input a `points` parameter created, or null for a model without one
+  let points = [];         // the last list that parsed: [x, y, label] in the image's own pixels
+
+  const showPoints = () => {
+    const layer = $("points");
+    // One eye for the reader's geometry, the same one the boxes answer to: the two lists are the
+    // same kind of thing on the picture, and a second eye would be a control with no new question.
+    layer.hidden = !view.boxes;
+    if (!last || !pointInput) {
+      layer.replaceChildren();
+      return;
+    }
+    layer.replaceChildren(...points.map((point) => {
+      const label = point.length === 3 ? point[2] : 1;
+      const element = document.createElement("span");
+      element.className = "point-mark" + (label === 1 ? "" : " negative");
+      element.textContent = String(label);
+      element.title = label === 1 ? "label 1: a spot on the object" : "label 0: a spot that is not";
+      element.style.left = (point[0] / last.image.naturalWidth) * 100 + "%";
+      element.style.top = (point[1] / last.image.naturalHeight) * 100 + "%";
+      return element;
+    }));
+  };
+
+  /** Take the input's text as the points on the picture, marking the field when it is not one. */
+  const syncPoints = () => {
+    const parsed = parseGeometry(pointInput.value, "points");
+    if (!parsed) {
+      pointInput.setAttribute("aria-invalid", "true");
+      return;
+    }
+    pointInput.removeAttribute("aria-invalid");
+    points = parsed;
+    showPoints();
+  };
+
+  /** Drop every point, on a picture that is no longer the one they were typed for. */
+  const forgetPoints = () => {
+    points = [];
+    if (pointInput) {
+      pointInput.value = "";
+      pointInput.removeAttribute("aria-invalid");
+    }
+    showPoints();
+  };
+
+  /** The picture changed: no coordinate on it describes the picture that replaces it. */
+  const forgetGeometry = () => {
+    forgetBoxes();
+    forgetPoints();
+  };
+
   // The answer on screen, kept so a view toggle redraws it: the image, the decoded mask layer, the
   // colours, and the address the picture came from. Nothing here is sent anywhere.
   let last = null;
@@ -1480,6 +1570,7 @@
     tally.textContent = tally.hidden
       ? "" : "count " + last.count.toLocaleString(undefined, {maximumFractionDigits: 1});
     showBoxes();
+    showPoints();
     const machine = $("watermark");
     machine.hidden = !view.watermark || !machine.textContent;
     const full = $("full");
@@ -1888,6 +1979,7 @@
     clearAnswer();
     figure.hidden = true;
     $("boxes").replaceChildren();
+    $("points").replaceChildren();
     fitted = null;
   };
 
@@ -1977,7 +2069,7 @@
     const picture = pictureOf(upload, file, dataset.value, $("row").value);
     if (picture !== boxesKey) {
       boxesKey = picture;
-      forgetBoxes();
+      forgetGeometry();
     }
     // A run owns the pane while it runs, and afterwards the pane is showing an answer about this
     // very picture — previewing it again would only take that answer off.
@@ -2058,7 +2150,7 @@
       // now under those coordinates.
       if (picture !== boxesKey) {
         boxesKey = picture;
-        forgetBoxes();
+        forgetGeometry();
       }
       const search = query();
       let imageUrl, answer, palette;

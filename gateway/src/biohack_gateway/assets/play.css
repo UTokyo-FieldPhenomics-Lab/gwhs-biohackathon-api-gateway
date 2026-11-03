@@ -678,6 +678,50 @@ body {
   font-size: 12px;
   font-weight: 700;
 }
+/* A box is positive unless the list says otherwise, and an absent label means positive, so only the
+   value that changes what the box claims is written on it. */
+#play .box-label {
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  padding: 0 3px;
+  border-radius: 2px;
+  background: #ffffff;
+  color: #1f2328;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 14px;
+}
+/* The reader's points, drawn where their numbers say and carrying the contract's own label: a
+   circle with the value it was given, since 1 and 0 are the whole vocabulary today and a marker
+   that invented `+`/`−` would have to be rewritten when the contract widens. A circle rather than a
+   frame, because a point is a place and not an extent. The layer takes no pointer events, so the
+   picture beneath it still answers the mouse; it is read-only until the editor grows a point mode. */
+#play #points {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+#play .point-mark {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  box-sizing: border-box;
+  border: 1.5px solid #e08b00;
+  border-radius: 50%;
+  background: #e08b00;
+  color: #1f2328;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 15px;
+  text-align: center;
+}
+/* A negative point is hollow: the difference is a shape and a number, not only a hue. */
+#play .point-mark.negative {
+  background: #ffffff;
+}
 /* The switch that decides whether the picture's boxes answer to the mouse. It is not a lock on the
    input: typing coordinates and dragging the picture are two ways in, and this picks which one is
    live. Both states stay visible, because a button reading "edit" alone looks like the way to start
