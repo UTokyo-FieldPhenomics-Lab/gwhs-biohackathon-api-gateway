@@ -173,11 +173,16 @@ Package: `gateway/`. Shared constraints are in [`project.md`](project.md).
   decides what the picture draws.
   [Points on the picture](../references/2026110316_play-points-on-the-picture.md).
 - **Keep a geometry switch in the row of the list it switches, and let it drop its words before its
-  place.** The `boxes` switch is moved into that parameter's cell and the pair takes the control
+  place.** Each list's switch is moved into that parameter's cell and the pair takes the control
   column; in a narrow row the two icons stay and the labels go, each button keeping an `aria-label`
   and a `title`, because a switch on a line of its own reads as another form row. A model that
-  declares no `boxes` leaves it out of the document.
+  declares no geometry list leaves both out of the document.
   [Layout](../references/2026110312_play-boxes-row-and-counting-example.md).
+- **Edit one geometry list at a time, and let a selection carry the changes a press cannot.** The
+  picture's press means one thing: asking to edit points locks the boxes and the reverse. Adding,
+  carrying and removing are the left and second buttons; relabelling and removing are the selected
+  mark's row, so a touch reader can do everything a mouse can and nothing depends on a right button
+  alone. [Points on the picture](../references/2026110316_play-points-on-the-picture.md).
 - **Write an example's address before its parameters.** Naming another picture drops the boxes drawn
   on the last one, so a chip that fills the parameters first loses its own; a list is written as JSON
   rather than `String(...)`, which flattens it to `1,2,3,4,1`.

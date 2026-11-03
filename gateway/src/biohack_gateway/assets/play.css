@@ -272,14 +272,14 @@ body {
   flex: 1 1 20rem;
   max-width: none;
 }
-#play #parameters > label > .control.geometry > #boxes-mode {
+#play #parameters > label > .control.geometry > .mode-switch {
   flex: none;
 }
 @container (max-width: 26rem) {
-  #play #boxes-mode .mode-label {
+  #play .mode-switch .mode-label {
     display: none;
   }
-  #play #boxes-mode button {
+  #play .mode-switch button {
     padding: 0.25rem 0.4rem;
   }
 }
@@ -722,22 +722,39 @@ body {
 #play .point-mark.negative {
   background: #ffffff;
 }
-/* The switch that decides whether the picture's boxes answer to the mouse. It is not a lock on the
-   input: typing coordinates and dragging the picture are two ways in, and this picks which one is
-   live. Both states stay visible, because a button reading "edit" alone looks like the way to start
+/* In the points editor a marker answers to the pointer, and its target is larger than the 18 px it
+   draws: a fingertip is not a mouse, and a target the size of the dot would miss. */
+#play #points.editing .point-mark {
+  pointer-events: auto;
+  cursor: grab;
+}
+#play #points.editing .point-mark::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+  border-radius: 50%;
+}
+/* The point the row's actions act on: a ring outside the marker, so the mark keeps its own ink and
+   its number stays readable. */
+#play .point-mark.selected {
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #1f2328;
+}
+/* The switch that decides whether the picture edits a geometry list. It is not a lock on the input:
+   typing coordinates and drawing on the picture are two ways in, and this picks which one is live.
+   Both states stay visible, because a button reading "edit" alone looks like the way to start
    editing rather than like the mode it is already in. */
-#play #boxes-mode {
+#play .mode-switch {
   display: inline-flex;
   border: 1px solid var(--line);
   border-radius: 6px;
   overflow: hidden;
 }
 /* `display: inline-flex` above would otherwise beat the user agent's `[hidden] { display: none }`,
-   and a model that declares no `boxes` would show an edit switch with nothing to edit. */
-#play #boxes-mode[hidden] {
+   and a model that declares no geometry would show an edit switch with nothing to edit. */
+#play .mode-switch[hidden] {
   display: none;
 }
-#play #boxes-mode button {
+#play .mode-switch button {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
@@ -749,7 +766,7 @@ body {
   font-size: 0.85em;
   cursor: pointer;
 }
-#play #boxes-mode svg {
+#play .mode-switch svg {
   width: 1.15em;
   height: 1.15em;
   fill: none;
@@ -758,7 +775,7 @@ body {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-#play #boxes-mode button[aria-pressed="true"] {
+#play .mode-switch button[aria-pressed="true"] {
   background: var(--accent);
   color: #fff;
 }

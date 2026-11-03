@@ -491,6 +491,7 @@
     }
     showMode();
     showBoxes();
+    showPoints();
     showSelection();
   };
 
@@ -557,6 +558,7 @@
     // The overlay follows the editor: a model that takes no boxes must not leave another model's
     // boxes drawn on the picture it is about to replace.
     showBoxes();
+    showPoints();
     showSelection();
   };
 
@@ -1351,7 +1353,9 @@
   /** Write the list back into the input, which is what the query and the command read. */
   const commitBoxes = () => {
     boxInput.removeAttribute("aria-invalid");
-    boxInput.value = JSON.stringify(boxes);
+    // An empty list is not a value this contract takes — the field means "no boxes" by being empty —
+    // so removing the last box writes the empty field rather than `[]`, which would be refused.
+    boxInput.value = boxes.length ? JSON.stringify(boxes) : "";
     // A script's own write fires no event, and the page reads the input rather than the list.
     boxInput.dispatchEvent(new Event("input", {bubbles: true}));
   };
@@ -1502,6 +1506,7 @@
   // of its own; a wider contract later would need no second renderer here.
   let pointInput = null;   // the input a `points` parameter created, or null for a model without one
   let points = [];         // the last list that parsed: [x, y, label] in the image's own pixels
+  let pointMarks = [];     // the markers on screen, by index, so a selection changes a class and not the scene
 
   const showPoints = () => {
     const layer = $("points");
@@ -1510,10 +1515,11 @@
     layer.hidden = !view.boxes;
     layer.classList.toggle("editing", editor === "points");
     if (!last || !pointInput) {
+      pointMarks = [];
       layer.replaceChildren();
       return;
     }
-    layer.replaceChildren(...points.map((point, index) => {
+    pointMarks = points.map((point, index) => {
       const label = point.length === 3 ? point[2] : 1;
       const element = document.createElement("span");
       element.className = "point-mark" + (label === 1 ? "" : " negative") +
@@ -1544,7 +1550,8 @@
         });
       }
       return element;
-    }));
+    });
+    layer.replaceChildren(...pointMarks);
   };
 
   // A point is carried rather than resized: its travel in the picture is its travel, held inside the
@@ -1590,14 +1597,18 @@
         button.setAttribute("aria-pressed", String(Number(button.dataset.label) === label));
       }
     }
-    showPoints();
+    // The class and the row, never the scene: a marker that is picked stays the element the press
+    // started on, which is what a drag needs — rebuilding the layer here would detach it mid-gesture.
+    pointMarks.forEach((element, index) => element.classList.toggle("selected", index === selected));
   };
 
   /** Write the points back into the input, which is what the query and the command read. */
   const commitPoints = () => {
     if (!pointInput) return;
     pointInput.removeAttribute("aria-invalid");
-    pointInput.value = JSON.stringify(points);
+    // As with the boxes: an empty list is not a value the contract takes, and an empty field is how
+    // the page says there is nothing to send.
+    pointInput.value = points.length ? JSON.stringify(points) : "";
     pointInput.dispatchEvent(new Event("input", {bubbles: true}));
   };
 
@@ -1610,6 +1621,7 @@
     }
     pointInput.removeAttribute("aria-invalid");
     points = parsed;
+    showPoints();
     showSelection();
   };
 
@@ -1621,6 +1633,7 @@
       pointInput.value = "";
       pointInput.removeAttribute("aria-invalid");
     }
+    showPoints();
     showSelection();
   };
 

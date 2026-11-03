@@ -61,12 +61,42 @@ Checked in a local gateway over the published index on 2026-11-03: `[[200,250,1]
 drew `1`, `0`, `1` at those places; appending `x` turned the border red and left the three markers
 standing; `[[459,297,86,154,0]]` in `boxes` drew a box with a `0` badge.
 
+## The gesture, second step
+
+- **One editor.** `editor` holds `"boxes"`, `"points"` or null, and each switch sets it; asking to
+  edit one list locks the other, so a press cannot both start a box and add a point. The points
+  switch is a `cloneNode(true)` of the boxes one, given its own id and title — one control written
+  twice would drift.
+- **Left button on the picture** adds a point at the click, in the points mode only, and a drag of
+  four pixels adds nothing: the same travel that tells a box from a click tells a point from a pan.
+  **Left button on a marker** selects it and carries it. **Second button on a marker or a box**
+  removes it, on both layers.
+- **The row acts on the selection.** `1` / `0` / `×` sit beside the points switch and appear only
+  while a point is selected; `1` and `0` are pressed to show the selected point's label. Escape clears
+  the selection, Delete removes it unless the reader is typing in a field.
+- **An emptied list writes the empty field, not `[]`.** `_check_geometry` refuses an empty array, so
+  removing the last box or point leaves `""` — "nothing to send" — which is also what `forgetBoxes`
+  already did.
+
+Two bugs the browser check found, both fixed here:
+
+1. **Selection rebuilt the marker layer**, which detached the element the press had landed on and
+   would have broken every drag in a real browser (the test that dispatched on the detached node
+   still passed). `showSelection` now toggles a class on the markers it holds; only a changed list
+   rebuilds them.
+2. **Deleting the last box wrote `[]`**, which the contract refuses — so the overlay kept the deleted
+   box and Run would have answered `400`. The commit paths now write the empty field.
+
+Verified through Chrome against the local gateway: mutually exclusive switches, click-adds
+(`[[307,307],[614,614]]`), drag moves the second to `512,512`, `0` relabels to `[[...,0]]` with a
+hollow marker, right-click drops a point and a box, Delete drops the selection, and changing the row
+clears the list with the actions hidden.
+
 ## What is still open
 
-- **The gesture**, in the agreed shape: modes exclusive (points vs boxes), left click adds with the
-  row's chosen label, left click on a mark selects it, drag moves it, right click on a mark deletes
-  it, and the selected mark's row carries `1` / `0` / `×` so touch needs no right button.
 - **A bounds check**, if it is wanted: the page has the image, the gateway deliberately does not, and
   the container could clamp or refuse after decoding. Each is a different promise; none is made yet.
 - **The `boxes` eye's name** now covers points too. Renaming it to "geometry" is a label change with
   its own test, not a fact this change had to settle.
+- **A next-label selector** for adding several negative points in a row: the row's `0` acts on a
+  selection, so a negative point costs an add and a click. Not measured as a need yet.

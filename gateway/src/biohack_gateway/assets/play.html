@@ -58,12 +58,13 @@ __PLAY_CSS__
 
     <span id="parameters"></span>
 
-    <!-- Whether the picture's boxes answer to the mouse. The script moves this into the `boxes`
-         parameter's own row, beside the list it switches, so it lives here only as the one place it
-         is written; a model that declares no `boxes` keeps it out of the document. Each state is an
-         icon and a word: the word stays while the row has room for it, and the icon is what is left
-         when it does not, so the switch never moves to a line of its own. -->
-    <span id="boxes-mode" class="switch" role="group" aria-label="boxes on the picture" hidden>
+    <!-- Whether the picture's geometry answers to the mouse. The script moves this into a geometry
+         parameter's own row, beside the list it switches, and clones it for the second list, so it
+         lives here only as the one place it is written; a model that declares no geometry keeps it
+         out of the document. Each state is an icon and a word: the word stays while the row has room
+         for it, and the icon is what is left when it does not, so the switch never moves to a line
+         of its own. -->
+    <span id="boxes-mode" class="switch mode-switch" role="group" aria-label="boxes on the picture" hidden>
       <button type="button" data-mode="edit" aria-pressed="true" aria-label="edit"
               title="draw boxes on the picture">
         <svg viewBox="0 0 20 20" aria-hidden="true">
