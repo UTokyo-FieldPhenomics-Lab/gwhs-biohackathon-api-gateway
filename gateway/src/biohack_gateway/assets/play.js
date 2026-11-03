@@ -12,6 +12,11 @@
   const dataset = $("dataset"), parameters = $("parameters");
   const canvas = $("canvas"), figure = document.querySelector("#play figure");
   const pane = $("pane"), stage = $("stage"), marks = $("marks");
+  // The switch that decides whether the picture's boxes answer to the mouse. It is written in the
+  // markup once and then moved into the row of the `boxes` parameter it belongs to, so it is read
+  // as part of that control rather than as another row of the form; a model without one leaves it
+  // out of the document entirely.
+  const boxesMode = $("boxes-mode");
 
   // What the picture shows first, and what a reader can start from, per model. This is the one
   // model-specific thing the page carries, and it is presentation only: it decides nothing about what
@@ -55,6 +60,18 @@
     // the id, and the answer is the same `ModelPrediction` every model answers.
     "nano-banana-2.1": {
       family: "Nano Banana", label: "2.1", order: 1, boxes: false, masks: false, results: true,
+      examples: [
+        {
+          label: "segmentation masks",
+          dataset: "gwfss",
+          row: 3,
+          demo: true,
+          params: {
+            prompt: "generate segmentation masks for wheat head in the proposed image",
+            image_size: "1K",
+          },
+        },
+      ],
     },
     "nano-banana-2": {
       family: "Nano Banana", label: "2", order: 2, boxes: false, masks: false, results: true,
@@ -91,6 +108,25 @@
         },
       ],
     },
+    // A counting model takes no prompt: the exemplar boxes are the whole request, so an example
+    // without them would be a refusal. Three boxes on this row is the paper's setting — the model
+    // matches what they show across the picture and answers a number and the field it integrates.
+    "tasselnetv4": {
+      examples: [
+        {
+          label: "3 exemplars",
+          dataset: "gwhd",
+          row: 4,
+          params: {
+            boxes: [
+              [306, 148, 55, 44, 1],
+              [487, 313, 37, 70, 1],
+              [933, 573, 58, 43, 1],
+            ],
+          },
+        },
+      ],
+    },
     // The call the documentation keeps as its known-good one: eighteen heads on this row, at this
     // threshold. A participant reproducing it here and in a client is testing both.
     "sam3.1-meta": {
@@ -106,6 +142,11 @@
     },
   };
   let view = {...VIEW_BASE};
+  // A demo example is a cached published-row answer: the call is the same one the reader can make,
+  // and the result is already in the gateway's cache. The flag turns a cache hit into a three-second
+  // wait, so the page does not reveal that the picture was computed before; editing any control
+  // clears it, because the next call is the reader's own.
+  let demoRun = false;
 
   // Only the keys the base view knows are view defaults: `examples` and `landing` are presets for the
   // controls, and copying them into `view` would put a fact about the page into the picture's state.
@@ -376,13 +417,14 @@
   // a reader who is typing coordinates still types, and the picture simply stops competing for the
   // press. Only a model that declares a `boxes` parameter has anything to switch.
   const showMode = () => {
-    const group = $("boxes-mode");
-    group.hidden = !boxInput;
+    boxesMode.hidden = !boxInput;
+    // The picture's cursor follows the editor and nothing else, so it is cleared for a model that
+    // has no editor rather than left over from the model before it.
+    stage.classList.toggle("drawing", Boolean(boxInput) && boxesEditable);
     if (!boxInput) return;
-    for (const button of group.querySelectorAll("button")) {
+    for (const button of boxesMode.querySelectorAll("button")) {
       button.setAttribute("aria-pressed", String((button.dataset.mode === "edit") === boxesEditable));
     }
-    stage.classList.toggle("drawing", boxesEditable);
   };
 
   const showParameters = (declaration) => {
@@ -410,9 +452,13 @@
       parameters.append(label);
       fields.push({name: parameter.name, type: parameter.type, input, read: () => readValue(input)});
       // A `boxes` parameter is a list the picture can be drawn on: the input and the overlay are
-      // two views of one list, so both directions are wired here and nowhere else.
+      // two views of one list, so both directions are wired here and nowhere else. The switch that
+      // says whether the picture edits that list is the third view, and it sits in the same cell as
+      // the list — one control, read left to right.
       if (parameter.type === "boxes") {
         boxInput = input;
+        cell.classList.add("geometry");
+        cell.append(boxesMode);
         if (!input.value && boxes.length) {
           input.value = JSON.stringify(boxes);
           delete input.dataset.untouched;   // a list restored here is the reader's, so it is sent
@@ -465,7 +511,12 @@
     }
     for (const field of fields) {
       if (!(field.name in example.params)) continue;
-      field.input.value = String(example.params[field.name]);
+      const value = example.params[field.name];
+      // A control holds text, and a geometry parameter holds one JSON list rather than a flat
+      // stringification of it — `String([[1, 2, 3, 4, 1]])` is `1,2,3,4,1`. So anything that is not
+      // already a string is written as JSON: the same text a reader would have typed, and the same
+      // text the request sends.
+      field.input.value = typeof value === "string" ? value : JSON.stringify(value);
       // A value written here is the reader's, not the model's default, so it is sent: the same
       // bookkeeping a restored box list does, because it is the same kind of write.
       delete field.input.dataset.untouched;
@@ -473,7 +524,14 @@
     }
     preview();
     refreshRequest();
+    // After the writes above, because each one dispatches an `input` that clears the flag: the
+    // example is a demo only while its own values are still the ones in the controls.
+    demoRun = Boolean(example.demo);
   };
+
+  const forgetDemo = () => { demoRun = false; };
+  document.addEventListener("input", forgetDemo, true);
+  document.addEventListener("change", forgetDemo, true);
 
   const query = () => {
     const search = new URLSearchParams();
@@ -779,7 +837,7 @@
 
   // A view toggle redraws from the answer already on screen: no request, and no decode — the mask
   // layer was built when that answer arrived.
-  $("boxes-mode").addEventListener("click", (event) => {
+  boxesMode.addEventListener("click", (event) => {
     const button = event.target.closest("[data-mode]");
     if (!button) return;
     boxesEditable = button.dataset.mode === "edit";
@@ -1952,6 +2010,7 @@
       // this run must keep naming the model it started with.
       const chosen = encodeURIComponent(selectedModel());
       const epoch = modelEpoch;
+      const demo = demoRun;
       // Read once: a run outlives the control it started from, and the image, the body and the
       // palette must all describe the same dataset.
       const source = dataset.value;
@@ -2002,6 +2061,9 @@
         });
         palette = await paletteLoaded;
       }
+      // A demo example's answer is already in the cache; the wait is the page's, not the model's,
+      // and it happens before the answer is drawn so a changed model still wins the epoch check.
+      if (demo) await new Promise((resolve) => setTimeout(resolve, 3000));
       // The reader changed the model while this request was at a backend. The answer is about the
       // model they left, so it is not drawn under the model they chose; the picture is still theirs.
       if (epoch !== modelEpoch) {
