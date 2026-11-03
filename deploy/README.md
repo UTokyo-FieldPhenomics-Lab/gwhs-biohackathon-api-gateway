@@ -20,6 +20,7 @@ by either of the two above, so it stays readable while the host is stopped.
 | Domains | `api.global-wheat.com` → the host's Elastic IP, TLS terminated on the host by Caddy (§1.5); `data.global-wheat.com` → the distribution; `docs.global-wheat.com` → GitHub Pages (§6), which is not ours to run |
 | Docs site | static, on GitHub Pages, published from an Actions artifact (§6) — no host, no bucket, and no certificate we manage |
 | GPU backends | the compute plane's machines, which nothing here creates: the pool is in [`../.agents/rules/backend-pool.md`](../.agents/rules/backend-pool.md), and bringing one up plus the list the gateway is configured from are in [`gpu-backends-local.md`](gpu-backends-local.md) (an on-prem machine) or [`gpu-backends-aws.md`](gpu-backends-aws.md) (a rented one) |
+| Managed-API backend | one container on the gateway host, `127.0.0.1:8010`, serving `nano-banana-2`, `nano-banana-2.1` and `nano-banana-pro` from Vertex AI; [`nanobanana.md`](nanobanana.md) |
 | Region and zone | the region is environment configuration and the host and bucket share one (`eu-central-1`); no zone is pinned, so a replacement instance may land in any of them |
 
 Three facts behind that table, each measured rather than assumed:

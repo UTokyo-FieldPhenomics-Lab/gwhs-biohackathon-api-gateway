@@ -35,6 +35,13 @@ api.global-wheat.com {
 		max_size 4KB
 	}
 
+	# A generation carries its parameters in the query string, like a row request, and no body at
+	# all. The same 4 KB ceiling stops a body from reaching the parser; the route itself ignores one.
+	@generate path /models/*/generate
+	request_body @generate {
+		max_size 4KB
+	}
+
 	# Every answer carries HSTS, so a browser that has seen this host once will not ask it for plain
 	# HTTP again. That matters for the two pages a key is typed into: the first request a reader
 	# makes is the one a network between here and them could answer itself, and the redirect on 80
