@@ -36,6 +36,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import http.client
+import ipaddress
 import json
 import logging
 import math
@@ -144,6 +145,17 @@ budget and each fallback only what the attempts before it left.
 assert UNHEALTHY_SECONDS >= RESPONSE_TIMEOUT_SECONDS, (
     "a failed backend must be passed over for at least as long as the failure it remembers cost"
 )
+
+MAX_RESPONSE_TIMEOUT_SECONDS = 180.0
+"""The longest response budget a backend may declare.
+
+**A declaration is data, and data can be wrong.** A backend that answers image generation or any
+other long-running work says how long one request may take; this is the ceiling that keeps a
+misconfigured or malicious declaration from holding a worker thread, a lane and a participant's
+connection for the life of the process. Three minutes is longer than every measured image call
+(13–36 s) and shorter than any plausible hang; a model that needs more is a change to this number,
+made deliberately.
+"""
 
 MIN_SEND_BYTES_PER_SECOND = 250_000.0
 """The slowest path an upload's send may finish on before it counts as a failure.
@@ -1275,6 +1287,11 @@ class Backend:
     url: str
     resolution: int | None = None
     max_in_flight: int = 1
+    response_timeout: float = RESPONSE_TIMEOUT_SECONDS
+    """How long this backend declared one request may take, capped by
+    :data:`MAX_RESPONSE_TIMEOUT_SECONDS`. A model that runs for longer than the gateway's default
+    says so in its declaration; the gateway then gives the request that budget instead of the ten
+    seconds a segmentation answer needs."""
     parameters: list[ModelParameter] = field(default_factory=list)
     machine: ComputedBy | None = None
     """What the backend said it is, where it said anything. An undeclared backend has none."""
@@ -1333,6 +1350,35 @@ class Backend:
         if self.machine is not None and self.machine.machine:
             return self.machine.machine
         return self.url
+
+
+def _is_loopback(url: str) -> bool:
+    """Report whether a backend's address is this host's own loopback.
+
+    Parameters
+    ----------
+    url : str
+        A backend's base URL.
+
+    Returns
+    -------
+    bool
+        True for ``127.0.0.0/8``, ``::1`` and ``localhost``. A name that does not parse is not
+        loopback: an unreadable address should keep the conservative path, not skip admission.
+    """
+    try:
+        host = urllib.parse.urlsplit(url).hostname
+    except ValueError:
+        return False
+    if host is None:
+        return False
+    if host == "localhost" or host == "::1":
+        return True
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return address.is_loopback
 
 
 def _failure_kind(reply: Reply) -> str:
@@ -1465,7 +1511,8 @@ class ModelRegistry:
         container's depth would be told the machine is free while two inferences run on it.
         """
         self._backends: dict[str, list[Backend]] = {
-            model: [Backend(url=url) for url in urls] for model, urls in models.items()
+            model: [Backend(url=url, response_timeout=RESPONSE_TIMEOUT_SECONDS) for url in urls]
+            for model, urls in models.items()
         }
         for model, backends in self._backends.items():
             for backend in backends:
@@ -1570,6 +1617,21 @@ class ModelRegistry:
         backend.resolution = declaration.get("resolution")
         if isinstance(declaration.get("max_in_flight"), int):
             backend.max_in_flight = declaration["max_in_flight"]
+        declared_timeout = declaration.get("response_timeout_seconds")
+        if (
+            isinstance(declared_timeout, (int, float))
+            and not isinstance(declared_timeout, bool)
+            and math.isfinite(float(declared_timeout))
+            and float(declared_timeout) > 0.0
+        ):
+            backend.response_timeout = min(float(declared_timeout), MAX_RESPONSE_TIMEOUT_SECONDS)
+            if float(declared_timeout) > MAX_RESPONSE_TIMEOUT_SECONDS:
+                logger.warning(
+                    "backend %s declared a response budget of %ss; capped at %ss",
+                    backend.url,
+                    declared_timeout,
+                    MAX_RESPONSE_TIMEOUT_SECONDS,
+                )
         backend.parameters = _declared_parameters(declaration.get("parameters"))
         backend.machine = _declared_machine(declaration.get("computed_by"))
         backend.declared = True
@@ -1694,6 +1756,34 @@ class ModelRegistry:
             # pass, so what a reader needs to know is when that pass happened.
             checked_seconds_ago=None if not checked else max(0, round(now - checked)),
         )
+
+    def charges_link(self, model: str) -> bool:
+        """Say whether an upload for this model should wait on the shared byte budget.
+
+        Parameters
+        ----------
+        model : str
+            The model id.
+
+        Returns
+        -------
+        bool
+            ``False`` only when every configured backend is on loopback, where there is no measured
+            link to protect; ``True`` otherwise, including a model with no backends at all.
+
+        Notes
+        -----
+        The upload queue estimates the rate of the gateway's link to the GPU pool (about 1.5 MB/s
+        measured) and admits bytes against it. A service on ``127.0.0.1`` does not cross that link,
+        and charging it there is wrong twice: its body holds a reservation that a slow inference
+        (a ninety-second image edit) keeps for the whole call, and the link estimate divides bytes
+        by that same elapsed time, dragging the budget down for every other model. The receive
+        slot and the team lane still bound the request; only the byte budget is skipped.
+        """
+        backends = self._backends.get(model)
+        if not backends:
+            return True
+        return any(not _is_loopback(backend.url) for backend in backends)
 
     def machines(self) -> list[MachineSummary]:
         """Report the pool as machines rather than as models, in name order.
@@ -1937,6 +2027,7 @@ class ModelRegistry:
         query: str,
         body: bytes | None,
         content_type: str,
+        team: str = "",
     ) -> Reply:
         """Send one request to the first backend of a model that answers.
 
@@ -1945,7 +2036,8 @@ class ModelRegistry:
         model : str
             The model id.
         path : str
-            The path below the model, without a leading slash — `predict` or `predict/upload`.
+            The path below the model, without a leading slash — `predict`, `predict/upload` or
+            `generate`.
         query : str
             The query string as the client sent it, forwarded verbatim: the parameters are the
             model's, and the gateway does not know their names.
@@ -1953,12 +2045,17 @@ class ModelRegistry:
             The request body, already resolved into what a backend expects.
         content_type : str
             The content type to send with it.
+        team : str, optional
+            The team the request was authenticated as, forwarded as ``X-Biohack-Team`` so a backend
+            that spends money per call can keep its ledger against the same identity the gateway
+            uses. Empty sends no header.
 
         Returns
         -------
         Reply
-            The first backend's answer. A backend that failed is marked unhealthy for
-            :data:`UNHEALTHY_SECONDS` and the next one is tried.
+            The first backend's answer. A backend that failed is marked unhealthy for at least
+            :data:`UNHEALTHY_SECONDS`, and for its own declared response budget where that is
+            longer, then the next one is tried.
 
         Raises
         ------
@@ -1969,12 +2066,12 @@ class ModelRegistry:
 
         Notes
         -----
-        **One clock covers the whole request, retries included.** The deadline is
-        :data:`RESPONSE_TIMEOUT_SECONDS` plus the send allowance a body needs at
-        :data:`MIN_SEND_BYTES_PER_SECOND`, and each attempt is given only what is left of it.
-        Without that, two dead backends cost two full budgets and a caller waits twice for the same
-        answer; with it, a fallback inherits the first attempt's overspend and the request ends when
-        its budget does.
+        **One clock covers the whole request, retries included.** The deadline is the model's own
+        declared response budget — :data:`RESPONSE_TIMEOUT_SECONDS` where it declared none —
+        plus the send allowance a body needs at :data:`MIN_SEND_BYTES_PER_SECOND`, and each attempt
+        is given only what is left of it. Without that, two dead backends cost two full budgets and
+        a caller waits twice for the same answer; with it, a fallback inherits the first attempt's
+        overspend and the request ends when its budget does.
 
         A fallback that times out on the part of the budget it was handed is not marked unhealthy.
         The transport cannot tell "this machine is slow" from "this attempt was given the last two
@@ -2004,13 +2101,23 @@ class ModelRegistry:
             "Content-Type": content_type,
             "Accept": "application/json",
         }
+        if team:
+            # The identity the gateway authenticated, not the key: a backend that keeps a ledger of
+            # what a call cost needs the same team id the gateway counts lanes against. It is
+            # percent-encoded because a team id is operator-chosen text and a header is ASCII; the
+            # backend decodes it, so the ledger keeps the name a person typed.
+            headers["X-Biohack-Team"] = urllib.parse.quote(team, safe="")
         suffix = f"?{query}" if query else ""
         failures: list[Reply] = []
         # One budget for the request, send included. A body's send is limited by the link rather
         # than by the machine, so its allowance is added here once; the transport spends that same
-        # number across connect, send and read rather than resetting a clock per phase.
+        # number across connect, send and read rather than resetting a clock per phase. The machine
+        # side of the budget is the slowest declared among the answering backends, because one clock
+        # covers every attempt: a fallback that needed more than the first one would otherwise be
+        # judged on a budget it never had.
+        budget = max(backend.response_timeout for backend in backends)
         send_allowance = len(body) / MIN_SEND_BYTES_PER_SECOND if body else 0.0
-        deadline = time.monotonic() + send_allowance + RESPONSE_TIMEOUT_SECONDS
+        deadline = time.monotonic() + send_allowance + budget
         for index, backend in enumerate(backends):
             if index:
                 if deadline - time.monotonic() <= 0.0:
@@ -2066,6 +2173,12 @@ class ModelRegistry:
                         status_code=503,
                         detail="the gateway cannot authenticate to a backend right now",
                     )
+                if reply.status == 429:
+                    # A backend at its own capacity is the one 4xx that is neither the request's
+                    # fault nor the machine's: the request was valid and the backend is working.
+                    # It is relayed as the same 429 this contract uses for a lane refusal, with the
+                    # backend's own sentence, and the machine keeps its place in the pool.
+                    raise HTTPException(status_code=429, detail=_refusal(reply))
                 raise HTTPException(
                     status_code=_refusal_status(reply.status),
                     detail=_refusal_detail(reply),
@@ -2099,7 +2212,13 @@ class ModelRegistry:
                 continue
             if _record_failure(backend, reply, kind, time.monotonic()):
                 logger.warning("backend %s failed a %s: %s", backend.url, model, cause)
-                backend.unhealthy_until = time.monotonic() + UNHEALTHY_SECONDS
+                # The quiet window is at least the failure it remembers. A model that declared a
+                # ninety-second budget would otherwise be retried thirty seconds after a timeout,
+                # paying the same minute twice — the invariant UNHEALTHY_SECONDS holds for the
+                # default budget is the same one, per backend.
+                backend.unhealthy_until = time.monotonic() + max(
+                    UNHEALTHY_SECONDS, backend.response_timeout
+                )
                 failures.append(reply)
                 continue
             if kind != "status":
@@ -2685,6 +2804,7 @@ def create_model_router(
                     query=query,
                     body=json.dumps({"input": {"url": url}}).encode(),
                     content_type="application/json",
+                    team=_team(request),
                 )
                 # Parsed before it is stored: a body this contract cannot read is a broken
                 # backend, and storing it would hand that 502 to every later caller of the key.
@@ -2705,6 +2825,70 @@ def create_model_router(
             (time.monotonic() - started) * 1000.0,
         )
         return answer
+
+    @router.post(
+        "/models/{model}/generate",
+        response_model=ModelPrediction,
+        response_model_exclude_unset=True,
+        summary="Generate a picture from a prompt",
+        description=(
+            "A model that makes a picture rather than reading one: the whole request is the "
+            "query string — `prompt` and whatever the model declares beside it — with no body "
+            "and no published image to address. It is never cached: a generation is a paid "
+            "sample, not a fact about a row."
+        ),
+    )
+    def generate(model: str, request: Request) -> ModelPrediction:
+        """Generate one picture from the model's own parameters.
+
+        Parameters
+        ----------
+        model : str
+            The model id from the path.
+        request : Request
+            The incoming request, whose query string is the model's own parameters. They are
+            validated against the declaration and forwarded verbatim.
+
+        Returns
+        -------
+        ModelPrediction
+            The model's answer, with `objects` empty and the picture in `image`.
+
+        Raises
+        ------
+        HTTPException
+            No model has that id; the query names something the model does not accept; the team
+            holds every lane it may; or every backend failed.
+
+        Notes
+        -----
+        **No body and no cache.** A row prediction answers a question about a published address,
+        which is what makes it repeatable and worth storing; a generation has no address, and the
+        same prompt twice is two paid samples rather than one answer. The lane is taken here for the
+        same reason a row prediction takes its own on a miss: this call always reaches a machine.
+        """
+        started = time.monotonic()
+        summary = registry.describe(model)
+        query = _checked_query(summary, request)
+        team = _team(request)
+        with slots.hold(team, f"POST {request.url.path}"):
+            reply = registry.forward(
+                model,
+                path="generate",
+                query=query,
+                body=None,
+                content_type="application/json",
+                team=team,
+            )
+        logger.info(
+            "generate model=%s team=%s status=%d bytes_out=%d ms=%.1f",
+            model,
+            team,
+            reply.status,
+            len(reply.body),
+            (time.monotonic() - started) * 1000.0,
+        )
+        return _prediction(reply, model)
 
     @router.post(
         "/models/{model}/predict/upload",
@@ -2784,23 +2968,28 @@ def create_model_router(
         if size == 0:
             raise HTTPException(status_code=400, detail="the upload is empty")
         team = _team(request)
-        try:
-            # The middleware already holds this request's lane, so the gate's count includes this
-            # one; what the queue orders by is the work that was in flight before it.
-            uploads.acquire(team, max(0, slots.in_flight(team) - 1), size)
-        except UploadRefused as refused:
-            logger.info(
-                "upload refused model=%s team=%s bytes=%d retry_after=%d",
-                model,
-                team,
-                size,
-                refused.retry_after_seconds,
-            )
-            raise HTTPException(
-                status_code=429,
-                detail=str(refused),
-                headers={"Retry-After": str(refused.retry_after_seconds)},
-            ) from None
+        # A backend on loopback does not cross the link the byte budget measures, and a slow
+        # inference there would hold a reservation and depress the estimate for every other
+        # model. It still takes the receive slot and the team lane; only the bytes are skipped.
+        charges_link = registry.charges_link(model)
+        if charges_link:
+            try:
+                # The middleware already holds this request's lane, so the gate's count includes
+                # this one; what the queue orders by is the work that was in flight before it.
+                uploads.acquire(team, max(0, slots.in_flight(team) - 1), size)
+            except UploadRefused as refused:
+                logger.info(
+                    "upload refused model=%s team=%s bytes=%d retry_after=%d",
+                    model,
+                    team,
+                    size,
+                    refused.retry_after_seconds,
+                )
+                raise HTTPException(
+                    status_code=429,
+                    detail=str(refused),
+                    headers={"Retry-After": str(refused.retry_after_seconds)},
+                ) from None
         started = time.monotonic()
         # Nothing has crossed until the transport says it did. A refused connection, or a send the
         # clock ended, carried no bytes to the backend; counting the body anyway would book it as an
@@ -2826,10 +3015,12 @@ def create_model_router(
                 query=query,
                 body=payload,
                 content_type=media_type,
+                team=team,
             )
             completed = len(payload) + len(reply.body)
         finally:
-            uploads.release(team, size, time.monotonic() - started, completed)
+            if charges_link:
+                uploads.release(team, size, time.monotonic() - started, completed)
         return _prediction(reply, model)
 
     return router

@@ -339,5 +339,6 @@ def test_the_routes_are_part_of_the_published_contract(client: TestClient) -> No
         "/models",
         "/models/{model}",
         "/models/{model}/predict",
+        "/models/{model}/generate",
         "/models/{model}/predict/upload",
     }

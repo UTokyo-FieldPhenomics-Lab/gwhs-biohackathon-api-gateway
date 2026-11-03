@@ -374,6 +374,7 @@ def test_a_predict_resolves_the_address_and_returns_the_models_answer(
     assert method == "POST"
     assert url == f"{FIRST}/models/{MODEL}/predict"
     assert headers["X-Backend-Token"] == BACKEND_TOKEN
+    assert headers["X-Biohack-Team"] == TEAM
     assert json.loads(body or b"{}") == {"input": {"url": f"{BASE}/gwhd/images/00000000.jpg"}}
 
 
@@ -2813,3 +2814,51 @@ def test_the_openapi_document_no_longer_names_a_parameter(tmp_path: Path, index_
 
     assert "prompt" not in names
     assert "confidence_threshold" not in names
+
+
+def test_generate_sends_no_body_and_is_never_cached(tmp_path: Path, index_dir: Path) -> None:
+    """A picture from a prompt crosses the same contract, with no body and no stored answer.
+
+    The route exists because a generation has no published address: the whole request is the query
+    string. Asking twice reaches the backend twice, because a generation is a paid sample rather
+    than a fact about a row.
+    """
+    backends = FakeBackends(replies={FIRST: [Reply(status=200, body=json.dumps(EDITED).encode())]})
+    client = next(build_client(tmp_path, index_dir, backends, max_concurrent_per_token=0))
+
+    first = client.post(f"/models/{MODEL}/generate", headers=KEY, params={"prompt": "wheat"})
+    second = client.post(f"/models/{MODEL}/generate", headers=KEY, params={"prompt": "wheat"})
+
+    assert first.status_code == 200
+    assert first.json() == EDITED
+    assert second.status_code == 200
+    assert len(backends.predict_calls()) == 2, "a generation was served from the row cache"
+    method, url, headers, body = backends.predict_calls()[0]
+    assert method == "POST"
+    assert url == f"{FIRST}/models/{MODEL}/generate?prompt=wheat"
+    assert body is None
+    assert headers["X-Biohack-Team"] == TEAM
+
+
+def test_a_backend_at_capacity_is_relayed_without_leaving_the_pool(
+    tmp_path: Path, index_dir: Path
+) -> None:
+    """A backend's 429 is the answer, not a machine passed over for thirty seconds.
+
+    The machine stays in the pool, and a second request reaches it again.
+    """
+    message = "the image model is at capacity; retry in 5 s"
+    body = json.dumps({"error": {"message": message}}).encode()
+    backends = FakeBackends(replies={FIRST: [Reply(status=429, body=body)]})
+    client = next(build_client(tmp_path, index_dir, backends, max_concurrent_per_token=0))
+
+    first = client.post(f"/models/{MODEL}/predict", headers=KEY, json={"dataset": "gwhd", "row": 0})
+    second = client.post(
+        f"/models/{MODEL}/predict", headers=KEY, json={"dataset": "gwhd", "row": 0}
+    )
+
+    assert first.status_code == 429
+    assert first.json()["error"]["code"] == "quota_exceeded"
+    assert first.json()["error"]["message"] == message
+    assert second.status_code == 429
+    assert len(backends.predict_calls()) == 2, "the backend was passed over instead of asked again"
