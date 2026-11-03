@@ -68,10 +68,31 @@ The load-time peak is the reason the container declares **8.7 GB resident and 5.
 not the 13.9 GB total twice over: the first figure is what a card must have to hold the process, the
 second what one picture adds, and the admission is their sum.
 
+## Deployed, 2026-11-03
+
+The image was built on `homepc-4090` from `models/internvlu/` — 16 steps, the three payloads fetched
+inside the build and checked by byte count — and runs there as `internvl-u` on host port `12716`,
+`INTERNVLU_MACHINE=homepc-4090`, its token read from `~/.config/biohack-backend.env` rather than typed
+on the command line. `models.json` on the gateway host gained the entry and the service was
+restarted; `GET /models` reports `internvl-u` with one backend, and a text call on `gwfss` row 4
+answered in 1.0 s.
+
+The same image is in ECR so the rented path can pull it:
+
+| | |
+|---|---|
+| repository | `144931731874.dkr.ecr.eu-central-1.amazonaws.com/internvl-u` |
+| tag | `20261103` (`IMMUTABLE`, scan on push) |
+| digest | `sha256:b8cdcb03d6c7f08009d872a0446e3bca0930977109800420b4661cc727dccbba` |
+| compressed | 14.0 GB |
+
+Pushed from the machine that built it, 17 layers, about 25 minutes at 10 MB/s upstream. The digest is
+the identity a launch template pins; the tag is only for humans.
+
 ## What is not done
 
-- **Nothing is deployed.** No `models.json` entry, no container built, no port assigned. The probe ran
-  from a `uv` venv on `homepc-4090`, not from an image.
+- **No AWS instance runs it.** The image is in ECR and the launch template still names another model's
+  digest; nothing was launched, so `aws-euc1-l4` remains a base AMI and a recipe.
 - **The Blackwell port is not started.** The pinned stack is cu124; B100 is sm_100 and the 5090 is
   sm_120, and neither has kernels in those wheels. `models/internvlu/Dockerfile` already sits on a
   12.8.1 base so the move is a `uv lock` and a re-test, in that order, on a 3090 or 4090 first.
