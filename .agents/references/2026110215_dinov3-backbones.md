@@ -94,6 +94,28 @@ docker run -d --gpus all --restart unless-stopped -p 12715:12711 \
   lone failure in a timing test on a busy machine as a measurement artefact and re-run before
   investigating.
 
+## ECR
+
+The two images were pushed on 2026-11-03 from the build workstation (`linux/amd64`) as
+`dinov3-vitl16:20261103` and `dinov3-vith16plus:20261103` in `eu-central-1`. Both repositories are
+private, `IMMUTABLE`, and scan on push. The registry is the deployment's account, written here as
+`<account>.dkr.ecr.eu-central-1.amazonaws.com`; the digest is what an AWS backend pins.
+
+| id | tag | digest | compressed |
+|---|---|---|---|
+| `dinov3-vitl16` | `20261103` | `sha256:f345f4c14d72df1c9a07192f61be4458508f6e3555d8f1a2dd8469c40f55339b` | 7.73 GB |
+| `dinov3-vith16plus` | `20261103` | `sha256:07bc5ee450372ce3db000a110721b411fa22cbb81e5190e96e23da0269f6511c` | 9.88 GB |
+
+Pull by digest, not by tag:
+
+```bash
+docker pull <account>.dkr.ecr.eu-central-1.amazonaws.com/dinov3-vitl16@sha256:f345f4c14d72df1c9a07192f61be4458508f6e3555d8f1a2dd8469c40f55339b
+```
+
+The tag matches the other model images' date tags (`tasselnetv4:20261102`, `internvl-u:20261103`).
+The AWS path's run line and security group are in [`deploy/gpu-backends-aws.md`](../../deploy/gpu-backends-aws.md);
+this note records only what was published.
+
 ## What is not done
 
 - **The docs site still says three models.** `docs/content/models/index.md` needs both ids, and each
