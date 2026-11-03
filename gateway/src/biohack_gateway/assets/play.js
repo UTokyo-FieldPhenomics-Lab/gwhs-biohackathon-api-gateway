@@ -97,7 +97,10 @@
   // parameters are the ones this deployment measured the pair at.
   const yoloExamples = () => [
     {label: "carrots", image: DEMO_IMAGE_PREFIX + "carrot.jpg", params: {confidence_threshold: 0.25, imgsz: 1024}},
-    {label: "broccoli", image: DEMO_IMAGE_PREFIX + "broccoli.jpg", params: {confidence_threshold: 0.25, imgsz: 1024}},
+    // 0.5 rather than the detector's 0.25: at 0.25 this picture also answers "dining table" twice,
+    // scoring 0.28 and 0.25 — the plastic bag under the heads. The two broccoli scores are 0.87 and
+    // 0.65, so the higher threshold costs nothing and leaves one class in the answer.
+    {label: "broccoli", image: DEMO_IMAGE_PREFIX + "broccoli.jpg", params: {confidence_threshold: 0.5, imgsz: 1024}},
     {label: "a potted plant", image: DEMO_IMAGE_PREFIX + "potted-plant.jpg", params: {confidence_threshold: 0.25, imgsz: 1024}},
   ];
   const MODEL_PRESETS = {
