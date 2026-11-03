@@ -509,6 +509,12 @@
       dataset.value = example.dataset;
       if (typeof example.row === "number") $("row").value = String(example.row);
     }
+    // The picture before the parameters, and for a reason: naming another picture drops the boxes
+    // drawn on the previous one, which `preview` does before its first `await`. An example's own
+    // boxes therefore have to be written after that drop, or the drop takes them. The fetch the call
+    // starts is asynchronous, so the writes below land while the image is loading and the render
+    // that arrives draws them.
+    preview();
     for (const field of fields) {
       if (!(field.name in example.params)) continue;
       const value = example.params[field.name];
@@ -522,7 +528,6 @@
       delete field.input.dataset.untouched;
       field.input.dispatchEvent(new Event("input", {bubbles: true}));
     }
-    preview();
     refreshRequest();
     // After the writes above, because each one dispatches an `input` that clears the flag: the
     // example is a demo only while its own values are still the ones in the controls.

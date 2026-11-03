@@ -104,17 +104,14 @@ body {
   justify-content: flex-end;
   gap: 0.6rem;
 }
-#play #boxes-mode {
-  grid-column: 2;
-  justify-self: start;
-}
 #play label,
 #play .legend {
   font-weight: 600;
   margin: 0;
 }
 #play input,
-#play select {
+#play select,
+#play textarea {
   box-sizing: border-box;
   font: inherit;
   color: var(--ink);
@@ -261,6 +258,30 @@ body {
 #play #parameters > label > .control > input[type="text"] {
   flex: 1 1 20rem;
   max-width: 34rem;
+}
+/* The boxes row is one control, read left to right: the list, then the switch that says whether the
+   picture also edits it. The two take the whole control column — a geometry list is long, and a
+   switch parked under it reads as a row of the form rather than as the mode of the control beside
+   it. The row is a container, so what the switch gives up when space runs out is its words: the two
+   icons are the two states, each button keeps its own name for a screen reader and its title for a
+   pointer, and the switch stays on the line rather than dropping under the list. */
+#play #parameters > label > .control.geometry {
+  container-type: inline-size;
+}
+#play #parameters > label > .control.geometry > input[type="text"] {
+  flex: 1 1 20rem;
+  max-width: none;
+}
+#play #parameters > label > .control.geometry > #boxes-mode {
+  flex: none;
+}
+@container (max-width: 26rem) {
+  #play #boxes-mode .mode-label {
+    display: none;
+  }
+  #play #boxes-mode button {
+    padding: 0.25rem 0.4rem;
+  }
 }
 #play #parameters output {
   min-width: 2.5rem;
@@ -673,13 +694,25 @@ body {
   display: none;
 }
 #play #boxes-mode button {
-  padding: 0.25rem 0.6rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.55rem;
   border: 0;
   background: transparent;
   color: var(--muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.85em;
   cursor: pointer;
+}
+#play #boxes-mode svg {
+  width: 1.15em;
+  height: 1.15em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 #play #boxes-mode button[aria-pressed="true"] {
   background: var(--accent);

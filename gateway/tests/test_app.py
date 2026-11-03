@@ -477,7 +477,7 @@ def test_changing_the_model_takes_the_previous_answer_off(client: TestClient) ->
     start = page.index("const loadChosen = ")
     listener = page.index('model.addEventListener("change"', start)
     assert "clearAnswer();" in page[start:listener]
-    assert "clearAnswer();" in page[page.index("const preview = "):]
+    assert "clearAnswer();" in page[page.index("const preview = ") :]
     assert "if (epoch !== modelEpoch)" in page
 
 
@@ -502,6 +502,39 @@ def test_the_model_page_has_one_view_toggle_per_layer(client: TestClient) -> Non
     assert '"gwfss-segformer-b4": {boxes: false, legend: true, landing: true},' in page
 
 
+def test_the_boxes_switch_sits_beside_the_list_it_switches(client: TestClient) -> None:
+    """Editing the picture's boxes is part of the boxes control, not a row of the form.
+
+    The switch is written once in the markup and moved into the `boxes` parameter's own cell, so the
+    row reads label → the list → the mode, and the list and the switch together take the whole
+    control column. A model that declares no `boxes` keeps it out of the document.
+    """
+    page = client.get(PLAY_PATH).text
+
+    assert page.count('id="boxes-mode"') == 1
+    assert 'cell.classList.add("geometry");' in page
+    assert "cell.append(boxesMode);" in page
+    assert '#play #parameters > label > .control.geometry > input[type="text"]' in page
+    # The switch is no longer a grid item of its own.
+    assert "#play #boxes-mode {\n  grid-column: 2;" not in page
+
+
+def test_the_boxes_switch_drops_its_words_before_it_leaves_the_line(client: TestClient) -> None:
+    """A narrow row keeps the switch beside the list: the icons stay, the words go.
+
+    Two states shown as an icon and a word are wider than a phone's control column. Rather than
+    moving to a line of its own — which reads as another form row — the switch keeps its two icons
+    and drops the words, while each button keeps a name for a screen reader and a title for a
+    pointer.
+    """
+    page = client.get(PLAY_PATH).text
+
+    assert page.count('class="mode-label"') == 2
+    assert 'aria-label="edit"' in page and 'aria-label="locked"' in page
+    assert "@container (max-width: 26rem)" in page
+    assert "#play #boxes-mode .mode-label {\n    display: none;" in page
+
+
 def test_the_model_page_offers_an_examples_chip_per_known_call(client: TestClient) -> None:
     """A preset may carry calls known to work, and the page checks each before it offers one.
 
@@ -515,6 +548,7 @@ def test_the_model_page_offers_an_examples_chip_per_known_call(client: TestClien
     assert 'id="examples-row"' in page and 'id="examples"' in page
     assert 'label: "18 heads"' in page  # the documented known-good call, as a chip
     assert 'label: "describe this picture"' in page
+    assert 'label: "3 exemplars"' in page  # the counting model's call needs its boxes, not a prompt
     assert "datasetRows.has(example.dataset)" in page
     assert "declared.has(name)" in page
 
@@ -529,7 +563,7 @@ def test_the_model_page_keeps_the_answer_in_its_own_bar(client: TestClient) -> N
 
     assert 'id="answer"' in page and 'id="answer-text"' in page
     assert "#play #answer p" in page, "the bar is styled where the rest of the page is"
-    assert "$(\"answer\").open = true" in page, "a new answer is shown rather than hidden"
+    assert '$("answer").open = true' in page, "a new answer is shown rather than hidden"
 
 
 def test_the_model_page_takes_a_class_colour_from_the_dataset(client: TestClient) -> None:

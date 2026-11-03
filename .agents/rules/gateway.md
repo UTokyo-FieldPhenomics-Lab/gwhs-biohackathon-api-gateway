@@ -163,6 +163,16 @@ Package: `gateway/`. Shared constraints are in [`project.md`](project.md).
   presentation defaults may depend on model id; unknown ids use the base view. Preview a resolved
   image before inference. Print `$KEY`, never a token, in the generated command.
   [Playground](../references/2026101622_play-page-layout-annotations-and-curl.md).
+- **Keep a geometry switch in the row of the list it switches, and let it drop its words before its
+  place.** The `boxes` switch is moved into that parameter's cell and the pair takes the control
+  column; in a narrow row the two icons stay and the labels go, each button keeping an `aria-label`
+  and a `title`, because a switch on a line of its own reads as another form row. A model that
+  declares no `boxes` leaves it out of the document.
+  [Layout](../references/2026110312_play-boxes-row-and-counting-example.md).
+- **Write an example's address before its parameters.** Naming another picture drops the boxes drawn
+  on the last one, so a chip that fills the parameters first loses its own; a list is written as JSON
+  rather than `String(...)`, which flattens it to `1,2,3,4,1`.
+  [The bug it found](../references/2026110312_play-boxes-row-and-counting-example.md#the-bug-the-example-found).
 - **Let a family group the picker, never the request.** Two checkpoints stay two model ids; the
   second control chooses one, and the sample curl names that id. A family value is a page label and
   must not reach a path or a parameter.

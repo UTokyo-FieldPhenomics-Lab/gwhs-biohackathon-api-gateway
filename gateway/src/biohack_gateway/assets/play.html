@@ -58,9 +58,28 @@ __PLAY_CSS__
 
     <span id="parameters"></span>
 
+    <!-- Whether the picture's boxes answer to the mouse. The script moves this into the `boxes`
+         parameter's own row, beside the list it switches, so it lives here only as the one place it
+         is written; a model that declares no `boxes` keeps it out of the document. Each state is an
+         icon and a word: the word stays while the row has room for it, and the icon is what is left
+         when it does not, so the switch never moves to a line of its own. -->
     <span id="boxes-mode" class="switch" role="group" aria-label="boxes on the picture" hidden>
-      <button type="button" data-mode="edit" aria-pressed="true">edit</button>
-      <button type="button" data-mode="locked" aria-pressed="false">locked</button>
+      <button type="button" data-mode="edit" aria-pressed="true" aria-label="edit"
+              title="draw boxes on the picture">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3.5 16.5l.8-3.6 8.6-8.6a1.6 1.6 0 0 1 2.3 0l1.1 1.1a1.6 1.6 0 0 1 0 2.3l-8.6 8.6z"/>
+          <path d="M12.2 5.4l2.4 2.4"/>
+        </svg>
+        <span class="mode-label">edit</span>
+      </button>
+      <button type="button" data-mode="locked" aria-pressed="false" aria-label="locked"
+              title="the picture is read-only; the list still edits">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <rect x="4.5" y="9" width="11" height="7.5" rx="1"/>
+          <path d="M7 9V6.5a3 3 0 0 1 6 0V9"/>
+        </svg>
+        <span class="mode-label">locked</span>
+      </button>
     </span>
 
     <span id="run-row">
