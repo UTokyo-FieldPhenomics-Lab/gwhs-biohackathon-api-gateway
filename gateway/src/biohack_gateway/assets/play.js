@@ -48,6 +48,37 @@
   dropPoint.title = "delete the selected point";
   dropPoint.setAttribute("aria-label", "delete the selected point");
   pointActions.append(dropPoint);
+  // Which label a new point gets. It is not the selected point's actions: this says what the next
+  // press writes, so several negative points cost one press each instead of an add and a relabel.
+  // The same two values, and the same order, as the actions that relabel an existing point.
+  const nextLabelPicker = document.createElement("span");
+  nextLabelPicker.className = "switch mode-switch next-label";
+  nextLabelPicker.setAttribute("role", "group");
+  nextLabelPicker.setAttribute("aria-label", "label for a new point");
+  for (const label of ["1", "0"]) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.label = label;
+    button.textContent = label;
+    button.title = label === "1"
+      ? "a point added next is positive (label 1)"
+      : "a point added next is negative (label 0)";
+    button.setAttribute("aria-label", button.title);
+    nextLabelPicker.append(button);
+  }
+  let nextLabel = 1;
+  const showNextLabel = () => {
+    for (const button of nextLabelPicker.querySelectorAll("[data-label]")) {
+      button.setAttribute("aria-pressed", String(Number(button.dataset.label) === nextLabel));
+    }
+  };
+  nextLabelPicker.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-label]");
+    if (!button) return;
+    nextLabel = Number(button.dataset.label);
+    showNextLabel();
+  });
+  showNextLabel();
 
   // What the picture shows first, and what a reader can start from, per model. This is the one
   // model-specific thing the page carries, and it is presentation only: it decides nothing about what
@@ -540,7 +571,7 @@
         // and appear only while one exists.
         pointInput = input;
         cell.classList.add("geometry");
-        cell.append(pointsMode, pointActions);
+        cell.append(nextLabelPicker, pointsMode, pointActions);
         selected = null;
         if (!input.value && points.length) {
           input.value = JSON.stringify(points);
@@ -1702,7 +1733,9 @@
     const at = press;
     press = null;
     if (travelled) return;   // a drag across the picture is not a new point
-    points = points.concat([[Math.round(at.x), Math.round(at.y)]]);
+    // The label the row names, written into the entry: what the reader chose is what the text says,
+    // and the marker carries the same number.
+    points = points.concat([[Math.round(at.x), Math.round(at.y), nextLabel]]);
     selected = points.length - 1;
     commitPoints();
     showSelection();

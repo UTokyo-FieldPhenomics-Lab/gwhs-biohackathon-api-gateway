@@ -182,8 +182,9 @@ Package: `gateway/`. Shared constraints are in [`project.md`](project.md).
 - **Edit one geometry list at a time, and let a selection carry the changes a press cannot.** The
   picture's press means one thing: asking to edit points locks the boxes and the reverse. Adding,
   carrying and removing are the left and second buttons; relabelling and removing are the selected
-  mark's row, so a touch reader can do everything a mouse can and nothing depends on a right button
-  alone. [Points on the picture](../references/2026110316_play-points-on-the-picture.md).
+  mark's row, and what a new mark gets is a selector beside the list, so a touch reader can do
+  everything a mouse can and nothing depends on a right button alone.
+  [Points on the picture](../references/2026110316_play-points-on-the-picture.md).
 - **Write an example's address before its parameters.** Naming another picture drops the boxes drawn
   on the last one, so a chip that fills the parameters first loses its own; a list is written as JSON
   rather than `String(...)`, which flattens it to `1,2,3,4,1`.

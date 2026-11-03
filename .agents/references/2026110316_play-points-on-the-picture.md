@@ -74,6 +74,10 @@ standing; `[[459,297,86,154,0]]` in `boxes` drew a box with a `0` badge.
 - **The row acts on the selection.** `1` / `0` / `×` sit beside the points switch and appear only
   while a point is selected; `1` and `0` are pressed to show the selected point's label. Escape clears
   the selection, Delete removes it unless the reader is typing in a field.
+- **The next point's label is a selector of its own**, between the list and the switch: `1` / `0`,
+  pressed for the value a press on the picture writes. Adding three negative points is three presses
+  rather than six, and the entry is written with the label the row named, so the text and the marker
+  agree. It is a different question from the selected point's actions and keeps a separate state.
 - **An emptied list writes the empty field, not `[]`.** `_check_geometry` refuses an empty array, so
   removing the last box or point leaves `""` — "nothing to send" — which is also what `forgetBoxes`
   already did.
@@ -108,8 +112,9 @@ clears the list with the actions hidden.
 
 ## What is still open
 
-- **A next-label selector** for adding several negative points in a row: the row's `0` acts on a
-  selection, so a negative point costs an add and a click. Not measured as a need yet.
 - **The container still trusts the coordinates it is handed.** A client calling the API directly — not
   through the page — can still send a point past the edge and get an answer about nothing. Refusing or
   clamping after decoding is a container decision nobody has made.
+- **Two labelled groups sit on one row** once a point is selected: the next point's `1` / `0` and the
+  selected point's `1` / `0` / `×`, separated by the switch. Copies differ in title and in the `×`;
+  a stronger distinction would be a caption, and the row has no width for one at 420 px.

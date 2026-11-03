@@ -542,6 +542,21 @@ def test_a_points_list_is_drawn_where_its_numbers_say(client: TestClient) -> Non
     assert "params.${type} coordinates must be inside the picture" in page
 
 
+def test_the_next_point_carries_the_label_the_row_names(client: TestClient) -> None:
+    """Adding several negative points costs one press each, not an add and a relabel.
+
+    The selector says what the next point will be; the selected point's actions say what an existing
+    one is. Two questions with the same two answers, which is why the groups share their wording and
+    their order but not their state: changing one must not silently change the other.
+    """
+    page = client.get(PLAY_PATH).text
+
+    assert "let nextLabel = 1;" in page
+    assert 'nextLabelPicker.setAttribute("aria-label", "label for a new point")' in page
+    assert "[[Math.round(at.x), Math.round(at.y), nextLabel]]" in page
+    assert "cell.append(nextLabelPicker, pointsMode, pointActions)" in page
+
+
 def test_the_boxes_switch_drops_its_words_before_it_leaves_the_line(client: TestClient) -> None:
     """A narrow row keeps the switch beside the list: the icons stay, the words go.
 
@@ -585,7 +600,7 @@ def test_a_point_takes_the_gestures_the_row_cannot(client: TestClient) -> None:
 
     # The stage's cancel of a box being drawn, then one per geometry layer.
     assert page.count('addEventListener("contextmenu"') == 3
-    assert "points = points.concat([[Math.round(at.x), Math.round(at.y)]])" in page
+    assert "points = points.concat([[Math.round(at.x), Math.round(at.y), nextLabel]])" in page
     assert "const dragPoint = (element, index, event) =>" in page
     assert 'button.dataset.act === "drop"' in page
     assert "String(Number(button.dataset.label) === label)" in page
