@@ -45,7 +45,8 @@ Package: `clients/`. Shared constraints are in [`project.md`](project.md); distr
   smoke is opt-in. A file must work as downloaded, without a participant-owned build environment.
   [Smoke tests](../../clients/python/tests/test_live.py).
 - **Do not assume cross-origin browser access.** The API and the dataset prefixes of the image
-  distribution send no CORS headers; the `dev/` prefix is the one exception, added for the
-  playground's example photographs and nothing else. The web client serves API-origin pages, while
-  Node scripts have no browser-origin restriction. A client change must not silently require opening
-  CORS. [Playground](../../gateway/src/biohack_gateway/play.py).
+  distribution send no CORS headers. The `dev/` prefix carries a CORS response policy, but no page
+  depends on it: the playground asks this host for its example photographs, and the host reads the
+  objects. The web client serves API-origin pages, while Node scripts have no browser-origin
+  restriction. A client change must not silently require opening CORS.
+  [Playground](../../gateway/src/biohack_gateway/play.py).

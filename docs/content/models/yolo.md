@@ -32,9 +32,9 @@ answered slowly — downscale it and send it again.
 
 COCO's classes are not in `gwhd`, so the playground's chips for this family do something the others
 do not: they upload a picture instead of naming a dataset row. The pictures are chosen for classes
-these checkpoints actually know — **carrots**, **broccoli** and **a potted plant** — and they are
-served from the data distribution's `dev/` prefix, which is the one prefix that answers a browser's
-cross-origin request:
+these checkpoints actually know — **carrots**, **broccoli** and **a potted plant**. They live under
+the data distribution's `dev/` prefix, and the playground asks this API for them, which reads the
+object once and answers it from here — a browser cannot read another origin's bytes to upload them:
 
 | example | picture | licence |
 |---|---|---|

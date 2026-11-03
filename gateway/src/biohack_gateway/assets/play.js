@@ -110,10 +110,11 @@
   // View order is the order a reader builds the picture in: the photograph, the model's pixel layer
   // over it, the rectangle geometry on top, then the two annotations the page adds.
   const VIEW_BASE = {image: true, masks: true, results: false, geometry: true, legend: false, watermark: true};
-  // Where the example photographs live: the data distribution's development prefix, the one whose
-  // behaviour adds `access-control-allow-origin`. The three are public domain or CC0, and the model
-  // page lists them so a reader can see what they are before uploading one.
-  const DEMO_IMAGE_PREFIX = "https://data.global-wheat.com/dev/";
+  // Where the example photographs are asked for: this host. The three objects live under the data
+  // distribution's `dev/` prefix, and this host reads them there and answers them same-origin — the
+  // page uploads the bytes, and a browser can only read another origin's bytes when that origin
+  // answers a cross-origin request, which the dataset distribution deliberately does not.
+  const DEMO_IMAGE_PREFIX = "/play/example/";
   // The same three for both YOLO ids: the detect answer is boxes, the mask head adds `rle`, and the
   // parameters are the ones this deployment measured the pair at.
   const yoloExamples = () => [

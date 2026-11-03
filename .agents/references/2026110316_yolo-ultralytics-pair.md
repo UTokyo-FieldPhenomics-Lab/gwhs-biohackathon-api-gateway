@@ -141,24 +141,32 @@ operator user may write outside the dataset prefixes.
     dev/potted-plant.jpg  CC0, Wikimedia Commons             potted plant 0.79
 
 Each was measured through the container's own upload route at `imgsz` 1024 before it was wired in.
-The page's chip fetches the bytes and writes them into `#file`, so preview, request, curl and Run
-stay the path a chosen photograph takes.
 
-**CORS had to be opened on `dev/*` alone.** `data.global-wheat.com` sends no `access-control-*` on
-the dataset prefixes, and a browser needs them before it can read bytes for an upload. The fix is a
-`dev/*` cache behaviour with the managed `SimpleCORS` response-headers policy; `gwhd/*` and
-`gwfss/*` still send none, so [`rules/clients.md`](../rules/clients.md) keeps its promise for
-participants.
+**The page does not fetch them from the distribution.** It asks this host for
+`/play/example/<name>.jpg`, and the host reads `https://data.global-wheat.com/dev/<name>.jpg` once,
+keeps the bytes for the process, and answers them same-origin. Three literal paths, each in
+`OPEN_PATHS` by exact string, so nothing can turn the host into a fetcher for an address of a
+caller's choosing. The reason is not preference: an upload needs the bytes, and a browser can only
+read another origin's bytes when that origin answers a cross-origin request.
 
-**Two lessons from the ordering.**
+### What went wrong on the way, in order
 
-- **An object cached before its behaviour existed keeps the headers it was cached with.** The three
-  JPEGs were fetched (without `Origin`) while the distribution had only the default behaviour, and
-  the cached copies had no `Access-Control-Allow-Origin`. CloudFront applies a response-headers
-  policy to the responses it serves from cache, but the entry stored before the behaviour existed was
-  still the one served to the first browser that asked. An invalidation of `dev/*` is what clears it;
-  a query string does not, because the cache key ignores it.
-- **A `curl` that asks for a header is not a browser.** The browser request carries `Origin`,
-  `Sec-Fetch-Mode: cors` and its own cache state; a `curl -H 'Origin: …'` reproduced the header but
-  not the cache variant the browser was served. The browser's own network panel — status, `x-cache`,
-  and the response headers — is the instrument that settles it.
+The CORS route was tried first and cost most of a session. Recording it so the next person does not
+repeat it, and because two of the intermediate conclusions were wrong.
+
+1. **The behaviour's path pattern was `dev/*`, without the leading slash.** CloudFront patterns must
+   begin with `/`; a pattern that does not match anything leaves every `/dev/...` request on the
+   default behaviour. For a while the `SimpleCORS` and `CORS-S3Origin` settings looked as if they did
+   nothing, because they were never reached. The invalidation worked throughout — invalidation paths
+   always start with `/`.
+2. **A response-headers policy is not enough when the cache key ignores `Origin`.** The first object
+   fetched without an `Origin` header was cached with no `Access-Control-Allow-Origin`, and every
+   later request — browsers included — was served that entry, because the default cache policy does
+   not include `Origin` in the key. The fix is a cache policy with `Origin` among its headers.
+3. **The two browsers available here cannot fetch any cross-origin URL at all.** `fetch` to
+   `https://api.github.com/zen`, which always answers `Access-Control-Allow-Origin: *`, fails with
+   the same `NetworkError`. Every browser-side verdict in this session was therefore untrustworthy,
+   and the "still broken" conclusions drawn from them were not evidence about the configuration.
+   A `curl` with the browser's exact headers answered `access-control-allow-origin: *` throughout.
+
+The `dev/*` behaviour is left in place — it is correct now, and harmless. Nothing depends on it.

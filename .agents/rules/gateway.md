@@ -191,10 +191,12 @@ Package: `gateway/`. Shared constraints are in [`project.md`](project.md).
   [The bug it found](../references/2026110312_play-boxes-row-and-counting-example.md#the-bug-the-example-found).
 - **An example may name a photograph instead of a row, and it goes through the file control.** A
   model whose classes are not in a dataset (`yolo26-ultralytics` on COCO) can only show what it can
-  find, so its examples fetch a picture from the data distribution's `dev/` prefix — the one prefix
-  that answers with CORS — and write it into `#file`, where the preview, the request, the command
-  line and Run already read it. The page grows no second input path, and the picture on screen is
-  the picture uploaded. [Example images](../references/2026110316_yolo-ultralytics-pair.md).
+  find, so its examples read a picture from this host — three literal paths it serves by reading the
+  objects under the data distribution's `dev/` prefix — and write it into `#file`, where the
+  preview, the request, the command line and Run already read it. Same-origin bytes, because a
+  browser cannot read another origin's for an upload; no second input path, and the picture on
+  screen is the picture uploaded.
+  [Example images](../references/2026110316_yolo-ultralytics-pair.md).
 - **Let a family group the picker, never the request.** Two checkpoints stay two model ids; the
   second control chooses one, and the sample curl names that id. A family value is a page label and
   must not reach a path or a parameter. The family, its label and its order are fields of the host's

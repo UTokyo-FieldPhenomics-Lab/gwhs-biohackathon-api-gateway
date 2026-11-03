@@ -17,6 +17,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
+import urllib.error
+import urllib.request
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager, nullcontext, suppress
 from enum import StrEnum
@@ -24,11 +27,12 @@ from importlib.metadata import version as installed_version
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import RequestResponseEndpoint
 
@@ -141,11 +145,26 @@ SWAGGER_UI_CSS_PATH = "/docs/swagger-ui.css"
 SWAGGER_UI_LICENSE_PATH = "/docs/swagger-ui-bundle.js.LICENSE.txt"
 """The notices the bundle's first line points at, so a served file carries its licence with it."""
 
+PLAY_EXAMPLE_PATHS = {
+    "/play/example/carrot.jpg": "carrot.jpg",
+    "/play/example/broccoli.jpg": "broccoli.jpg",
+    "/play/example/potted-plant.jpg": "potted-plant.jpg",
+}
+"""The three photographs the model page's examples upload, by the name the page asks for.
+
+Three literal paths rather than a directory or a route with a name parameter, for the same reason
+the Swagger files are literal: what this host serves is a list somebody wrote down, not whatever
+happens to be in a folder, and the middleware can let each through by exact path. The names map to
+objects under the data distribution's `dev/` prefix — the page never names a URL, so no request can
+turn this host into a fetcher for an address of its choosing.
+"""
+
 OPEN_PATHS = frozenset(
     {
         "/health",
         "/docs",
         PLAY_PATH,
+        *PLAY_EXAMPLE_PATHS,
         "/openapi.json",
         SWAGGER_UI_BUNDLE_PATH,
         SWAGGER_UI_CSS_PATH,
@@ -516,6 +535,56 @@ def _error(
     )
 
 
+_EXAMPLE_PHOTOGRAPHS: dict[str, bytes] = {}
+"""The bytes of each example photograph, once fetched. Three files of a few hundred kilobytes."""
+
+_EXAMPLE_LOCK = threading.Lock()
+"""Guards the dictionary above. A burst of first visitors may reach one file at once."""
+
+EXAMPLE_FETCH_TIMEOUT_SECONDS = 10.0
+"""How long one fetch of an example photograph may take before the page is told it is gone."""
+
+
+def fetch_example_photograph(data_base_url: str, name: str) -> bytes:
+    """Fetch one example photograph from the data distribution, once per process.
+
+    Parameters
+    ----------
+    data_base_url : str
+        The distribution's base URL, which is where the published rows come from too.
+    name : str
+        One of :data:`PLAY_EXAMPLE_PATHS`'s values. It is never a caller's string.
+
+    Returns
+    -------
+    bytes
+        The JPEG.
+
+    Raises
+    ------
+    urllib.error.URLError
+        When the distribution cannot be reached, or answers something other than ``200``.
+
+    Notes
+    -----
+    Why the host fetches this at all: the page uploads the photograph, and an upload needs its
+    bytes. A browser can only read another origin's bytes when that origin answers a cross-origin
+    request, which the dataset prefixes deliberately do not — so the page asks this host, and this
+    host reads the object. The objects are immutable, so one fetch per process is enough.
+    """
+    with _EXAMPLE_LOCK:
+        cached = _EXAMPLE_PHOTOGRAPHS.get(name)
+    if cached is not None:
+        return cached
+
+    url = f"{data_base_url.rstrip('/')}/dev/{name}"
+    with urllib.request.urlopen(url, timeout=EXAMPLE_FETCH_TIMEOUT_SECONDS) as response:
+        payload = response.read()
+    with _EXAMPLE_LOCK:
+        _EXAMPLE_PHOTOGRAPHS[name] = payload
+    return bytes(payload)
+
+
 def create_app(
     tokens_path: Path = DEFAULT_TOKENS_FILE,
     index_dir: Path = DEFAULT_INDEX_DIR,
@@ -800,6 +869,53 @@ def create_app(
             The page, from :mod:`biohack_gateway.play`, carrying that page's own CSP.
         """
         return play_page(docs_parent_origin, data_base_url)
+
+
+    def example_route(name: str) -> Any:
+        """Build the handler that serves one example photograph.
+
+        Parameters
+        ----------
+        name : str
+            The file name under the distribution's ``dev/`` prefix.
+
+        Returns
+        -------
+        coroutine function
+            A FastAPI route handler taking no arguments. The name is closed over rather than read
+            from the path, so a request cannot choose the address this host fetches.
+        """
+
+        async def serve() -> Response:
+            """Answer the photograph, or say it is unavailable.
+
+            Returns
+            -------
+            Response
+                The JPEG, with an hour of browser caching: the page's visitor changes, the file does
+                not, and an hour is short enough that a replaced file is picked up in a sitting.
+            """
+            try:
+                payload = await run_in_threadpool(fetch_example_photograph, data_base_url, name)
+            except (urllib.error.URLError, OSError) as error:
+                raise HTTPException(
+                    status_code=502, detail="the example photograph could not be read"
+                ) from error
+            return Response(
+                content=payload,
+                media_type="image/jpeg",
+                headers={"Cache-Control": "public, max-age=3600"},
+            )
+
+        return serve
+
+    for example_path, example_name in PLAY_EXAMPLE_PATHS.items():
+        app.add_api_route(
+            example_path,
+            example_route(example_name),
+            methods=["GET"],
+            include_in_schema=False,
+        )
 
     @app.middleware("http")
     async def require_key(request: Request, call_next: RequestResponseEndpoint) -> Response:

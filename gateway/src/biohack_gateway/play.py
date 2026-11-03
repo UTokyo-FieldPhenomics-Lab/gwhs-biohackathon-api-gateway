@@ -95,11 +95,6 @@ def play_page(parent_origin: str, data_base_url: str = "") -> HTMLResponse:
                 # copied, so that site is the one other origin this page may execute.
                 script_origins=(parent_origin,),
                 image_origins=image_origins,
-                # The same origin again, for the one cross-origin read this page makes: an example
-                # that names a photograph has to fetch its bytes before it can upload them.
-                # `img-src` alone would draw it and leave the upload impossible, because a `fetch`
-                # is governed by `connect-src` and the picture must be sent, not only shown.
-                connect_origins=image_origins,
                 # A chosen file is previewed from a `blob:` URL the page makes for itself.
                 blob_images=True,
             )

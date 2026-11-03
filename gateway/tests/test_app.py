@@ -923,3 +923,59 @@ def test_the_reference_and_the_model_page_share_one_reporter(client: TestClient)
     # Each page tells the reporter which box is the page, and the reference counts its key field.
     assert 'CONTAINER = "#swagger-ui"' in reference and 'EXTRA = "#key-bar"' in reference
     assert 'CONTAINER = "#play"' in play
+
+
+def test_an_example_photograph_is_fetched_once_and_served_without_a_key(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The page uploads a photograph, so the page's own host is where its bytes come from.
+
+    A browser can only read another origin's bytes when that origin answers a cross-origin request,
+    and the data distribution deliberately does not. So the host reads the object and answers it
+    same-origin: the reader's page needs no CORS, the distribution gains no exception, and the model
+    page's upload path is the one a chosen file already takes.
+
+    The objects are immutable, so the second request must not fetch them again — a page reload is
+    not a reason to read the same three hundred kilobytes over the internet.
+    """
+    from biohack_gateway import app as app_module
+
+    app_module._EXAMPLE_PHOTOGRAPHS.clear()
+    fetched: list[str] = []
+
+    class Answer:
+        """Stand in for the object store's response, as ``urlopen`` returns one."""
+
+        def __init__(self, payload: bytes) -> None:
+            self.payload = payload
+
+        def __enter__(self) -> Answer:
+            return self
+
+        def __exit__(self, *_: object) -> bool:
+            return False
+
+        def read(self) -> bytes:
+            return self.payload
+
+    def fake_urlopen(url: str, timeout: float = 0) -> Answer:
+        """Record the URL and answer the same bytes every time."""
+        fetched.append(url)
+        assert timeout > 0
+        return Answer(b"\xff\xd8\xff example")
+
+    monkeypatch.setattr(app_module.urllib.request, "urlopen", fake_urlopen)
+
+    first = client.get("/play/example/carrot.jpg")
+    second = client.get("/play/example/carrot.jpg")
+
+    assert first.status_code == 200, "the page cannot fetch this with a header, so it must be open"
+    assert first.headers["content-type"] == "image/jpeg"
+    assert first.content == b"\xff\xd8\xff example"
+    assert second.content == first.content
+    assert fetched == ["https://data.global-wheat.com/dev/carrot.jpg"], "fetched twice"
+
+    # A fourth name is not a fourth file: the three paths are a list somebody wrote down, so a name
+    # outside it is closed like every other path here — with a key it is simply not a route.
+    assert client.get("/play/example/other.jpg").status_code == 401
+    assert client.get("/play/example/other.jpg", headers=KEY).status_code == 404
