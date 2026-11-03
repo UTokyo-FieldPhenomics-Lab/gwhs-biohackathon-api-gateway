@@ -53,3 +53,8 @@ can show the checkpoint's own label. The comparison was rendered and answered on
 
 The page is served by the gateway, not the docs site: the host needs this commit and a service
 restart. The docs site needs no change.
+
+Deployed 2026-11-03: `gwhs-host` pulled to `772e4f6` and `biohack-gateway` restarted; the live
+`/play` serves `id="variant"` and the two `family: "DINOv3"` presets. The docs page frames the API,
+so it shows the new picker without a rebuild. The local page test used a throwaway gateway with a
+one-row `gwfss` index and six dead backends; the live pool was not touched.
