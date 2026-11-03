@@ -44,47 +44,13 @@ anything you set up here can be taken straight to a shell.
   ></iframe>
 </div>
 
-## A call we know works
+## Start from an example
 
-Before the event we ran one call against the pool and kept its answer. Use it as your test case: if
-your key and your client reproduce these numbers, both are working, and a difference is the thing to
-debug rather than a reason to doubt the whole setup.
+A model's **Examples** buttons fill in an address and the parameters a call was measured with, so the
+shortest way to a first answer is one chip and Run — nothing is sent until you press it. A chip is
+only offered while its dataset is still in the directory and the model still declares the parameters
+it names, so a button that is there is a call the service can answer now.
 
-| | |
-|---|---|
-| address | `gwfss`, row `4` — 512×512, cut heads lying on straw |
-| model | `sam3.1-meta`, `prompt="wheat head"`, `confidence_threshold=0.25` |
-| came back | **18 objects** at `resolution_used` 1008; `Σ mask` = `Σ area` = **109,419 px** |
-
-=== "Python"
-
-    ```python
-    answer = client.predict(
-        "sam3.1-meta", "gwfss", 4, prompt="wheat head", confidence_threshold=0.25
-    )
-    ```
-
-=== "JavaScript"
-
-    ```js
-    const answer = await client.predict("sam3.1-meta", "gwfss", 4, {
-      prompt: "wheat head", confidence_threshold: 0.25,
-    });
-    ```
-
-=== "Java"
-
-    ```java
-    Map<String, Object> answer = client.predict("sam3.1-meta", "gwfss", 4,
-            Map.of("prompt", "wheat head", "confidence_threshold", 0.25));
-    ```
-
-![The recorded answer: eighteen heads, each mask a colour, each box and score the model's own](known-good.jpg)
-
-Every mask's pixel count equals the `area` the answer reports, so the decode is checkable without
-looking at the picture: sum the masks and compare with the `area` fields.
-
-The object count and the boxes are what an answer is really about. The pixel counts are **one machine's**
-— `computed_by` in this answer names `lab-3090` — and the same call on another card can differ by a
-pixel, by a percent of a mask's area, or by one object at the margin. That field is what makes the two
-answers comparable rather than contradictory.
+To check that your **own** client works rather than the service's, run the
+[notebook](quickstart.md): it records its outputs, so a difference is the thing to debug rather than
+a reason to doubt the setup.
