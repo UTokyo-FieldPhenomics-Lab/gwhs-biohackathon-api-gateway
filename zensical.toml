@@ -56,6 +56,7 @@ nav = [
       { "sam3.1-meta" = "models/sam3.1-meta.md" },
       { "gwfss-segformer-b4" = "models/gwfss-segformer-b4.md" },
       { "tasselnetv4" = "models/tasselnetv4.md" },
+      { "internvl-u" = "models/internvl-u.md" },
       { "DINOv3 backbones" = "models/dinov3.md" },
   ] },
   { "Examples" = [
