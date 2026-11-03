@@ -58,6 +58,7 @@ nav = [
       { "tasselnetv4" = "models/tasselnetv4.md" },
       { "internvl-u" = "models/internvl-u.md" },
       { "DINOv3 backbones" = "models/dinov3.md" },
+      { "YOLO26" = "models/yolo.md" },
       { "Nano Banana" = "models/nano-banana.md" },
   ] },
   { "Examples" = [

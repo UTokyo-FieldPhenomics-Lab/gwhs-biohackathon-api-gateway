@@ -127,6 +127,18 @@
         },
       ],
     },
+    // One family, one model with and without a mask head: Ultralytics' COCO checkpoints. Neither is
+    // trained on wheat — a `gwhd` row answers an empty list, which the model page says — so these
+    // carry no example chip: a chip that answers nothing would read as a broken page rather than as
+    // a general detector on a picture outside its classes. `boxes: false` because the parameter of
+    // that name is a prompt, and these take no prompt; the mask answer is drawn by the `masks` layer
+    // the base view already opens.
+    "yolo26-ultralytics": {
+      family: "YOLO", label: "v26-ultralytics", order: 1, boxes: false, masks: false,
+    },
+    "yolo26-seg-ultralytics": {
+      family: "YOLO", label: "v26-seg-ultralytics", order: 2, boxes: false,
+    },
     // One family, two checkpoints: `sam3.1-meta` is Meta's release and `sam3.1-wheat` is a fine-tune
     // named after its training data, per the id decision in
     // `.agents/plans/2026101617_model-api-surface.md`. The second id answers only while a container

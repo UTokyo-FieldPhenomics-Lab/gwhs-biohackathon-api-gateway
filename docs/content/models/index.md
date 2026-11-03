@@ -1,10 +1,11 @@
 # Models
 
-Six models answer today — nine ids, because DINOv3 is served at two checkpoints and Nano Banana at
-three tiers. Calling any of them is one request: **you send an image address (or your own
-photograph) and you get the answer back**. Four are general-purpose: one segments and detects what
-you describe in words, one answers in prose or pixels, one is a backbone whose tokens you fit a head
-to, and one makes pictures from a prompt or an edit. Two are specialized for wheat and plant
+Seven models answer today — eleven ids, because DINOv3 is served at two checkpoints, Nano Banana at
+three tiers, and YOLO26 with and without a mask head. Calling any of them is one request: **you send
+an image address (or your own photograph) and you get the answer back**. Five are general-purpose:
+one segments and detects what you describe in words, one answers in prose or pixels, one is a
+backbone whose tokens you fit a head to, one makes pictures from a prompt or an edit, and one detects
+and segments what it was trained on — COCO's classes, quickly. Two are specialized for wheat and plant
 phenotyping: one labels every pixel of a wheat canopy as head, stem or leaf, and one counts what you
 show it an example of. No weights travel to you, nothing runs on your machine, and there is no
 environment to set up.
@@ -20,6 +21,7 @@ These are upstream checkpoints, not trained on this project's data: they answer 
 | [`sam3.1-meta`](sam3.1-meta.md) | SAM 3.1 — text-prompted segmentation, [Meta's own code and checkpoint](https://github.com/facebookresearch/sam3) | `segmentation` · `detection` | 672 / 784 / 896 / 1008 px square |
 | [`internvl-u`](internvl-u.md) | InternVL-U — a 4B unified multimodal model, [MIT weights](https://huggingface.co/InternVL-U/InternVL-U); answers in prose, or produces and edits a picture | `vision-language` · `text-to-image` · `image-editing` | 1024 px on the longer side at most; `text` takes no size |
 | **Nano Banana** — [`nano-banana-2.1`](nano-banana.md) · [`nano-banana-2`](nano-banana.md) · [`nano-banana-pro`](nano-banana.md) | Google's hosted image models, served through Vertex AI: a picture from a prompt, or an edit of one you send | `text-to-image` · `image-editing` | 512 px – 2K on the longer side; 1K and 2K per id |
+| **YOLO26** — [`yolo26-ultralytics`](yolo.md) · [`yolo26-seg-ultralytics`](yolo.md) | Ultralytics' YOLO26 at the COCO checkpoints: a fast detector, and the same model with an instance-mask head; nothing trained on wheat | `detection` · `segmentation` | 640 / 1024 / 1280 px square |
 | **DINOv3** — [`dinov3-vitl16`](dinov3.md) · [`dinov3-vith16plus`](dinov3.md) | [ViT-L/16](https://huggingface.co/facebook/dinov3-vitl16-pretrain-lvd1689m) and [ViT-H+/16](https://huggingface.co/facebook/dinov3-vith16plus-pretrain-lvd1689m) — one backbone at two checkpoints for dense features and a CLS descriptor, both LVD-1689M; no head, no classes | `features` | 224–768 px (L) / 224–640 px (H+) on the longer side; defaults 512 / 384 |
 
 **Built with DINOv3.** The two DINOv3 backbones are served under the [DINOv3

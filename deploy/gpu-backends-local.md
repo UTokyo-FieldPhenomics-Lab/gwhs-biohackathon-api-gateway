@@ -41,7 +41,8 @@ Conventions that hold everywhere and are not re-decided per machine:
 
 - **A model's port is the model's, and the same number on every machine.** `12711` is
   `sam3.1-meta`, `12712` is `gwfss-segformer-b4`, `12713` is `tasselnetv4`, `12714` is
-  `dinov3-vitl16`, `12715` is `dinov3-vith16plus`, wherever they run. Inside a container the port is
+  `dinov3-vitl16`, `12715` is `dinov3-vith16plus`, `12717` is `yolo26-ultralytics`, `12718` is
+  `yolo26-seg-ultralytics`, wherever they run. Inside a container the port is
   always `12711` — each container has its own network namespace, so two models on one host do not
   collide there — and the host side carries the model's number. It sits outside both ephemeral
   ranges (`32768–60999` on Linux, `49152–65535` on Windows), and it is deliberately **not 8000**,
