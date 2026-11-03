@@ -91,8 +91,12 @@ the identity a launch template pins; the tag is only for humans.
 
 ## What is not done
 
-- **No AWS instance runs it.** The image is in ECR and the launch template still names another model's
-  digest; nothing was launched, so `aws-euc1-l4` remains a base AMI and a recipe.
+- **No AWS instance runs it.** The security group admits `12716` from the gateway host's group, and
+  the launch template has version 11 carrying the pull and run lines — but the template's default is
+  still version 9 and nothing was launched. Its `InstanceType` is `g4dn.xlarge`, a 16 GB T4, where
+  `internvl-u` (13.9 GB peak) and `sam3.1` (8.5 GB resident) cannot both start; the version is there
+  to pin when a card that holds all three exists, and the type and disk change with it. The record
+  of what a launch does is [`deploy/gpu-backends-aws.md`](../../deploy/gpu-backends-aws.md) §7.
 - **The Blackwell port is not started.** The pinned stack is cu124; B100 is sm_100 and the 5090 is
   sm_120, and neither has kernels in those wheels. `models/internvlu/Dockerfile` already sits on a
   12.8.1 base so the move is a `uv lock` and a re-test, in that order, on a 3090 or 4090 first.

@@ -381,8 +381,10 @@ aws ec2 create-launch-template --launch-template-name biohack-gpu-backend \
 ```
 
 `g6.xlarge` is one L4 and 24 GB — an eighth of the account's 32 vCPU, and every measured model fits in
-a third of the card. 100 GB is the root volume: the system, plus two model images at 24 and 18 GB
-unpacked. Both are deleted with the instance.
+a third of the card. **They do not fit together on it.** `internvl-u` peaks at 13.9 GB while `sam3.1`
+holds 8.5 GB resident, so a machine that starts both needs a card larger than 24 GB; the type and the
+health of each container decide which subset a launch actually serves. 100 GB is the root volume: the system, plus three model images at 24, 18 and
+18 GB unpacked. All of it is deleted with the instance.
 
 The user-data does the three things a launch needs and nothing else. It is the same for every launch,
 so it can live in the template, and it starts **every model the machine serves** — one container per
@@ -395,6 +397,7 @@ REGION=<region>
 REGISTRY=<account>.dkr.ecr."$REGION".amazonaws.com
 SAM31=sha256:<digest from §6>
 GWFSS=sha256:<the other model's digest>
+INTERNVLU=sha256:<the third model's digest>
 
 aws ecr get-login-password --region "$REGION" \
   | docker login --username AWS --password-stdin "$REGISTRY"
@@ -411,6 +414,11 @@ docker pull "$REGISTRY/gwfss-segformer-b4@$GWFSS"
 docker run -d --gpus all --restart unless-stopped -p 12712:12711 \
   -e BACKEND_TOKEN="$TOKEN" -e GWFSS_MACHINE=aws-euc1-l4 \
   --name gwfss-segformer-b4 "$REGISTRY/gwfss-segformer-b4@$GWFSS"
+
+docker pull "$REGISTRY/internvl-u@$INTERNVLU"
+docker run -d --gpus all --restart unless-stopped -p 12716:12711 \
+  -e BACKEND_TOKEN="$TOKEN" -e INTERNVLU_MACHINE=aws-euc1-l4 \
+  --name internvl-u "$REGISTRY/internvl-u@$INTERNVLU"
 ```
 
 `-p 12712:12711` is the shape to copy: the model's port on the host, the container's own `12711`
