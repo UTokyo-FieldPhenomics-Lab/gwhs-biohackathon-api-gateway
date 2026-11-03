@@ -87,9 +87,10 @@ calls returned `200` from `lab-3090`.
 - **Backends**: running on `lab-3090`, registered in the host's `models.json` (11 ids), gateway
   restarted, `/models` reports both `declared: true` and `backends_up: 1`.
 - **Docs page and fixture**: in the repository, `zensical build --strict` clean.
-- **`play.js` presets**: in the repository only. The host pulls `origin/main`, and this checkout has
-  three unpushed commits ahead of it (`291aee8`, `1da6cd2`, `f7854b7`); pushing was left to the
-  owner, so the live page still shows the two ids ungrouped until the next push-and-pull.
+- **`play.js` and the host's `models.json`**: deployed. The commits were pushed, the host pulled and
+  restarted, and the model list took the object form, so `play?model=yolo26-ultralytics` reads
+  `YOLO → v26-ultralytics / v26-seg-ultralytics` and `GET /models` publishes the three fields for the
+  eight ids that declare them. The fixture was re-recorded from that answer.
 
 ## 简化：分组从页面搬进 host 的模型清单
 
@@ -117,7 +118,8 @@ two minutes: the old loader accepts only a list per model and skipped every obje
 the reason in its log and nothing in the answer. It was noticed by the re-recorded directory, fixed
 by restoring `models.json.bak.<stamp>` and restarting, and the code-first order is now written into
 [`deploy/gpu-backends-local.md`](../../deploy/gpu-backends-local.md). The live config is back to the
-list form; it takes the object form once the host runs the new loader.
+list form; it took the object form after the host pulled the new loader, verified one step at a
+time.
 
 Two smaller facts worth keeping:
 

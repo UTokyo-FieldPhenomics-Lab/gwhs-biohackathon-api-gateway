@@ -23,9 +23,11 @@ id and nothing else.
 - [x] UI, repository side: `play.js` presets for both ids (`family: "YOLO"`), the docs model page
       with one `parameters:<id>` block per id and the AGPL-3.0 notice, `docs/scripts/fixtures/`
       re-recorded from the live API, parameter tables regenerated.
-- [ ] UI, live side: the host serves `play.js` from `origin/main`, and this checkout is three
-      commits ahead of it. The presets are verified against a local gateway; the live page shows
-      the two ids ungrouped until those commits are pushed and the host pulls.
+- [x] UI, live side: pushed, the host pulled and restarted, the host's `models.json` took the object
+      form, and `play?model=yolo26-ultralytics` reads `YOLO → v26-ultralytics / v26-seg-ultralytics`.
+- [x] Grouping simplified to one source after the fact: family/label/order are host fields that
+      `GET /models` publishes, and `play.js` carries no family table.
+      [Reference](../references/2026110316_yolo-ultralytics-pair.md)
 - [x] Record the ports in `.agents/rules/backend-pool.md` and `deploy/gpu-backends-local.md`;
       write the reference note.
 
