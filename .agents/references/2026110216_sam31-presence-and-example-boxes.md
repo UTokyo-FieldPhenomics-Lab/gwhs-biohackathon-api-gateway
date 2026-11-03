@@ -92,6 +92,9 @@ one region.
   `0 objects · try another phrase, or draw an example box`, built from the declared parameters, so a
   model with neither says nothing and a counting answer keeps its blank. Covered by
   `gateway/tests/test_app.py::test_an_empty_answer_names_the_levers_the_model_declares`.
+- `gateway/src/biohack_gateway/assets/play.js`, a second chip: `one box, 22 heads` on `gwhd` row 4 —
+  `wheat head`, one box `[[459,297,86,154,1]]`, `confidence_threshold` 0.31. It is the call this note
+  measured (22 objects, `Σ mask = 119,269 px`), and the picture the phrase alone cannot answer.
 
 ## What is not done
 

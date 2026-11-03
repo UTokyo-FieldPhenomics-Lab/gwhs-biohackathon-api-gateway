@@ -143,6 +143,19 @@
           row: 4,
           params: {prompt: "wheat head", confidence_threshold: 0.25},
         },
+        // The picture the model page measures "What the score means" on: `wheat head` alone answers
+        // nothing here, and one box around a head brings 22 back, most of them outside the box —
+        // an example of what to look for, not a region to look in.
+        {
+          label: "one box, 22 heads",
+          dataset: "gwhd",
+          row: 4,
+          params: {
+            prompt: "wheat head",
+            boxes: [[459, 297, 86, 154, 1]],
+            confidence_threshold: 0.31,
+          },
+        },
       ],
     },
     "sam3.1-wheat": {family: "SAM 3.1", label: "finetuned", order: 2},

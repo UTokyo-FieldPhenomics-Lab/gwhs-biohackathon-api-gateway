@@ -548,6 +548,7 @@ def test_the_model_page_offers_an_examples_chip_per_known_call(client: TestClien
 
     assert 'id="examples-row"' in page and 'id="examples"' in page
     assert 'label: "18 heads"' in page  # the documented known-good call, as a chip
+    assert 'label: "one box, 22 heads"' in page  # the same model with one example box
     assert 'label: "describe this picture"' in page
     assert 'label: "3 exemplars"' in page  # the counting model's call needs its boxes, not a prompt
     assert "datasetRows.has(example.dataset)" in page
