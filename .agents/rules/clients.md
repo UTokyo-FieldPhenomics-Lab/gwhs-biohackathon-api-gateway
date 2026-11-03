@@ -44,7 +44,8 @@ Package: `clients/`. Shared constraints are in [`project.md`](project.md); distr
   [maintainer README](../../README.md#clients); Java checks use a real local HTTP server, and live
   smoke is opt-in. A file must work as downloaded, without a participant-owned build environment.
   [Smoke tests](../../clients/python/tests/test_live.py).
-- **Do not assume cross-origin browser access.** The API and image distributions do not send CORS
-  headers; the web client serves API-origin pages, while Node scripts have no browser-origin
-  restriction. A client change must not silently require opening CORS.
-  [Playground](../../gateway/src/biohack_gateway/play.py).
+- **Do not assume cross-origin browser access.** The API and the dataset prefixes of the image
+  distribution send no CORS headers; the `dev/` prefix is the one exception, added for the
+  playground's example photographs and nothing else. The web client serves API-origin pages, while
+  Node scripts have no browser-origin restriction. A client change must not silently require opening
+  CORS. [Playground](../../gateway/src/biohack_gateway/play.py).

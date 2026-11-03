@@ -88,6 +88,7 @@ def policy(
     frame_ancestors: str,
     script_origins: Iterable[str] = (),
     image_origins: Iterable[str] = (),
+    connect_origins: Iterable[str] = (),
     blob_images: bool = False,
 ) -> str:
     """Build the header value for one page.
@@ -106,6 +107,10 @@ def policy(
     image_origins : sequence of str, optional
         Further origins the page may draw an image from — the public data distribution, which is
         where a published row's picture comes from.
+    connect_origins : sequence of str, optional
+        Further origins the page may `fetch`. The model page needs one: an example that names a
+        photograph instead of a dataset row has to read the bytes of a cross-origin image before it
+        can upload them, and `connect-src` is what refuses that even when the response carries CORS.
     blob_images : bool, default False
         Whether the page previews a file the reader chose. The model page does, and a preview is a
         ``blob:`` URL made by the page itself.
@@ -126,7 +131,7 @@ def policy(
         # because one can execute and the other cannot.
         ("style-src", ["'self'", "'unsafe-inline'"]),
         ("img-src", images),
-        ("connect-src", ["'self'"]),
+        ("connect-src", ["'self'", *connect_origins]),
         ("font-src", ["'self'"]),
         ("frame-ancestors", [frame_ancestors]),
         ("base-uri", ["'none'"]),

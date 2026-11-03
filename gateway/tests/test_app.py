@@ -430,7 +430,10 @@ def test_the_model_page_names_no_model_and_no_parameter_outside_its_presets(
     quietly.
     """
     page = client.get(PLAY_PATH).text
-    start = page.index("const MODEL_PRESETS = {")
+    # The preset area rather than the table alone: the example photographs and the helper that
+    # returns their entries are part of the same bounded exception, and an id or a parameter name
+    # anywhere outside it is the invariant broken.
+    start = page.index("const DEMO_IMAGE_PREFIX")
     end = page.index("let view = {...VIEW_BASE};")
     presets, rest = page[start:end], page[:start] + page[end:]
 
@@ -442,11 +445,11 @@ def test_the_model_page_names_no_model_and_no_parameter_outside_its_presets(
         "dinov3-vith16plus",
         "prompt",
         "confidence_threshold",
+        "imgsz",
     )
     for name in named:
-        assert name in presets, f"{name} left the preset table, so this test is stale"
-        assert name not in rest, f"{name} appears outside the preset table"
-    assert "imgsz" not in page  # a parameter the page has no preset for, so it stays unnamed
+        assert name in presets, f"{name} left the preset area, so this test is stale"
+        assert name not in rest, f"{name} appears outside the preset area"
     assert "/models/" in page and "/datasets/" in page  # it asks the surface instead
 
 

@@ -28,6 +28,23 @@ is an array the size of the picture **per object**, so the mask answer admits a 
 bounded number of objects. A larger upload is refused with a `400` naming the limit rather than
 answered slowly — downscale it and send it again.
 
+## The three example photographs
+
+COCO's classes are not in `gwhd`, so the playground's chips for this family do something the others
+do not: they upload a picture instead of naming a dataset row. The pictures are chosen for classes
+these checkpoints actually know — **carrots**, **broccoli** and **a potted plant** — and they are
+served from the data distribution's `dev/` prefix, which is the one prefix that answers a browser's
+cross-origin request:
+
+| example | picture | licence |
+|---|---|---|
+| carrots | [`dev/carrot.jpg`](https://data.global-wheat.com/dev/carrot.jpg) | public domain, Wikimedia Commons |
+| broccoli | [`dev/broccoli.jpg`](https://data.global-wheat.com/dev/broccoli.jpg) | CC0, Wikimedia Commons |
+| a potted plant | [`dev/potted-plant.jpg`](https://data.global-wheat.com/dev/potted-plant.jpg) | CC0, Wikimedia Commons |
+
+They are a demonstration and nothing else: the same call on a `gwhd` row answers an empty list, and
+that is the honest answer from a model that has never seen a wheat head.
+
 ## Parameters
 
 Both ids answer the same two parameters, and they ride in the **query string** beside the address:

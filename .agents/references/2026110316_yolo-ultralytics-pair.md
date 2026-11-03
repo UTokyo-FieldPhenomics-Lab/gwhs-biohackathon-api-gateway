@@ -127,3 +127,38 @@ Two smaller facts worth keeping:
   answer exactly what it was, rather than three nulls a reader would have to interpret.
 - **`sam3.1-meta` declares a family it cannot show.** A family needs two served ids to become a
   dropdown, so its label waits for `sam3.1-wheat` to be configured beside it.
+
+## The three example photographs
+
+COCO's classes are not in `gwhd`, so the YOLO chips cannot use a dataset row: a chip that answers an
+empty list reads as a broken page rather than as a general detector. Three photographs were chosen
+for classes the checkpoints know — carrots, broccoli and a potted plant — and uploaded to `dev/` on
+the data distribution through the console, because neither the publisher user nor this workstation's
+operator user may write outside the dataset prefixes.
+
+    dev/carrot.jpg        public domain, Wikimedia Commons   carrot 0.81 / 0.68 / 0.38
+    dev/broccoli.jpg      CC0, Wikimedia Commons             broccoli 0.84 / 0.60
+    dev/potted-plant.jpg  CC0, Wikimedia Commons             potted plant 0.79
+
+Each was measured through the container's own upload route at `imgsz` 1024 before it was wired in.
+The page's chip fetches the bytes and writes them into `#file`, so preview, request, curl and Run
+stay the path a chosen photograph takes.
+
+**CORS had to be opened on `dev/*` alone.** `data.global-wheat.com` sends no `access-control-*` on
+the dataset prefixes, and a browser needs them before it can read bytes for an upload. The fix is a
+`dev/*` cache behaviour with the managed `SimpleCORS` response-headers policy; `gwhd/*` and
+`gwfss/*` still send none, so [`rules/clients.md`](../rules/clients.md) keeps its promise for
+participants.
+
+**Two lessons from the ordering.**
+
+- **An object cached before its behaviour existed keeps the headers it was cached with.** The three
+  JPEGs were fetched (without `Origin`) while the distribution had only the default behaviour, and
+  the cached copies had no `Access-Control-Allow-Origin`. CloudFront applies a response-headers
+  policy to the responses it serves from cache, but the entry stored before the behaviour existed was
+  still the one served to the first browser that asked. An invalidation of `dev/*` is what clears it;
+  a query string does not, because the cache key ignores it.
+- **A `curl` that asks for a header is not a browser.** The browser request carries `Origin`,
+  `Sec-Fetch-Mode: cors` and its own cache state; a `curl -H 'Origin: …'` reproduced the header but
+  not the cache variant the browser was served. The browser's own network panel — status, `x-cache`,
+  and the response headers — is the instrument that settles it.

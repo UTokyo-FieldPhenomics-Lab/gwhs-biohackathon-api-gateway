@@ -89,7 +89,11 @@
   // answers with class extents that cover most of the frame, so its boxes open hidden and its legend,
   // which is where the class names and scores then live, opens shown. `examples` are calls known to
   // work: a chip writes the address and the parameters it names into the controls, so a reader never
-  // types a value there is no reason to trust. This table is also the only place a model id or a
+  // types a value there is no reason to trust. An example names a `row` in a published dataset or an
+  // `image` under the data distribution's `dev/` prefix — the one prefix whose cache behaviour
+  // answers with CORS, which a browser needs before it can read another origin's bytes. The second is
+  // what a model with no wheat classes can still show, and the page writes it into the file control
+  // so everything after it is the path a chosen photograph takes. This table is also the only place a model id or a
   // parameter name appears, and the test that holds the page to its own invariant says so.
   // `landing` is which model the page opens on when a URL names none. Every one of these is a
   // presentation default, kept in the one table allowed to name a model, not a second id in the
@@ -106,6 +110,17 @@
   // View order is the order a reader builds the picture in: the photograph, the model's pixel layer
   // over it, the rectangle geometry on top, then the two annotations the page adds.
   const VIEW_BASE = {image: true, masks: true, results: false, geometry: true, legend: false, watermark: true};
+  // Where the example photographs live: the data distribution's development prefix, the one whose
+  // behaviour adds `access-control-allow-origin`. The three are public domain or CC0, and the model
+  // page lists them so a reader can see what they are before uploading one.
+  const DEMO_IMAGE_PREFIX = "https://data.global-wheat.com/dev/";
+  // The same three for both YOLO ids: the detect answer is boxes, the mask head adds `rle`, and the
+  // parameters are the ones this deployment measured the pair at.
+  const yoloExamples = () => [
+    {label: "carrots", image: DEMO_IMAGE_PREFIX + "carrot.jpg", params: {confidence_threshold: 0.25, imgsz: 1024}},
+    {label: "broccoli", image: DEMO_IMAGE_PREFIX + "broccoli.jpg", params: {confidence_threshold: 0.25, imgsz: 1024}},
+    {label: "a potted plant", image: DEMO_IMAGE_PREFIX + "potted-plant.jpg", params: {confidence_threshold: 0.25, imgsz: 1024}},
+  ];
   const MODEL_PRESETS = {
     "gwfss-segformer-b4": {geometry: false, legend: true, landing: true},
     // A backbone has no objects and no mask; what it publishes is the grid its `results` eye draws.
@@ -188,8 +203,8 @@
     // a general detector on a picture outside its classes. `geometry: false` because the parameter of
     // that name is a prompt, and these take no prompt; the mask answer is drawn by the `masks` layer
     // the base view already opens.
-    "yolo26-ultralytics": {geometry: false, masks: false},
-    "yolo26-seg-ultralytics": {geometry: false},
+    "yolo26-ultralytics": {geometry: false, masks: false, examples: yoloExamples()},
+    "yolo26-seg-ultralytics": {geometry: false, examples: yoloExamples()},
     // The call the documentation keeps as its known-good one: eighteen heads on this row, at this
     // threshold. A participant reproducing it here and in a client is testing both.
     "sam3.1-meta": {
@@ -612,18 +627,47 @@
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = example.label;
-      button.title = "the parameters this call was measured with";
+      button.title = example.image
+        ? "a photograph this model knows a class for, with the parameters the call was measured at"
+        : "the parameters this call was measured with";
       button.addEventListener("click", () => applyExample(example));
       box.append(button);
     }
     $("examples-row").hidden = !usable.length;
   };
 
+  // An example that names a photograph is written into the file control, as the `File` a reader's own
+  // choice would have produced. That is the whole point: the preview, the request, the command line
+  // and Run read `#file`, so an example that goes through the control needs nothing else to change,
+  // and the picture on screen is the picture that is uploaded.
+  //
+  // The fetch is cross-origin and works only because `dev/` is the one prefix the data distribution
+  // answers with CORS. A refusal here is not the model's: it says so in the check line and leaves the
+  // controls as they were, rather than switching the page to an upload it cannot make.
+  const adoptPhotograph = async (example) => {
+    const response = await fetch(example.image);
+    if (!response.ok) throw new Error("the example photograph answered HTTP " + response.status);
+    const blob = await response.blob();
+    const name = example.image.split("/").pop() || "example.jpg";
+    $("source").value = "upload";
+    syncSource();
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([blob], name, {type: blob.type || "image/jpeg"}));
+    $("file").files = transfer.files;
+  };
+
   // Writing an example is writing the controls: the same inputs the reader would have typed into, so
   // the command and the request that follow are the ones it produced. Nothing is sent — an example
   // fills the form in, and Run is still the reader's to press.
-  const applyExample = (example) => {
-    if (example.dataset) {
+  const applyExample = async (example) => {
+    if (example.image) {
+      try {
+        await adoptPhotograph(example);
+      } catch (error) {
+        say($("check"), error.message, false);
+        return;
+      }
+    } else if (example.dataset) {
       $("source").value = "row";
       syncSource();
       dataset.value = example.dataset;
