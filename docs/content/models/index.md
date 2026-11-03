@@ -1,27 +1,37 @@
 # Models
 
-Six models answer today, and calling any of them is one request: **you send an image address (or
-your own photograph) and you get the answer back**. Three answer a task: one finds what you describe
-in words, one labels every pixel of a wheat canopy as head, stem or leaf, one counts what you show it
-an example of. Two are **backbones**: they answer the encoder's own tokens — a CLS vector and a grid
-of patch vectors — and you fit the head your question needs. One answers in words or in pixels: a
-question about a picture, or a new picture from a sentence. No weights travel to you, nothing runs on
-your machine, and there is no environment to set up.
+Five models answer today — six ids, because DINOv3 is served at two checkpoints. Calling any of them
+is one request: **you send an image address (or your own photograph) and you get the answer back**.
+Three are general-purpose: one segments and detects what you describe in words, one answers in prose
+or pixels, and one is a backbone whose tokens you fit a head to. Two are specialized for wheat and
+plant phenotyping: one labels every pixel of a wheat canopy as head, stem or leaf, and one counts
+what you show it an example of. No weights travel to you, nothing runs on your machine, and there is
+no environment to set up.
 
 ## The models
 
-| id | what it is | runs at | measured |
+### General models
+
+These are upstream checkpoints, not trained on this project's data: they answer about any picture.
+
+| model | what it is | tags | runs at |
 |---|---|---|---|
-| [`sam3.1-meta`](sam3.1-meta.md) | SAM 3.1 — text-prompted segmentation, [Meta's own code and checkpoint](https://github.com/facebookresearch/sam3) | 672 / 784 / 896 / 1008 px square | 0.36 s per inference on a 3090 at 1008; parameters and their encodings on the model page |
-| [`gwfss-segformer-b4`](gwfss-segformer-b4.md) | the GWFSS dataset's own SegFormer-B4 baseline — semantic organ segmentation, [CC-BY-4.0 weights](https://huggingface.co/GlobalWheat/GWFSS_Segformer_b4), no parameters | 512 px square | 0.038 s per inference on a 3090; mIoU 0.70 on the ten published rows, stems the weak class; numbers on the model page |
-| [`tasselnetv4`](tasselnetv4.md) | TasselNetV4 — class-agnostic plant counting, [the paper's code and checkpoint](https://arxiv.org/abs/2509.20857); you show exemplar boxes and it answers a number | 384 px tall, tiled | 0.31 s per inference through the API; MAE 8.75 on `salaamuko` (48 images) and 10.8 over 32 sampled species; numbers on the model page |
-| [`internvl-u`](internvl-u.md) | InternVL-U — a 4B unified multimodal model, [MIT weights](https://huggingface.co/InternVL-U/InternVL-U); answers in prose, or produces and edits a picture | 1024 px on the longer side at most; `text` takes no size | 0.67 s for a sentence and 11 s for a picture on a 4090; 1.0 MB PNG answer; numbers on the model page |
-| [`dinov3-vitl16`](dinov3.md) | DINOv3 ViT-L/16 — a **backbone** for dense features and a CLS descriptor, [the LVD-1689M checkpoint](https://huggingface.co/facebook/dinov3-vitl16-pretrain-lvd1689m); no head, no classes | 224–768 px on the longer side, default 512 | 0.039 s per inference on a 3090 at 512; 2.8 MB answer at the default, 6.3 MB at the ceiling; numbers on the model page |
-| [`dinov3-vith16plus`](dinov3.md) | DINOv3 ViT-H+/16 — the same backbone at 1280 dimensions, [the LVD-1689M checkpoint](https://huggingface.co/facebook/dinov3-vith16plus-pretrain-lvd1689m); no head, no classes | 224–640 px on the longer side, default 384 | 0.026 s on a 4:6 frame at 384 on a 3090; 2.0 MB answer at the default, 5.5 MB at the ceiling; numbers on the model page |
+| [`sam3.1-meta`](sam3.1-meta.md) | SAM 3.1 — text-prompted segmentation, [Meta's own code and checkpoint](https://github.com/facebookresearch/sam3) | `segmentation` · `detection` | 672 / 784 / 896 / 1008 px square |
+| [`internvl-u`](internvl-u.md) | InternVL-U — a 4B unified multimodal model, [MIT weights](https://huggingface.co/InternVL-U/InternVL-U); answers in prose, or produces and edits a picture | `vision-language` · `text-to-image` · `image-editing` | 1024 px on the longer side at most; `text` takes no size |
+| **DINOv3** — [`dinov3-vitl16`](dinov3.md) · [`dinov3-vith16plus`](dinov3.md) | [ViT-L/16](https://huggingface.co/facebook/dinov3-vitl16-pretrain-lvd1689m) and [ViT-H+/16](https://huggingface.co/facebook/dinov3-vith16plus-pretrain-lvd1689m) — one backbone at two checkpoints for dense features and a CLS descriptor, both LVD-1689M; no head, no classes | `features` | 224–768 px (L) / 224–640 px (H+) on the longer side; defaults 512 / 384 |
 
 **Built with DINOv3.** The two DINOv3 backbones are served under the [DINOv3
 License](https://ai.meta.com/resources/models-and-libraries/dinov3-license/), which requires this
 notice when the models are made available to a third party.
+
+### Specialized models
+
+These were trained for a wheat or plant task.
+
+| model | what it is | tags | runs at |
+|---|---|---|---|
+| [`gwfss-segformer-b4`](gwfss-segformer-b4.md) | the GWFSS dataset's own SegFormer-B4 baseline — semantic organ segmentation, [CC-BY-4.0 weights](https://huggingface.co/GlobalWheat/GWFSS_Segformer_b4), no parameters | `segmentation` | 512 px square |
+| [`tasselnetv4`](tasselnetv4.md) | TasselNetV4 — class-agnostic plant counting, [the paper's code and checkpoint](https://arxiv.org/abs/2509.20857); you show exemplar boxes and it answers a number | `counting` | 384 px tall, tiled |
 
 An id names **whose weights these are**, not where they run: a collaborator's fine-tune of the same
 model appears as an id of its own, named after the data it was trained on. Every id this API serves is
