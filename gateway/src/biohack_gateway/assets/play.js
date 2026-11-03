@@ -177,13 +177,12 @@
       ],
     },
     // One family, one model with and without a mask head: Ultralytics' COCO checkpoints. Neither is
-    // trained on wheat — a `gwhd` row answers an empty list, which the model page says — so these
-    // carry no example chip: a chip that answers nothing would read as a broken page rather than as
-    // a general detector on a picture outside its classes. `geometry: false` because the parameter of
-    // that name is a prompt, and these take no prompt; the mask answer is drawn by the `masks` layer
-    // the base view already opens.
-    "yolo26-ultralytics": {geometry: false, masks: false, examples: yoloExamples()},
-    "yolo26-seg-ultralytics": {geometry: false, examples: yoloExamples()},
+    // trained on wheat — a `gwhd` row answers an empty list, which the model page says — so their
+    // chips upload one of three photographs the checkpoints do know. The detector answers boxes and
+    // nothing else, so its `masks` layer starts off; the mask head opens both layers, because its
+    // answer is the boxes and the masks together.
+    "yolo26-ultralytics": {masks: false, examples: yoloExamples()},
+    "yolo26-seg-ultralytics": {examples: yoloExamples()},
     // The call the documentation keeps as its known-good one: eighteen heads on this row, at this
     // threshold. A participant reproducing it here and in a client is testing both.
     "sam3.1-meta": {
@@ -665,6 +664,12 @@
       field.input.dispatchEvent(new Event("input", {bubbles: true}));
     }
     refreshRequest();
+    // A chip is a presentation as well as a call: it shows the layers the answer needs. A mask
+    // model's chip opens masks and geometry; a detector's chip leaves the masks layer off, because
+    // an answer with no mask would draw nothing under it and read as a miss. The reader's own
+    // toggles come back the moment they press one — this only sets where the chip starts.
+    view = viewFor(selectedModel());
+    showView();
     // After the writes above, because each one dispatches an `input` that clears the flag: the
     // example is a demo only while its own values are still the ones in the controls.
     demoRun = Boolean(example.demo);
