@@ -196,6 +196,9 @@ Package: `gateway/`. Shared constraints are in [`project.md`](project.md).
   preview, the request, the command line and Run already read it. Same-origin bytes, because a
   browser cannot read another origin's for an upload; no second input path, and the picture on
   screen is the picture uploaded.
+- **A chip also sets the layers its answer needs.** A mask model's chip opens masks and geometry; a
+  detector's leaves the masks layer off, because an answer with no mask draws nothing under it. The
+  reader's own toggle still wins the moment they press one — the chip only decides where it starts.
   [Example images](../references/2026110316_yolo-ultralytics-pair.md).
 - **Let a family group the picker, never the request.** Two checkpoints stay two model ids; the
   second control chooses one, and the sample curl names that id. A family value is a page label and
