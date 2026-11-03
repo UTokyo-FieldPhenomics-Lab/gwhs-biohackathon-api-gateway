@@ -571,12 +571,19 @@
   // The counter is per call, and the latest call is the only one that may write.
   let modelLoad = 0;
 
+  // The same idea for an answer, which outlives the controls that asked for it: every change of the
+  // pair bumps this, and a run that started under an older value does not draw its answer under the
+  // new model's name. A run has no cancellation — the request is already at a backend — so the
+  // answer is discarded when it arrives rather than pretended to belong to the model now selected.
+  let modelEpoch = 0;
+
   const loadModel = async (id) => {
     const token = ++modelLoad;
     const declaration = await call("/models/" + encodeURIComponent(id));
     if (token !== modelLoad) return;
     // Applied with the declaration, so the eye buttons describe the answer that is about to be asked
-    // for. Nothing on screen is redrawn here: the picture there belongs to the previous answer.
+    // for. The answer on screen was cleared by the caller; nothing here redraws the picture, which is
+    // still the one the next request will name.
     const preset = presetFor(id);
     view = viewFor(id);
     // A view only this answer can fill: the eyes are hidden where the layer would always be empty, so
@@ -675,6 +682,9 @@
     variant.disabled = true;
     familyOfId = new Map();
     familyChoices = new Map();
+    // An answer still in flight belongs to the session the key just left, not to the controls that
+    // are being emptied; the run's own check sees this and drops it.
+    modelEpoch += 1;
     dataset.replaceChildren();
     parameters.replaceChildren();
     fields = [];
@@ -725,6 +735,13 @@
   const loadChosen = () => {
     const id = selectedModel();
     if (!id) return;
+    // The request path, the declaration and the answer all follow the pair; a run already in flight
+    // belongs to the model the reader just left, so it is told apart by this counter when it lands.
+    modelEpoch += 1;
+    // The picture stays, the answer does not: its layers, words and machine are the previous
+    // model's claim about this photograph. `preview` then puts the photograph back with its caption.
+    clearAnswer();
+    preview();
     loadModel(id).catch((error) => {
       // The row now holds a message the ticker did not write, so the tick has to stop writing over it.
       clearFacts();
@@ -1722,12 +1739,28 @@
     }
   };
 
-  /** Empty the viewer: nothing on screen is the picture the controls no longer name. */
-  const clearViewer = () => {
-    figure.hidden = true;
+  /**
+   * Drop the answer on screen while keeping the picture it was drawn on.
+   *
+   * A change of model is not a change of image: the photograph and the reader's boxes stay, and only
+   * what the previous model claimed goes. The canvas is redrawn from the image the answer arrived
+   * with, synchronously, so a mask is never left on a picture whose model no longer exists on the
+   * page. The address stays too, which is what keeps the next run about the same picture.
+   */
+  const clearAnswer = () => {
+    previewToken += 1;   // a preview in flight belongs to the answer being dropped
     endDrag();
+    const image = last && last.image;
+    if (image) {
+      const scale = Math.min(1, MAX_SIDE / Math.max(image.naturalWidth, image.naturalHeight));
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+      fitted = image;
+      fit(image);
+      figure.hidden = false;
+    }
     marks.replaceChildren();
-    $("boxes").replaceChildren();
     $("count").hidden = true;
     $("count").textContent = "";
     $("legend").replaceChildren();
@@ -1735,11 +1768,20 @@
     $("full").hidden = true;
     $("answer").hidden = true;
     $("answer-text").textContent = "";
-    fitted = null;
-    last = null;
     $("check").textContent = "";
     $("check").className = "";
     showMachine(null);
+    $("response").hidden = true;
+    last = null;
+    shownKey = "";
+  };
+
+  /** Empty the viewer: nothing on screen is the picture the controls no longer name. */
+  const clearViewer = () => {
+    clearAnswer();
+    figure.hidden = true;
+    $("boxes").replaceChildren();
+    fitted = null;
   };
 
   // What computed the answer, in the machine's own words: the name it answers under, its card, the
@@ -1833,6 +1875,9 @@
     // A run owns the pane while it runs, and afterwards the pane is showing an answer about this
     // very picture — previewing it again would only take that answer off.
     if (running || picture === shownKey) return;
+    // A preview is not an answer. The previous model's layers, words and machine go as soon as the
+    // picture is no longer the one the controls name; the photograph is redrawn by the paint below.
+    clearAnswer();
     if (upload && !file) {
       previewToken += 1;
       clearViewer();
@@ -1893,6 +1938,7 @@
       // The id, read once with the rest: the controls may change while the request is in flight, and
       // this run must keep naming the model it started with.
       const chosen = encodeURIComponent(selectedModel());
+      const epoch = modelEpoch;
       // Read once: a run outlives the control it started from, and the image, the body and the
       // palette must all describe the same dataset.
       const source = dataset.value;
@@ -1943,7 +1989,19 @@
         });
         palette = await paletteLoaded;
       }
+      // The reader changed the model while this request was at a backend. The answer is about the
+      // model they left, so it is not drawn under the model they chose; the picture is still theirs.
+      if (epoch !== modelEpoch) {
+        say(state, "the model changed; this answer was not drawn", null);
+        return;
+      }
       await draw(imageUrl, answer, palette);
+      if (epoch !== modelEpoch) {
+        // The change landed while the answer was being decoded: withdraw what `draw` just put up.
+        clearAnswer();
+        say(state, "the model changed; this answer was not drawn", null);
+        return;
+      }
       // The pane now holds this picture's answer, so a preview of the same picture has nothing to add
       // and would only strip the marks it just drew.
       boxesKey = shownKey = picture;

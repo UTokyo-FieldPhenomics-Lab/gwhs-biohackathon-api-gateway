@@ -28,13 +28,30 @@ can show the checkpoint's own label. The comparison was rendered and answered on
   `?model=<id>` into both controls; `startOver` clears both; the run and poll read the pair.
 - `loadModel` now has a per-call token: a declaration that arrives after the pair changed is dropped,
   instead of leaving one id's parameters under another id's name.
-- Tests: the preset invariant now names both DINOv3 ids; a new test holds the second control to the
-  id-on-the-wire rule.
+- `clearAnswer` drops the answer while keeping the photograph and the reader's boxes; `loadChosen`
+  calls it on every model change, and `preview` calls it for an image change, so a text answer no
+  longer survives one either. A run that outlives a model change is tagged with `modelEpoch` and
+  discarded instead of drawn under the new id.
+- Tests: the preset invariant now names both DINOv3 ids; one test holds the second control to the
+  id-on-the-wire rule, and one holds the model change to clearing the previous answer.
 - `models.json`, the API and the docs links are unchanged.
+
+## The answer a model change used to leave behind
+
+The picker exposed an older gap. `loadModel` deliberately left the picture and its answer alone, so
+after a run, changing the model left the previous model's masks, boxes, legend, count, response and
+machine on screen under the new model's name. `clearAnswer` redraws the photograph from the image
+the answer arrived with, clears the answer's DOM, response and machine, keeps the reader's boxes and
+the address, and lets `preview` restore the image caption. The clear is synchronous, so no frame
+shows a mask whose model is no longer selected.
+
+`preview` clears too, which is what makes a dataset change clear a text answer; before, the answer
+panel was only cleared when the viewer was emptied. A run already at a backend cannot be recalled,
+so `modelEpoch` makes its answer land as a discarded answer rather than a wrong one.
 
 ## Verification
 
-- `uv run pytest -o addopts="" -q` in `gateway/`: **316 passed**.
+- `uv run pytest -o addopts="" -q` in `gateway/`: **317 passed**.
 - `mypy src`: clean; `ruff check src tests/test_app.py`: clean; `node --check` on `play.js`: clean.
 - Local gateway (`create_app` with a one-row `gwfss` index and six dead backends), Firefox:
   - `?model=dinov3-vith16plus` → first control `DINOv3`, second `ViT-H+/16`, curl names
@@ -46,6 +63,10 @@ can show the checkpoint's own label. The comparison was rendered and answered on
   - Forget clears both and hides the second control.
   - With only `dinov3-vitl16` served, the same URL lists it as a plain id and hides the second
     control: a family of one is not a family.
+- The clearing, on a second local gateway whose backends answer (`FakeBackends`, one object and no
+  mask decoder): run `sam3.1-meta` on `gwfss` row 0, then select `internvl-u` → marks 0, response
+  hidden, machine empty, legend cleared, answer panel hidden, canvas still the 512 × 512 photograph,
+  caption `gwfss row 0 · 512×512`.
 - The local page logs a module-MIME error for `/clients/global-wheat.js` because the development app
   does not proxy the docs client; production serves it from the docs origin. Unrelated to the picker.
 

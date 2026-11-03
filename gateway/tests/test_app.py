@@ -466,6 +466,21 @@ def test_a_checkpoint_family_is_chosen_in_two_steps(client: TestClient) -> None:
     assert "encodeURIComponent(model.value)" not in page
 
 
+def test_changing_the_model_takes_the_previous_answer_off(client: TestClient) -> None:
+    """An answer belongs to the model that produced it, not to the picture it was drawn on.
+
+    A previous answer used to survive a model change and read as the new model's. The model path now
+    clears the answer while keeping the photograph, and a run that outlives the change is discarded
+    rather than drawn under the id the reader chose afterwards.
+    """
+    page = client.get(PLAY_PATH).text
+    start = page.index("const loadChosen = ")
+    listener = page.index('model.addEventListener("change"', start)
+    assert "clearAnswer();" in page[start:listener]
+    assert "clearAnswer();" in page[page.index("const preview = "):]
+    assert "if (epoch !== modelEpoch)" in page
+
+
 def test_the_model_page_has_one_view_toggle_per_layer(client: TestClient) -> None:
     """Each layer the picture can show has its own eye.
 
