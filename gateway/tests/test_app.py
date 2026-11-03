@@ -462,6 +462,7 @@ def test_a_checkpoint_family_is_chosen_in_two_steps(client: TestClient) -> None:
     assert 'id="variant" hidden' in page
     assert 'aria-label="checkpoint"' in page
     assert page.count('family: "DINOv3"') == 2
+    assert page.count('family: "SAM 3.1"') == 2
     assert "encodeURIComponent(selectedModel())" in page
     assert "encodeURIComponent(model.value)" not in page
 

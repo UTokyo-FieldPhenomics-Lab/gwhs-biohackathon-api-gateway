@@ -127,10 +127,15 @@
         },
       ],
     },
+    // One family, two checkpoints: `sam3.1-meta` is Meta's release and `sam3.1-wheat` is a fine-tune
+    // named after its training data, per the id decision in
+    // `.agents/plans/2026101617_model-api-surface.md`. The second id answers only while a container
+    // serves it; naming it in the host's `models.json` with an empty list makes the second control
+    // appear with Run disabled, because that is the truthful state rather than a hidden one.
     // The call the documentation keeps as its known-good one: eighteen heads on this row, at this
     // threshold. A participant reproducing it here and in a client is testing both.
     "sam3.1-meta": {
-      landing: false,
+      family: "SAM 3.1", label: "original", order: 1, landing: false,
       examples: [
         {
           label: "18 heads",
@@ -140,6 +145,7 @@
         },
       ],
     },
+    "sam3.1-wheat": {family: "SAM 3.1", label: "finetuned", order: 2},
   };
   let view = {...VIEW_BASE};
   // A demo example is a cached published-row answer: the call is the same one the reader can make,

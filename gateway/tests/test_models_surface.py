@@ -1237,6 +1237,32 @@ def test_a_machine_that_never_answered_is_not_published_as_up(
     assert refused.status_code == 503  # the published zero means the same thing to a caller
 
 
+def test_a_model_named_with_no_machine_is_a_slot_and_not_a_model(
+    tmp_path: Path, index_dir: Path
+) -> None:
+    """An id a host names with no backend is listed with nothing behind it, and answers nothing.
+
+    This is how a checkpoint that is not served yet can hold its place in the directory: the play
+    page groups two ids into one family only when both are listed, so an empty list is the honest
+    way for a fine-tune to be chosen-but-disabled rather than hidden or invented. Nothing may
+    answer for it, and nothing may be asked of a machine that does not exist.
+    """
+    backends = FakeBackends()
+    client = next(build_client(tmp_path, index_dir, backends, models={MODEL: []}))
+
+    entry = client.get("/models", headers=KEY).json()["models"][0]
+
+    assert entry["id"] == MODEL
+    assert entry["backends_up"] == 0
+    assert entry["declared"] is False
+    assert entry["parameters"] == []
+    refused = client.post(
+        f"/models/{MODEL}/predict", headers=KEY, json={"dataset": "gwhd", "row": 0}
+    )
+    assert refused.status_code == 503
+    assert backends.asked == []  # no URL, so no request was attempted
+
+
 def test_a_probe_finds_a_machine_that_dies_and_one_that_comes_back() -> None:
     """Availability is asked, not inferred: no request has to fail for the count to change.
 
