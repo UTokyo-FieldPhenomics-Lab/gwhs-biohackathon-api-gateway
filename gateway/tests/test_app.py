@@ -461,8 +461,11 @@ def test_a_checkpoint_family_is_chosen_in_two_steps(client: TestClient) -> None:
 
     assert 'id="variant" hidden' in page
     assert 'aria-label="checkpoint"' in page
-    assert page.count('family: "DINOv3"') == 2
-    assert page.count('family: "SAM 3.1"') == 2
+    # The page groups by what `GET /models` says, not by a table of its own: a member added to the
+    # host's model list appears under its family with no change to this file, and a family string
+    # written here would be a second place to keep true.
+    assert "entry.family" in page
+    assert 'family: "' not in page
     assert "encodeURIComponent(selectedModel())" in page
     assert "encodeURIComponent(model.value)" not in page
 
@@ -549,7 +552,41 @@ def test_the_boxes_switch_drops_its_words_before_it_leaves_the_line(client: Test
     assert page.count('class="mode-label"') == 2
     assert 'aria-label="edit"' in page and 'aria-label="locked"' in page
     assert "@container (max-width: 26rem)" in page
-    assert "#play #boxes-mode .mode-label {\n    display: none;" in page
+    assert "#play .mode-switch .mode-label {\n    display: none;" in page
+
+
+def test_one_geometry_list_is_edited_at_a_time(client: TestClient) -> None:
+    """The two lists share the picture, so only one of them answers the pointer.
+
+    Asking to edit one locks the other: a press that starts a box must not also drop a point, and
+    the switch states are what tells a reader which list is live. The points switch is a copy of the
+    boxes one, so the two cannot drift apart in shape or in wording.
+    """
+    page = client.get(PLAY_PATH).text
+
+    assert "const pointsMode = boxesMode.cloneNode(true)" in page
+    assert "editor = available ? type : null" in page
+    assert 'if (editor === "boxes" && !boxInput) editor = null' in page
+    assert 'if (editor === "points" && !pointInput) editor = null' in page
+    assert 'stage.classList.toggle("drawing", Boolean(editor))' in page
+
+
+def test_a_point_takes_the_gestures_the_row_cannot(client: TestClient) -> None:
+    """Add, carry, drop and relabel: one gesture each, and none of them needs a right button alone.
+
+    The second button deletes on both geometry layers, and adding, carrying and relabelling are the
+    left button plus the row's actions — so a touch reader can do everything a mouse can, which is
+    why the actions act on a selection rather than on a hover.
+    """
+    page = client.get(PLAY_PATH).text
+
+    # The stage's cancel of a box being drawn, then one per geometry layer.
+    assert page.count('addEventListener("contextmenu"') == 3
+    assert "points = points.concat([[Math.round(at.x), Math.round(at.y)]])" in page
+    assert "const dragPoint = (element, index, event) =>" in page
+    assert 'button.dataset.act === "drop"' in page
+    assert "String(Number(button.dataset.label) === label)" in page
+    assert 'id="points" aria-hidden="true"' in page
 
 
 def test_the_model_page_offers_an_examples_chip_per_known_call(client: TestClient) -> None:

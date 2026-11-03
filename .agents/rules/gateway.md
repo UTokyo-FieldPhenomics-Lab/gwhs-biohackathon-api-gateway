@@ -184,7 +184,9 @@ Package: `gateway/`. Shared constraints are in [`project.md`](project.md).
   [The bug it found](../references/2026110312_play-boxes-row-and-counting-example.md#the-bug-the-example-found).
 - **Let a family group the picker, never the request.** Two checkpoints stay two model ids; the
   second control chooses one, and the sample curl names that id. A family value is a page label and
-  must not reach a path or a parameter.
+  must not reach a path or a parameter. The family, its label and its order are fields of the host's
+  model list, published by `GET /models`, so a member added there appears grouped with no page
+  change and the page keeps no family table.
   [Picker](../references/2026110311_play-model-family-picker.md).
 - **Reuse the site's client module for decoding and dataset declarations for class colour.** Copy
   row-major masks without another transpose; categories without a dataset palette are coloured per

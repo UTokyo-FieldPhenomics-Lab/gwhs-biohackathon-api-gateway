@@ -40,6 +40,7 @@ from biohack_gateway.models import (
     _BoundedHTTPConnection,
     _checkin,
     http_transport,
+    load_models,
     watch_pool,
 )
 from biohack_gateway.tokens import TokenPool
@@ -2888,3 +2889,68 @@ def test_a_backend_at_capacity_is_relayed_without_leaving_the_pool(
     assert first.json()["error"]["message"] == message
     assert second.status_code == 429
     assert len(backends.predict_calls()) == 2, "the backend was passed over instead of asked again"
+
+
+def test_a_family_is_published_from_the_hosts_model_list(tmp_path: Path) -> None:
+    """The grouping is configuration, and `GET /models` is what the page reads it from.
+
+    Three facts — the family, the member's label and its order — used to live in the playground's
+    own table, so a new member of an existing family appeared ungrouped until someone edited the
+    page. They belong beside the machines that serve the model: the operator already edits that file
+    to add a model, and the directory is the one answer both the page and a client read.
+    """
+    path = tmp_path / "models.json"
+    path.write_text(
+        json.dumps(
+            {
+                "yolo26-ultralytics": {
+                    "urls": [FIRST],
+                    "family": "YOLO",
+                    "label": "v26-ultralytics",
+                    "order": 1,
+                },
+                "yolo26-seg-ultralytics": {
+                    "urls": [SECOND],
+                    "family": "YOLO",
+                    "label": "v26-seg-ultralytics",
+                    "order": 2,
+                },
+                # A bare URL list is routing only, and stays a plain id in the picker.
+                "sam3.1-meta": [THIRD],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    models = load_models(path)
+
+    assert models["yolo26-ultralytics"].family == "YOLO"
+    assert models["yolo26-ultralytics"].label == "v26-ultralytics"
+    assert models["yolo26-ultralytics"].order == 1
+    assert models["yolo26-ultralytics"].urls == (FIRST,)
+    assert models["sam3.1-meta"].family is None
+    assert models["sam3.1-meta"].urls == (THIRD,)
+
+    registry = ModelRegistry(models, BACKEND_TOKEN, FakeBackends())
+    grouped = registry.describe("yolo26-seg-ultralytics")
+    assert (grouped.family, grouped.label, grouped.order) == ("YOLO", "v26-seg-ultralytics", 2)
+    alone = registry.describe("sam3.1-meta")
+    assert (alone.family, alone.label, alone.order) == (None, None, None)
+    # Unset, not published as null: a host that declared no family answers the body it always did.
+    assert "family" not in alone.model_dump(exclude_unset=True)
+
+
+def test_a_label_without_a_family_is_refused_rather_than_ignored(tmp_path: Path) -> None:
+    """A field nothing reads is worse than a missing one: it looks like it does something.
+
+    The label and the order are read inside a family's second dropdown, so one without the other is
+    a configuration mistake — and the model is skipped with its id named, rather than served with a
+    field the page will never show.
+    """
+    path = tmp_path / "models.json"
+    path.write_text(
+        json.dumps({"sam3.1-meta": {"urls": [FIRST], "label": "original", "order": 1}}),
+        encoding="utf-8",
+    )
+
+    assert load_models(path) == {}

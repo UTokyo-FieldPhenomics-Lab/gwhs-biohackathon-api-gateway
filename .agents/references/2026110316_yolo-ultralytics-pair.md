@@ -90,3 +90,38 @@ calls returned `200` from `lab-3090`.
 - **`play.js` presets**: in the repository only. The host pulls `origin/main`, and this checkout has
   three unpushed commits ahead of it (`291aee8`, `1da6cd2`, `f7854b7`); pushing was left to the
   owner, so the live page still shows the two ids ungrouped until the next push-and-pull.
+
+## 简化：分组从页面搬进 host 的模型清单
+
+The picker's grouping used to live in one place — `MODEL_PRESETS` in `play.js` — which meant a new
+member of an existing family appeared ungrouped until somebody edited the page. That table also named
+ids, so the same model was named in `models.json`, in `play.js` and in a docs page's
+`<!-- models: -->`, and the three could disagree without anything noticing.
+
+The family, its label and its order are now fields of the host's model list, and `GET /models`
+publishes them:
+
+```json
+"yolo26-ultralytics": {"urls": ["http://…:12717"], "family": "YOLO",
+                       "label": "v26-ultralytics", "order": 1}
+```
+
+`play.js` reads `entry.family`, `entry.label` and `entry.order`; it keeps only what is genuinely the
+page's business — which layers open first, and the example calls known to work. The docs page keeps
+its `<!-- models: -->` comment, because that is the docs build's own input (which page carries which
+ids) and it cannot read host configuration.
+
+**The order of a deploy is not free.** Writing the object form into the live `models.json` while the
+host still ran the previous loader made eight of eleven ids disappear from `GET /models` for about
+two minutes: the old loader accepts only a list per model and skipped every object-valued entry, with
+the reason in its log and nothing in the answer. It was noticed by the re-recorded directory, fixed
+by restoring `models.json.bak.<stamp>` and restarting, and the code-first order is now written into
+[`deploy/gpu-backends-local.md`](../../deploy/gpu-backends-local.md). The live config is back to the
+list form; it takes the object form once the host runs the new loader.
+
+Two smaller facts worth keeping:
+
+- **A bare list is routing only** and publishes no family fields at all — `exclude_unset` keeps the
+  answer exactly what it was, rather than three nulls a reader would have to interpret.
+- **`sam3.1-meta` declares a family it cannot show.** A family needs two served ids to become a
+  dropdown, so its label waits for `sam3.1-wheat` to be configured beside it.

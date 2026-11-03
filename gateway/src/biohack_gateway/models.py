@@ -379,6 +379,14 @@ class ModelSummary(BaseModel):
         How long ago the pool was last asked, to the nearest second. It is part of the count rather
         than decoration: the number is a probe's verdict, and a verdict without its age is a promise
         about the past. `None` where this model has no backends to ask.
+    family : str or None
+        The product line this model belongs to, where the host declared one: the same fact the
+        playground groups its first dropdown by, published here so the page needs no table of its
+        own. `None` for a model that stands alone.
+    label : str or None
+        What this member is called inside its family. `None` where the id is the label.
+    order : int or None
+        Where it sits in its family's second dropdown, ascending.
     """
 
     id: str
@@ -386,6 +394,9 @@ class ModelSummary(BaseModel):
     backends_up: int = 0
     max_in_flight: int = 0
     declared: bool = False
+    family: str | None = None
+    label: str | None = None
+    order: int | None = None
     parameters: list[ModelParameter] = field(default_factory=list)
     machines: list[ComputedBy] = field(default_factory=list)
     checked_seconds_ago: int | None = None
@@ -1183,8 +1194,34 @@ def _connection_failure(error: BaseException) -> str:
     return "refused" if isinstance(error, ConnectionRefusedError) else "unreachable"
 
 
-def load_models(path: Path) -> dict[str, list[str]]:
-    """Read the host's model-to-backend list.
+@dataclass(frozen=True)
+class ModelConfig:
+    """One configured model: where its backends are, and how the picker names it.
+
+    Attributes
+    ----------
+    urls : tuple of str
+        Its backend URLs, in the order they are to be tried.
+    family : str or None
+        The product line it belongs to, where it is one of several checkpoints of a model. This is
+        the one place a family is declared: the directory publishes it, and the playground groups
+        by what it reads rather than by a table of its own, so a new member needs no page change.
+    label : str or None
+        What this member is called inside its family — ``v26-seg-ultralytics`` beside
+        ``v26-ultralytics``. Without one the id is the label.
+    order : int or None
+        Where it sits in its family's second dropdown, ascending, so the cheaper or older member is
+        offered first.
+    """
+
+    urls: tuple[str, ...]
+    family: str | None = None
+    label: str | None = None
+    order: int | None = None
+
+
+def load_models(path: Path) -> dict[str, ModelConfig]:
+    """Read the host's model list.
 
     Parameters
     ----------
@@ -1193,16 +1230,28 @@ def load_models(path: Path) -> dict[str, list[str]]:
 
     Returns
     -------
-    dict of str to list of str
-        One entry per model, with its backend URLs in the order they are to be tried. Empty when the
-        file is absent, unreadable, or does not parse.
+    dict of str to ModelConfig
+        One entry per model. Empty when the file is absent, unreadable, or does not parse.
 
     Notes
     -----
+    Two shapes are accepted, and the shorter one is what every host file already holds::
+
+        {"sam3.1-meta": ["http://<address>:12711"]}
+
+        {"yolo26-ultralytics": {
+            "urls": ["http://<address>:12717"],
+            "family": "YOLO", "label": "v26-ultralytics", "order": 1}}
+
+    The bare list is routing only, and a model configured that way is offered as a plain id. The
+    object form adds the three presentation facts the model directory publishes, so grouping lives
+    beside the machine that serves the model instead of in the page that draws the picker.
+
     A file that does not parse yields **no models**, never all of them: the surface fails closed the
     same way the request gate does, because a typo in host configuration must not become a gateway
     that answers for models nobody configured. The reason is logged once, here, rather than on every
-    request that finds nothing.
+    request that finds nothing. A single malformed entry is skipped with its id named, which is the
+    same verdict for one model without taking the rest of the pool down.
     """
     if not path.exists():
         logger.info("no model-backend list at %s; the model surface has no models", path)
@@ -1213,16 +1262,76 @@ def load_models(path: Path) -> dict[str, list[str]]:
         logger.error("model-backend list at %s does not parse (%s); serving no models", path, error)
         return {}
     if not isinstance(document, dict):
-        logger.error("model-backend list at %s must be an object of model to URL list", path)
+        logger.error(
+            "model-backend list at %s must be an object of model to URL list or model config",
+            path,
+        )
         return {}
 
-    models: dict[str, list[str]] = {}
-    for model, urls in document.items():
-        if not isinstance(urls, list) or not all(isinstance(url, str) and url for url in urls):
-            logger.error("model %r in %s must map to a list of non-empty URLs", model, path)
-            continue
-        models[str(model)] = [url.rstrip("/") for url in urls]
+    models: dict[str, ModelConfig] = {}
+    for model, entry in document.items():
+        config = _model_config(str(model), entry, path)
+        if config is not None:
+            models[str(model)] = config
     return models
+
+
+def _model_config(model: str, entry: Any, path: Path) -> ModelConfig | None:
+    """Read one model's entry, in either shape.
+
+    Parameters
+    ----------
+    model : str
+        The id the entry is under, used in the log line when it is malformed.
+    entry : Any
+        The JSON value: a list of URLs, or an object holding ``urls`` and the presentation fields.
+    path : Path
+        The file, for the log line.
+
+    Returns
+    -------
+    ModelConfig or None
+        The normalized entry, or `None` when it is malformed — in which case the model is not
+        served, rather than served with half of what it said.
+    """
+    urls: Any
+    if isinstance(entry, list):
+        urls, family, label, order = entry, None, None, None
+    elif isinstance(entry, dict):
+        urls = entry.get("urls")
+        family = entry.get("family")
+        label = entry.get("label")
+        order = entry.get("order")
+        if not isinstance(urls, list):
+            logger.error("model %r in %s needs a 'urls' list", model, path)
+            return None
+    else:
+        logger.error("model %r in %s must be a URL list or an object with 'urls'", model, path)
+        return None
+
+    if not all(isinstance(url, str) and url for url in urls):
+        logger.error("model %r in %s must map to non-empty URL strings", model, path)
+        return None
+    if family is not None and (not isinstance(family, str) or not family.strip()):
+        logger.error("model %r in %s has a family that is not a non-empty string", model, path)
+        return None
+    if label is not None and (not isinstance(label, str) or not label.strip()):
+        logger.error("model %r in %s has a label that is not a non-empty string", model, path)
+        return None
+    if order is not None and (not isinstance(order, int) or isinstance(order, bool)):
+        logger.error("model %r in %s has an order that is not an integer", model, path)
+        return None
+    if family is None and (label is not None or order is not None):
+        # A label and an order are read inside a family's second dropdown; alone they would be
+        # fields nothing reads, which is how a configuration comes to look like it does something.
+        logger.error("model %r in %s names a label or an order without a family", model, path)
+        return None
+    return ModelConfig(
+        urls=tuple(url.rstrip("/") for url in urls),
+        family=None if family is None else family.strip(),
+        label=None if label is None else label.strip(),
+        order=order,
+    )
 
 
 @dataclass
@@ -1481,7 +1590,7 @@ class ModelRegistry:
 
     def __init__(
         self,
-        models: Mapping[str, Sequence[str]],
+        models: Mapping[str, Sequence[str] | ModelConfig],
         backend_token: str,
         transport: Transport = http_transport,
     ) -> None:
@@ -1489,8 +1598,9 @@ class ModelRegistry:
 
         Parameters
         ----------
-        models : mapping of str to sequence of str
-            The host's model-to-backend list.
+        models : mapping of str to sequence of str or ModelConfig
+            The host's model list. A bare URL sequence is routing only; a :class:`ModelConfig` adds
+            the family, label and order the directory publishes.
         backend_token : str
             The token presented to backends as `X-Backend-Token`. Empty means no backend can be
             called, which is a misconfiguration the predict routes report rather than hide.
@@ -1510,9 +1620,15 @@ class ModelRegistry:
         three containers and one queue, and a request for the third model that saw only its own
         container's depth would be told the machine is free while two inferences run on it.
         """
+        self._configs: dict[str, ModelConfig] = {
+            model: entry if isinstance(entry, ModelConfig) else ModelConfig(urls=tuple(entry))
+            for model, entry in models.items()
+        }
         self._backends: dict[str, list[Backend]] = {
-            model: [Backend(url=url, response_timeout=RESPONSE_TIMEOUT_SECONDS) for url in urls]
-            for model, urls in models.items()
+            model: [
+                Backend(url=url, response_timeout=RESPONSE_TIMEOUT_SECONDS) for url in config.urls
+            ]
+            for model, config in self._configs.items()
         }
         for model, backends in self._backends.items():
             for backend in backends:
@@ -1744,7 +1860,8 @@ class ModelRegistry:
         ]
         declared = next((backend for backend in backends if backend.declared), None)
         checked = max((backend.probed_at for backend in backends), default=0.0)
-        return ModelSummary(
+        config = self._configs[model]
+        summary = ModelSummary(
             id=model,
             resolution=declared.resolution if declared else None,
             backends_up=len(live),
@@ -1756,6 +1873,15 @@ class ModelRegistry:
             # pass, so what a reader needs to know is when that pass happened.
             checked_seconds_ago=None if not checked else max(0, round(now - checked)),
         )
+        # Only the fields the host actually declared. A model configured with a bare URL list stays
+        # exactly the answer it was before this field existed, rather than gaining three nulls.
+        if config.family is not None:
+            summary.family = config.family
+        if config.label is not None:
+            summary.label = config.label
+        if config.order is not None:
+            summary.order = config.order
+        return summary
 
     def charges_link(self, model: str) -> bool:
         """Say whether an upload for this model should wait on the shared byte budget.

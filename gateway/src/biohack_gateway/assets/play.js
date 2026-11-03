@@ -12,11 +12,42 @@
   const dataset = $("dataset"), parameters = $("parameters");
   const canvas = $("canvas"), figure = document.querySelector("#play figure");
   const pane = $("pane"), stage = $("stage"), marks = $("marks");
-  // The switch that decides whether the picture's boxes answer to the mouse. It is written in the
-  // markup once and then moved into the row of the `boxes` parameter it belongs to, so it is read
-  // as part of that control rather than as another row of the form; a model without one leaves it
-  // out of the document entirely.
+  // The switch that decides whether the picture edits a geometry list. It is written in the markup
+  // once and then moved into the row of the parameter it belongs to, so it is read as part of that
+  // control rather than as another row of the form; the second list gets a copy of it, and a model
+  // that declares neither leaves both out of the document.
   const boxesMode = $("boxes-mode");
+  const pointsMode = boxesMode.cloneNode(true);
+  pointsMode.id = "points-mode";
+  pointsMode.setAttribute("aria-label", "points on the picture");
+  pointsMode.querySelector('[data-mode="edit"]').title = "add, move and delete points on the picture";
+  // The actions that need a selection: a reader picks a point, then says what it is or drops it. They
+  // sit in the same row and only exist while something is selected, because an action with nothing
+  // to act on is a button that refuses.
+  const pointActions = document.createElement("span");
+  pointActions.className = "switch mode-switch point-actions";
+  pointActions.setAttribute("role", "group");
+  pointActions.setAttribute("aria-label", "the selected point");
+  pointActions.hidden = true;
+  for (const [label, title] of [
+    ["1", "label 1: a spot on the object"],
+    ["0", "label 0: a spot that is not the object"],
+  ]) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.label = label;
+    button.textContent = label;
+    button.title = title;
+    button.setAttribute("aria-label", title);
+    pointActions.append(button);
+  }
+  const dropPoint = document.createElement("button");
+  dropPoint.type = "button";
+  dropPoint.dataset.act = "drop";
+  dropPoint.textContent = "×";
+  dropPoint.title = "delete the selected point";
+  dropPoint.setAttribute("aria-label", "delete the selected point");
+  pointActions.append(dropPoint);
 
   // What the picture shows first, and what a reader can start from, per model. This is the one
   // model-specific thing the page carries, and it is presentation only: it decides nothing about what
@@ -33,11 +64,12 @@
   // presentation default, kept in the one table allowed to name a model, not a second id in the
   // connect path.
   //
-  // `family` groups ids that are one product line: the same model at different checkpoints, or a
-  // cheaper and a larger tier of one model, as Nano Banana's three. The first dropdown then names
-  // the family once and a second names the member; what is sent is still the id, never the family,
-  // so the wire contract keeps its ids. `label` is what the member is called, `order` puts the
-  // cheaper one first. A family with one served id stays a plain id, because a second control with
+  // A family groups ids that are one product line: the same model at different checkpoints, or a
+  // cheaper and a larger tier of one model, as Nano Banana's three. The grouping is not this page's
+  // to declare — the host's model list carries `family`, `label` and `order`, `GET /models`
+  // publishes them, and `buildModelChoices` reads them from there. A new member of an existing
+  // family therefore appears grouped with no change to this file, and a page cannot drift from what
+  // the gateway serves. A family with one served id stays a plain id, because a second control with
   // one choice is a click that decides nothing.
   //
   // View order is the order a reader builds the picture in: the photograph, the model's pixel layer
@@ -49,17 +81,13 @@
     // `results` is the layer for a model's pixel output, whatever shape it takes: a feature grid
     // tinted over the photograph, or a picture that replaces it. The eye is hidden again for every
     // model without this entry.
-    "dinov3-vitl16": {
-      family: "DINOv3", label: "ViT-L/16", order: 1, boxes: false, masks: false, results: true,
-    },
-    "dinov3-vith16plus": {
-      family: "DINOv3", label: "ViT-H+/16", order: 2, boxes: false, masks: false, results: true,
-    },
+    "dinov3-vitl16": {boxes: false, masks: false, results: true},
+    "dinov3-vith16plus": {boxes: false, masks: false, results: true},
     // One product line, three tiers: 2.1 is the cheaper default, 2 the earlier checkpoint, Pro the
     // largest. They are different upstream models, not checkpoints of one; the picker still sends
     // the id, and the answer is the same `ModelPrediction` every model answers.
     "nano-banana-2.1": {
-      family: "Nano Banana", label: "2.1", order: 1, boxes: false, masks: false, results: true,
+      boxes: false, masks: false, results: true,
       examples: [
         {
           label: "segmentation masks",
@@ -73,12 +101,8 @@
         },
       ],
     },
-    "nano-banana-2": {
-      family: "Nano Banana", label: "2", order: 2, boxes: false, masks: false, results: true,
-    },
-    "nano-banana-pro": {
-      family: "Nano Banana", label: "Pro", order: 3, boxes: false, masks: false, results: true,
-    },
+    "nano-banana-2": {boxes: false, masks: false, results: true},
+    "nano-banana-pro": {boxes: false, masks: false, results: true},
     "internvl-u": {
       boxes: false,
       masks: false,
@@ -133,21 +157,12 @@
     // a general detector on a picture outside its classes. `boxes: false` because the parameter of
     // that name is a prompt, and these take no prompt; the mask answer is drawn by the `masks` layer
     // the base view already opens.
-    "yolo26-ultralytics": {
-      family: "YOLO", label: "v26-ultralytics", order: 1, boxes: false, masks: false,
-    },
-    "yolo26-seg-ultralytics": {
-      family: "YOLO", label: "v26-seg-ultralytics", order: 2, boxes: false,
-    },
-    // One family, two checkpoints: `sam3.1-meta` is Meta's release and `sam3.1-wheat` is a fine-tune
-    // named after its training data, per the id decision in
-    // `.agents/plans/2026101617_model-api-surface.md`. The second id answers only while a container
-    // serves it; naming it in the host's `models.json` with an empty list makes the second control
-    // appear with Run disabled, because that is the truthful state rather than a hidden one.
+    "yolo26-ultralytics": {boxes: false, masks: false},
+    "yolo26-seg-ultralytics": {boxes: false},
     // The call the documentation keeps as its known-good one: eighteen heads on this row, at this
     // threshold. A participant reproducing it here and in a client is testing both.
     "sam3.1-meta": {
-      family: "SAM 3.1", label: "original", order: 1, landing: false,
+      landing: false,
       examples: [
         {
           label: "18 heads",
@@ -170,7 +185,6 @@
         },
       ],
     },
-    "sam3.1-wheat": {family: "SAM 3.1", label: "finetuned", order: 2},
   };
   let view = {...VIEW_BASE};
   // A demo example is a cached published-row answer: the call is the same one the reader can make,
@@ -200,7 +214,7 @@
   const buildModelChoices = (entries) => {
     const served = new Map();  // family label -> its entries, in the directory's order
     for (const entry of entries) {
-      const family = presetFor(entry.id).family;
+      const family = entry.family;
       if (!family) continue;
       if (!served.has(family)) served.set(family, []);
       served.get(family).push(entry);
@@ -211,10 +225,11 @@
       if (members.length < 2) continue;
       const value = "family:" + family;
       const ordered = members
-        .map((entry) => {
-          const preset = presetFor(entry.id);
-          return {id: entry.id, label: preset.label || entry.id, order: preset.order || 0};
-        })
+        .map((entry) => ({
+          id: entry.id,
+          label: entry.label || entry.id,
+          order: Number.isInteger(entry.order) ? entry.order : 0,
+        }))
         .sort((left, right) => left.order - right.order);
       familyChoices.set(value, {label: family, members: ordered});
       for (const member of ordered) familyOfId.set(member.id, value);
@@ -449,13 +464,34 @@
   // press. Only a model that declares a `boxes` parameter has anything to switch.
   const showMode = () => {
     boxesMode.hidden = !boxInput;
+    pointsMode.hidden = !pointInput;
     // The picture's cursor follows the editor and nothing else, so it is cleared for a model that
     // has no editor rather than left over from the model before it.
-    stage.classList.toggle("drawing", Boolean(boxInput) && boxesEditable);
-    if (!boxInput) return;
-    for (const button of boxesMode.querySelectorAll("button")) {
-      button.setAttribute("aria-pressed", String((button.dataset.mode === "edit") === boxesEditable));
+    stage.classList.toggle("drawing", Boolean(editor));
+    for (const [element, type] of [[boxesMode, "boxes"], [pointsMode, "points"]]) {
+      for (const button of element.querySelectorAll("button")) {
+        const pressed = (button.dataset.mode === "edit") === (editor === type);
+        button.setAttribute("aria-pressed", String(pressed));
+      }
     }
+  };
+
+  /** The picture edits one list at a time: one press cannot both start a box and add a point. */
+  const setEditor = (type) => {
+    const available = type === "boxes" ? Boolean(boxInput) : type === "points" ? Boolean(pointInput) : false;
+    editor = available ? type : null;
+    // A selection belongs to the list that was being edited; the other list's actions must not
+    // appear to act on it.
+    selected = null;
+    // Editing a layer nobody can see would draw marks that vanish as they are made, so asking to
+    // edit shows the geometry layer, which both lists share.
+    if (editor && !view.boxes) {
+      view.boxes = true;
+      document.querySelector('[data-view="boxes"]').setAttribute("aria-pressed", "true");
+    }
+    showMode();
+    showBoxes();
+    showSelection();
   };
 
   const showParameters = (declaration) => {
@@ -498,11 +534,13 @@
         syncBoxes();
         input.addEventListener("input", syncBoxes);
       } else if (parameter.type === "points") {
-        // Read-only: the picture redraws from the text as it is typed, and does not edit the list
-        // yet. The switch stays the boxes' until the two share one editor, which is a gesture change
-        // rather than this one.
+        // The same three views as a box list: the text, the marks it makes, and the switch that says
+        // which list the picture is editing. The actions that need a selection sit beside the switch
+        // and appear only while one exists.
         pointInput = input;
         cell.classList.add("geometry");
+        cell.append(pointsMode, pointActions);
+        selected = null;
         if (!input.value && points.length) {
           input.value = JSON.stringify(points);
           delete input.dataset.untouched;   // a list restored here is the reader's, so it is sent
@@ -511,11 +549,15 @@
         input.addEventListener("input", syncPoints);
       }
     }
+    // The editor survives a model change only while the new model still declares that list: the
+    // picture cannot be editing points a model does not take.
+    if (editor === "boxes" && !boxInput) editor = null;
+    if (editor === "points" && !pointInput) editor = null;
     showMode();
     // The overlay follows the editor: a model that takes no boxes must not leave another model's
     // boxes drawn on the picture it is about to replace.
     showBoxes();
-    showPoints();
+    showSelection();
   };
 
   // A preset's examples, as chips. Which ones exist is the model's own, and each is checked against
@@ -715,9 +757,12 @@
     document.querySelector('[data-view="results"]').hidden = !publishesPixels;
     document.querySelector('[data-view="masks"]').hidden = publishesPixels;
     document.querySelector('[data-view="boxes"]').hidden = publishesPixels;
-    // The switch follows the layer: a model whose boxes open hidden also opens locked, because a drag
-    // that draws into a hidden layer is a gesture with no visible result.
-    if (!view.boxes) boxesEditable = false;
+    // The switch follows the layer: a model whose geometry opens hidden also opens locked, because a
+    // drag that draws into a hidden layer is a gesture with no visible result.
+    if (!view.boxes) {
+      editor = null;
+      selected = null;
+    }
     showView();
     showParameters(declaration);
     showExamples(id, declaration);
@@ -887,19 +932,15 @@
 
   // A view toggle redraws from the answer already on screen: no request, and no decode — the mask
   // layer was built when that answer arrived.
-  boxesMode.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-mode]");
-    if (!button) return;
-    boxesEditable = button.dataset.mode === "edit";
-    // Editing a layer nobody can see would draw boxes that vanish as they are made, so asking to
-    // edit shows the layer: visible is what editable means here.
-    if (boxesEditable && !view.boxes) {
-      view.boxes = true;
-      document.querySelector('[data-view="boxes"]').setAttribute("aria-pressed", "true");
-    }
-    showMode();
-    showBoxes();
-  });
+  // Either switch chooses what the picture edits, and choosing one locks the other: the two lists
+  // share the picture, and a press that meant one of them must not be read by both.
+  for (const [element, type] of [[boxesMode, "boxes"], [pointsMode, "points"]]) {
+    element.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-mode]");
+      if (!button) return;
+      setEditor(button.dataset.mode === "edit" ? type : null);
+    });
+  }
 
   $("display").addEventListener("click", (event) => {
     const button = event.target.closest("[data-view]");
@@ -907,9 +948,12 @@
     const key = button.dataset.view;
     view[key] = !view[key];
     button.setAttribute("aria-pressed", String(view[key]));
-    // Hiding the box layer locks the picture: a drag would make a box nobody can see, and the page
-    // would look as if the gesture had failed rather than the layer being off.
-    if (key === "boxes" && !view.boxes) boxesEditable = false;
+    // Hiding the geometry layer locks the picture: a drag would make a mark nobody can see, and the
+    // page would look as if the gesture had failed rather than the layer being off.
+    if (key === "boxes" && !view.boxes) {
+      editor = null;
+      selected = null;
+    }
     showMode();
     render();
   });
@@ -1130,7 +1174,10 @@
   let boxes = [];        // the last list that parsed: [x, y, w, h, label] in the image's own pixels
   let drag = null;       // the box being drawn: {x0, y0, x, y} in the image's own pixels
   let band = null;       // the rectangle showing it while it is drawn
-  let boxesEditable = true;   // whether the picture's boxes can be drawn, moved and deleted by hand
+  // Which geometry list the picture edits, if any — `"boxes"`, `"points"` or null. One at a time is
+  // the whole rule: one press on the picture must not mean two things at once.
+  let editor = "boxes";
+  let selected = null;   // the point the row's actions act on, as an index into `points`
 
   const MIN_DRAG = 4;
 
@@ -1266,13 +1313,21 @@
         badge.title = "label 0: not the object";
         element.append(badge);
       }
-      if (boxesEditable) {
+      if (editor === "boxes") {
         moveBy(element, index);
         element.append(
           handleFor("resize tl", index),
           handleFor("resize br", index),
           handleFor("drop", index),
         );
+        // The right button drops a box, the same gesture a point answers to: one meaning for the
+        // second button across the geometry layers, rather than one layer with it and one without.
+        element.addEventListener("contextmenu", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          boxes.splice(index, 1);
+          commitBoxes();
+        });
       }
       return element;
     }));
@@ -1375,7 +1430,7 @@
   };
 
   stage.addEventListener("pointerdown", (event) => {
-    if (!boxInput || !boxesEditable || !last || event.button !== 0) return;
+    if (editor !== "boxes" || !boxInput || !last || event.button !== 0) return;
     const [x, y] = imageAt(event);
     if (drag) {
       // The second click of a two-click box: its corner is where it was clicked.
@@ -1423,6 +1478,22 @@
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && drag) endDrag();
+    if (event.key === "Escape" && selected !== null) {
+      selected = null;
+      showSelection();
+    }
+    // Delete removes the selection, unless the reader is typing: the text field is the same list, and
+    // a Delete there is a character rather than a mark. The selection is the only visible way to say
+    // which point, so nothing is removed without one.
+    const active = document.activeElement;
+    const typing = active && ["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName);
+    if ((event.key === "Delete" || event.key === "Backspace") && selected !== null && !typing) {
+      event.preventDefault();
+      points.splice(selected, 1);
+      selected = null;
+      commitPoints();
+      showSelection();
+    }
   });
 
   // The reader's points, as a second view of the `points` input and nothing more: every entry is
@@ -1437,20 +1508,97 @@
     // One eye for the reader's geometry, the same one the boxes answer to: the two lists are the
     // same kind of thing on the picture, and a second eye would be a control with no new question.
     layer.hidden = !view.boxes;
+    layer.classList.toggle("editing", editor === "points");
     if (!last || !pointInput) {
       layer.replaceChildren();
       return;
     }
-    layer.replaceChildren(...points.map((point) => {
+    layer.replaceChildren(...points.map((point, index) => {
       const label = point.length === 3 ? point[2] : 1;
       const element = document.createElement("span");
-      element.className = "point-mark" + (label === 1 ? "" : " negative");
+      element.className = "point-mark" + (label === 1 ? "" : " negative") +
+        (index === selected ? " selected" : "");
       element.textContent = String(label);
       element.title = label === 1 ? "label 1: a spot on the object" : "label 0: a spot that is not";
       element.style.left = (point[0] / last.image.naturalWidth) * 100 + "%";
       element.style.top = (point[1] / last.image.naturalHeight) * 100 + "%";
+      if (editor === "points") {
+        // The marker is the editor's while the points mode is on: a press picks it and carries it,
+        // and the right button drops it. Stopping the press here is what keeps the picture beneath
+        // from reading the same gesture as a new point.
+        element.addEventListener("pointerdown", (event) => {
+          if (event.button !== 0) return;
+          event.stopPropagation();
+          selected = index;
+          showSelection();
+          dragPoint(element, index, event);
+          event.preventDefault();
+        });
+        element.addEventListener("contextmenu", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          points.splice(index, 1);
+          selected = null;
+          commitPoints();
+          showSelection();
+        });
+      }
       return element;
     }));
+  };
+
+  // A point is carried rather than resized: its travel in the picture is its travel, held inside the
+  // image because a point outside it is one no model can use.
+  const dragPoint = (element, index, event) => {
+    const [startX, startY] = imageAt(event);
+    const origin = points[index].slice();
+    const carried = (moveEvent) => {
+      const [x, y] = imageAt(moveEvent);
+      const moved = [
+        Math.round(clamp(origin[0] + (x - startX), 0, last.image.naturalWidth)),
+        Math.round(clamp(origin[1] + (y - startY), 0, last.image.naturalHeight)),
+      ];
+      if (origin.length === 3) moved.push(origin[2]);
+      points[index] = moved;
+      element.style.left = (moved[0] / last.image.naturalWidth) * 100 + "%";
+      element.style.top = (moved[1] / last.image.naturalHeight) * 100 + "%";
+    };
+    const dropped = () => {
+      element.removeEventListener("pointermove", carried);
+      element.removeEventListener("pointerup", dropped);
+      element.removeEventListener("pointercancel", dropped);
+      commitPoints();
+      showSelection();
+    };
+    element.addEventListener("pointermove", carried);
+    element.addEventListener("pointerup", dropped);
+    element.addEventListener("pointercancel", dropped);
+    try {
+      element.setPointerCapture(event.pointerId);
+    } catch {
+      // nothing to do: the gesture is already under way
+    }
+  };
+
+  /** The row's actions act on a selection, and this is where the row says which point that is. */
+  const showSelection = () => {
+    selected = selected !== null && selected < points.length ? selected : null;
+    pointActions.hidden = selected === null || !pointInput;
+    if (selected !== null) {
+      const label = points[selected].length === 3 ? points[selected][2] : 1;
+      for (const button of pointActions.querySelectorAll("[data-label]")) {
+        button.setAttribute("aria-pressed", String(Number(button.dataset.label) === label));
+      }
+    }
+    showPoints();
+  };
+
+  /** Write the points back into the input, which is what the query and the command read. */
+  const commitPoints = () => {
+    if (!pointInput) return;
+    pointInput.removeAttribute("aria-invalid");
+    pointInput.value = JSON.stringify(points);
+    pointInput.dispatchEvent(new Event("input", {bubbles: true}));
   };
 
   /** Take the input's text as the points on the picture, marking the field when it is not one. */
@@ -1462,18 +1610,61 @@
     }
     pointInput.removeAttribute("aria-invalid");
     points = parsed;
-    showPoints();
+    showSelection();
   };
 
   /** Drop every point, on a picture that is no longer the one they were typed for. */
   const forgetPoints = () => {
     points = [];
+    selected = null;
     if (pointInput) {
       pointInput.value = "";
       pointInput.removeAttribute("aria-invalid");
     }
-    showPoints();
+    showSelection();
   };
+
+  // The row's actions edit the selected point and nothing else. A point nobody selected is not
+  // reachable from here, which is why the selection is drawn: what the buttons will change is on
+  // screen. `1` and `0` are the contract's two labels; the page grows no third.
+  pointActions.addEventListener("click", (event) => {
+    const button = event.target.closest("button");
+    if (!button || selected === null || !pointInput) return;
+    if (button.dataset.act === "drop") {
+      points.splice(selected, 1);
+      selected = null;
+    } else {
+      const point = points[selected];
+      points[selected] = [point[0], point[1], Number(button.dataset.label)];
+    }
+    commitPoints();
+    showSelection();
+  });
+
+  // A click on the picture adds a point; a drag across it adds nothing. The same travel that tells a
+  // box from a click tells a point from a pan, and pressing a marker never reaches here because the
+  // marker stops the press.
+  let press = null;
+
+  stage.addEventListener("pointerdown", (event) => {
+    if (editor !== "points" || !pointInput || !last || event.button !== 0) return;
+    press = {x: imageAt(event)[0], y: imageAt(event)[1], sx: event.clientX, sy: event.clientY};
+  });
+
+  stage.addEventListener("pointerup", (event) => {
+    if (!press || event.button !== 0) return;
+    const travelled = Math.abs(event.clientX - press.sx) >= MIN_DRAG ||
+      Math.abs(event.clientY - press.sy) >= MIN_DRAG;
+    const at = press;
+    press = null;
+    if (travelled) return;   // a drag across the picture is not a new point
+    points = points.concat([[Math.round(at.x), Math.round(at.y)]]);
+    selected = points.length - 1;
+    commitPoints();
+    showSelection();
+  });
+
+  stage.addEventListener("pointercancel", () => { press = null; });
 
   /** The picture changed: no coordinate on it describes the picture that replaces it. */
   const forgetGeometry = () => {

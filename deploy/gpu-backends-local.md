@@ -403,6 +403,19 @@ This is the part that fails during an event and looks like a network fault.
      "gwfss-segformer-b4": ["http://<address>:12712"],
      "tasselnetv4":        ["http://<address>:12713", "http://<address>:12713"]}
 
+A model that is one of several checkpoints of a model line takes the longer form instead, which adds
+the three facts the playground's picker groups by. They are presentation only: nothing here reaches
+a path or a parameter, and a model left in the short form is offered as a plain id.
+
+    {"yolo26-ultralytics": {"urls": ["http://<address>:12717"],
+                            "family": "YOLO", "label": "v26-ultralytics", "order": 1}}
+
+`family` is the product line, `label` what this member is called inside it, and `order` where it sits
+in the second dropdown. **A family needs two served ids to become a dropdown**, so one member alone
+stays a plain id. A `label` or an `order` without a `family` is refused, because nothing would read
+it. **Deploy the code before writing this form:** a gateway older than the loader change skips every
+object-valued entry and serves only the models still in list form.
+
 A file that does not parse means **no models**, never all of them, so a typo in host configuration
 cannot become a gateway that answers for models nobody configured. **Order is preference:** routing
 is first-healthy-wins with idle backends preferred, so the second entry is a fault domain first and
