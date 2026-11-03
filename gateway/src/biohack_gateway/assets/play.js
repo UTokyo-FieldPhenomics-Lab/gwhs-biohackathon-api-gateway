@@ -28,11 +28,12 @@
   // presentation default, kept in the one table allowed to name a model, not a second id in the
   // connect path.
   //
-  // `family` groups ids that are the same model at different checkpoints. The first dropdown then
-  // names the family once and a second names the checkpoint; what is sent is still the id, never the
-  // family, so the wire contract keeps its two ids. `label` is what the checkpoint is called,
-  // `order` puts the cheaper one first. A family with one served id stays a plain id, because a
-  // second control with one choice is a click that decides nothing.
+  // `family` groups ids that are one product line: the same model at different checkpoints, or a
+  // cheaper and a larger tier of one model, as Nano Banana's three. The first dropdown then names
+  // the family once and a second names the member; what is sent is still the id, never the family,
+  // so the wire contract keeps its ids. `label` is what the member is called, `order` puts the
+  // cheaper one first. A family with one served id stays a plain id, because a second control with
+  // one choice is a click that decides nothing.
   //
   // View order is the order a reader builds the picture in: the photograph, the model's pixel layer
   // over it, the rectangle geometry on top, then the two annotations the page adds.
@@ -48,6 +49,18 @@
     },
     "dinov3-vith16plus": {
       family: "DINOv3", label: "ViT-H+/16", order: 2, boxes: false, masks: false, results: true,
+    },
+    // One product line, three tiers: 2.1 is the cheaper default, 2 the earlier checkpoint, Pro the
+    // largest. They are different upstream models, not checkpoints of one; the picker still sends
+    // the id, and the answer is the same `ModelPrediction` every model answers.
+    "nano-banana-2.1": {
+      family: "Nano Banana", label: "2.1", order: 1, boxes: false, masks: false, results: true,
+    },
+    "nano-banana-2": {
+      family: "Nano Banana", label: "2", order: 2, boxes: false, masks: false, results: true,
+    },
+    "nano-banana-pro": {
+      family: "Nano Banana", label: "Pro", order: 3, boxes: false, masks: false, results: true,
     },
     "internvl-u": {
       boxes: false,
