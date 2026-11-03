@@ -78,4 +78,6 @@ restart. The docs site needs no change.
 Deployed 2026-11-03: `gwhs-host` pulled to `772e4f6` and `biohack-gateway` restarted; the live
 `/play` serves `id="variant"` and the two `family: "DINOv3"` presets. The docs page frames the API,
 so it shows the new picker without a rebuild. The local page test used a throwaway gateway with a
-one-row `gwfss` index and six dead backends; the live pool was not touched.
+one-row `gwfss` index and six dead backends; the live pool was not touched. The clearing fix was
+then pulled and restarted as `833adcc`; the live page carries `clearAnswer` and the `modelEpoch`
+check.
