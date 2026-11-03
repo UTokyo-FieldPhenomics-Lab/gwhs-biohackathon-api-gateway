@@ -408,6 +408,10 @@ is first-healthy-wins with idle backends preferred, so the second entry is a fau
 extra capacity only incidentally. A rented machine's line is the same shape and comes and goes with
 its instance — [`gpu-backends-aws.md`](gpu-backends-aws.md).
 
+**An empty list holds a place.** `{"sam3.1-wheat": []}` lists an id that declares and answers
+nothing: the play page shows it in its family with Run disabled, which is how a checkpoint that is not
+served yet stays visible without pretending to work. Fill the list when a machine serves it.
+
 **Its twin is the token, and the value has to be transcribed from `env`, never from a message.** One
 character is a different value, and `/health` cannot show the difference: it needs no token, so a
 mismatched end still declares itself and `GET /models` still reads `backends_up: 2` while every
