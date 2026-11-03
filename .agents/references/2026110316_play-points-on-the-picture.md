@@ -67,32 +67,30 @@ standing; `[[459,297,86,154,0]]` in `boxes` drew a box with a `0` badge.
   edit one list locks the other, so a press cannot both start a box and add a point. The points
   switch is a `cloneNode(true)` of the boxes one, given its own id and title — one control written
   twice would drift.
-- **Left button on the picture** adds a point at the click, in the points mode only, and a drag of
-  four pixels adds nothing: the same travel that tells a box from a click tells a point from a pan.
-  **Left button on a marker** selects it and carries it. **Second button on a marker or a box**
-  removes it, on both layers.
-- **The row acts on the selection.** `1` / `0` / `×` sit beside the points switch and appear only
-  while a point is selected; `1` and `0` are pressed to show the selected point's label. Escape clears
-  the selection, Delete removes it unless the reader is typing in a field.
-- **The next point's label is a selector of its own**, between the list and the switch: `1` / `0`,
-  pressed for the value a press on the picture writes. Adding three negative points is three presses
-  rather than six, and the entry is written with the label the row named, so the text and the marker
-  agree. It is a different question from the selected point's actions and keeps a separate state.
+- **One mode group says what a press does.** `1` / `0` / `×` between the list and the switch: `1` and
+  `0` make a press write that label — on the picture it adds a point, on a point it repaints it — and
+  `×` makes a press remove the point under it. The pressed mode is the whole state; there is no
+  selection to keep in step. It began as two groups, a next-label selector and a set of actions for
+  the selected point, which said the same two things twice in one row.
+- **Left button on the picture** acts in the pressed mode, and a drag of four pixels acts on nothing:
+  the same travel that tells a box from a click tells a point from a pan. **Left button on a marker**
+  paints it and carries it. **Second button on a marker or a box** removes it, on both layers.
 - **An emptied list writes the empty field, not `[]`.** `_check_geometry` refuses an empty array, so
   removing the last box or point leaves `""` — "nothing to send" — which is also what `forgetBoxes`
   already did.
 
 Two bugs the browser check found, both fixed here:
 
-1. **Selection rebuilt the marker layer**, which detached the element the press had landed on and
-   would have broken every drag in a real browser (the test that dispatched on the detached node
-   still passed). `showSelection` now toggles a class on the markers it holds; only a changed list
-   rebuilds them.
+1. **A redraw during the press detached the marker it started on**, which would have broken every
+   drag in a real browser (the test that dispatched on the detached node still passed). It was fixed
+   by changing the marker in place; the selection that caused it is gone now, and the layer is
+   rebuilt only when the list changes.
 2. **Deleting the last box wrote `[]`**, which the contract refuses — so the overlay kept the deleted
    box and Run would have answered `400`. The commit paths now write the empty field.
 
 Verified through Chrome against the local gateway: mutually exclusive switches, click-adds
-(`[[307,307],[614,614]]`), drag moves the second to `512,512`, `0` relabels to `[[...,0]]` with a
+(`[[307,307,1]]`), the `0` mode adding and repainting, drag moving a point to `256,256`, `×` deleting
+under a press and adding nothing on empty, and an emptied list writing the empty field — with a
 hollow marker, right-click drops a point and a box, Delete drops the selection, and changing the row
 clears the list with the actions hidden.
 
@@ -115,6 +113,4 @@ clears the list with the actions hidden.
 - **The container still trusts the coordinates it is handed.** A client calling the API directly — not
   through the page — can still send a point past the edge and get an answer about nothing. Refusing or
   clamping after decoding is a container decision nobody has made.
-- **Two labelled groups sit on one row** once a point is selected: the next point's `1` / `0` and the
-  selected point's `1` / `0` / `×`, separated by the switch. Copies differ in title and in the `×`;
-  a stronger distinction would be a caption, and the row has no width for one at 420 px.
+

@@ -21,64 +21,42 @@
   pointsMode.id = "points-mode";
   pointsMode.setAttribute("aria-label", "points on the picture");
   pointsMode.querySelector('[data-mode="edit"]').title = "add, move and delete points on the picture";
-  // The actions that need a selection: a reader picks a point, then says what it is or drops it. They
-  // sit in the same row and only exist while something is selected, because an action with nothing
-  // to act on is a button that refuses.
-  const pointActions = document.createElement("span");
-  pointActions.className = "switch mode-switch point-actions";
-  pointActions.setAttribute("role", "group");
-  pointActions.setAttribute("aria-label", "the selected point");
-  pointActions.hidden = true;
-  for (const [label, title] of [
-    ["1", "label 1: a spot on the object"],
-    ["0", "label 0: a spot that is not the object"],
+  // What a press on the picture does with a point: write label 1, write label 0, or remove it. One
+  // group, because the two questions this replaced — what a new point gets and what the selected one
+  // becomes — had the same two answers sitting beside each other, and a reader had to work out which
+  // pair applied to what. Nothing is selected now: the pressed mode is the whole state, and a press
+  // acts on the point under it.
+  const pointModes = document.createElement("span");
+  pointModes.className = "switch mode-switch point-mode";
+  pointModes.setAttribute("role", "group");
+  pointModes.setAttribute("aria-label", "what a press does to a point");
+  for (const [value, text, title] of [
+    ["1", "1", "a press on the picture adds a positive point, and one on a point makes it positive"],
+    ["0", "0", "a press on the picture adds a negative point, and one on a point makes it negative"],
+    ["drop", "×", "a press on a point deletes it"],
   ]) {
     const button = document.createElement("button");
     button.type = "button";
-    button.dataset.label = label;
-    button.textContent = label;
+    button.dataset.act = value;
+    button.textContent = text;
     button.title = title;
     button.setAttribute("aria-label", title);
-    pointActions.append(button);
+    pointModes.append(button);
   }
-  const dropPoint = document.createElement("button");
-  dropPoint.type = "button";
-  dropPoint.dataset.act = "drop";
-  dropPoint.textContent = "×";
-  dropPoint.title = "delete the selected point";
-  dropPoint.setAttribute("aria-label", "delete the selected point");
-  pointActions.append(dropPoint);
-  // Which label a new point gets. It is not the selected point's actions: this says what the next
-  // press writes, so several negative points cost one press each instead of an add and a relabel.
-  // The same two values, and the same order, as the actions that relabel an existing point.
-  const nextLabelPicker = document.createElement("span");
-  nextLabelPicker.className = "switch mode-switch next-label";
-  nextLabelPicker.setAttribute("role", "group");
-  nextLabelPicker.setAttribute("aria-label", "label for a new point");
-  for (const label of ["1", "0"]) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.dataset.label = label;
-    button.textContent = label;
-    button.title = label === "1"
-      ? "a point added next is positive (label 1)"
-      : "a point added next is negative (label 0)";
-    button.setAttribute("aria-label", button.title);
-    nextLabelPicker.append(button);
-  }
-  let nextLabel = 1;
-  const showNextLabel = () => {
-    for (const button of nextLabelPicker.querySelectorAll("[data-label]")) {
-      button.setAttribute("aria-pressed", String(Number(button.dataset.label) === nextLabel));
+  let pointMode = "1";
+  const showPointMode = () => {
+    for (const button of pointModes.querySelectorAll("[data-act]")) {
+      button.setAttribute("aria-pressed", String(button.dataset.act === pointMode));
     }
   };
-  nextLabelPicker.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-label]");
+  pointModes.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-act]");
     if (!button) return;
-    nextLabel = Number(button.dataset.label);
-    showNextLabel();
+    pointMode = button.dataset.act;
+    showPointMode();
+    showPoints();
   });
-  showNextLabel();
+  showPointMode();
 
   // What the picture shows first, and what a reader can start from, per model. This is the one
   // model-specific thing the page carries, and it is presentation only: it decides nothing about what
@@ -527,9 +505,6 @@
   const setEditor = (type) => {
     const available = type === "boxes" ? Boolean(boxInput) : type === "points" ? Boolean(pointInput) : false;
     editor = available ? type : null;
-    // A selection belongs to the list that was being edited; the other list's actions must not
-    // appear to act on it.
-    selected = null;
     // Editing a layer nobody can see would draw marks that vanish as they are made, so asking to
     // edit shows the geometry layer, which both lists share.
     if (editor && !view.geometry) {
@@ -539,7 +514,6 @@
     showMode();
     showBoxes();
     showPoints();
-    showSelection();
   };
 
   const showParameters = (declaration) => {
@@ -583,12 +557,10 @@
         input.addEventListener("input", syncBoxes);
       } else if (parameter.type === "points") {
         // The same three views as a box list: the text, the marks it makes, and the switch that says
-        // which list the picture is editing. The actions that need a selection sit beside the switch
-        // and appear only while one exists.
+        // which list the picture is editing. The mode group says what a press does to a point.
         pointInput = input;
         cell.classList.add("geometry");
-        cell.append(nextLabelPicker, pointsMode, pointActions);
-        selected = null;
+        cell.append(pointModes, pointsMode);
         if (!input.value && points.length) {
           input.value = JSON.stringify(points);
           delete input.dataset.untouched;   // a list restored here is the reader's, so it is sent
@@ -606,7 +578,6 @@
     // boxes drawn on the picture it is about to replace.
     showBoxes();
     showPoints();
-    showSelection();
   };
 
   // A preset's examples, as chips. Which ones exist is the model's own, and each is checked against
@@ -837,10 +808,7 @@
     document.querySelector('[data-view="geometry"]').hidden = publishesPixels;
     // The switch follows the layer: a model whose geometry opens hidden also opens locked, because a
     // drag that draws into a hidden layer is a gesture with no visible result.
-    if (!view.geometry) {
-      editor = null;
-      selected = null;
-    }
+    if (!view.geometry) editor = null;
     showView();
     showParameters(declaration);
     showExamples(id, declaration);
@@ -1028,10 +996,7 @@
     button.setAttribute("aria-pressed", String(view[key]));
     // Hiding the geometry layer locks the picture: a drag would make a mark nobody can see, and the
     // page would look as if the gesture had failed rather than the layer being off.
-    if (key === "geometry" && !view.geometry) {
-      editor = null;
-      selected = null;
-    }
+    if (key === "geometry" && !view.geometry) editor = null;
     showMode();
     render();
   });
@@ -1255,7 +1220,6 @@
   // Which geometry list the picture edits, if any — `"boxes"`, `"points"` or null. One at a time is
   // the whole rule: one press on the picture must not mean two things at once.
   let editor = "boxes";
-  let selected = null;   // the point the row's actions act on, as an index into `points`
 
   const MIN_DRAG = 4;
 
@@ -1586,22 +1550,6 @@
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && drag) endDrag();
-    if (event.key === "Escape" && selected !== null) {
-      selected = null;
-      showSelection();
-    }
-    // Delete removes the selection, unless the reader is typing: the text field is the same list, and
-    // a Delete there is a character rather than a mark. The selection is the only visible way to say
-    // which point, so nothing is removed without one.
-    const active = document.activeElement;
-    const typing = active && ["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName);
-    if ((event.key === "Delete" || event.key === "Backspace") && selected !== null && !typing) {
-      event.preventDefault();
-      points.splice(selected, 1);
-      selected = null;
-      commitPoints();
-      showSelection();
-    }
   });
 
   // The reader's points, as a second view of the `points` input and nothing more: every entry is
@@ -1610,52 +1558,61 @@
   // of its own; a wider contract later would need no second renderer here.
   let pointInput = null;   // the input a `points` parameter created, or null for a model without one
   let points = [];         // the last list that parsed: [x, y, label] in the image's own pixels
-  let pointMarks = [];     // the markers on screen, by index, so a selection changes a class and not the scene
-
   const showPoints = () => {
     const layer = $("points");
     // One eye for the reader's geometry, the same one the boxes answer to: the two lists are the
     // same kind of thing on the picture, and a second eye would be a control with no new question.
     layer.hidden = !view.geometry;
     layer.classList.toggle("editing", editor === "points");
+    // The pointer says what a press will do before it lands: carry a point, or remove one.
+    layer.classList.toggle("dropping", editor === "points" && pointMode === "drop");
     if (!last || !pointInput) {
-      pointMarks = [];
       layer.replaceChildren();
       return;
     }
-    pointMarks = points.map((point, index) => {
+    layer.replaceChildren(...points.map((point, index) => {
       const label = point.length === 3 ? point[2] : 1;
       const element = document.createElement("span");
-      element.className = "point-mark" + (label === 1 ? "" : " negative") +
-        (index === selected ? " selected" : "");
+      element.className = "point-mark" + (label === 1 ? "" : " negative");
       element.textContent = String(label);
       element.title = label === 1 ? "label 1: a spot on the object" : "label 0: a spot that is not";
       element.style.left = (point[0] / last.image.naturalWidth) * 100 + "%";
       element.style.top = (point[1] / last.image.naturalHeight) * 100 + "%";
       if (editor === "points") {
-        // The marker is the editor's while the points mode is on: a press picks it and carries it,
-        // and the right button drops it. Stopping the press here is what keeps the picture beneath
-        // from reading the same gesture as a new point.
+        // The marker is the editor's while the points mode is on: the pressed mode decides whether a
+        // press removes it or writes its label, and carrying it is the drag from the same press.
+        // Stopping the press here is what keeps the picture from reading it as a new point.
         element.addEventListener("pointerdown", (event) => {
           if (event.button !== 0) return;
           event.stopPropagation();
-          selected = index;
-          showSelection();
-          dragPoint(element, index, event);
           event.preventDefault();
+          if (pointMode === "drop") {
+            points.splice(index, 1);
+            commitPoints();
+            return;
+          }
+          paintPoint(element, index, Number(pointMode));
+          dragPoint(element, index, event);
         });
         element.addEventListener("contextmenu", (event) => {
           event.preventDefault();
           event.stopPropagation();
           points.splice(index, 1);
-          selected = null;
           commitPoints();
-          showSelection();
         });
       }
       return element;
-    });
-    layer.replaceChildren(...pointMarks);
+    }));
+  };
+
+  // One marker's label, changed where it is drawn: the press keeps the element it started on, which
+  // is what the drag that may follow needs, and the input's text follows on commit.
+  const paintPoint = (element, index, label) => {
+    const point = points[index];
+    points[index] = [point[0], point[1], label];
+    element.textContent = String(label);
+    element.classList.toggle("negative", label === 0);
+    element.title = label === 1 ? "label 1: a spot on the object" : "label 0: a spot that is not";
   };
 
   // A point is carried rather than resized: its travel in the picture is its travel, held inside the
@@ -1679,7 +1636,6 @@
       element.removeEventListener("pointerup", dropped);
       element.removeEventListener("pointercancel", dropped);
       commitPoints();
-      showSelection();
     };
     element.addEventListener("pointermove", carried);
     element.addEventListener("pointerup", dropped);
@@ -1689,21 +1645,6 @@
     } catch {
       // nothing to do: the gesture is already under way
     }
-  };
-
-  /** The row's actions act on a selection, and this is where the row says which point that is. */
-  const showSelection = () => {
-    selected = selected !== null && selected < points.length ? selected : null;
-    pointActions.hidden = selected === null || !pointInput;
-    if (selected !== null) {
-      const label = points[selected].length === 3 ? points[selected][2] : 1;
-      for (const button of pointActions.querySelectorAll("[data-label]")) {
-        button.setAttribute("aria-pressed", String(Number(button.dataset.label) === label));
-      }
-    }
-    // The class and the row, never the scene: a marker that is picked stays the element the press
-    // started on, which is what a drag needs — rebuilding the layer here would detach it mid-gesture.
-    pointMarks.forEach((element, index) => element.classList.toggle("selected", index === selected));
   };
 
   /** Write the points back into the input, which is what the query and the command read. */
@@ -1728,38 +1669,18 @@
     pointInput.removeAttribute("title");
     points = parsed.value;
     showPoints();
-    showSelection();
   };
 
   /** Drop every point, on a picture that is no longer the one they were typed for. */
   const forgetPoints = () => {
     points = [];
-    selected = null;
     if (pointInput) {
       pointInput.value = "";
       pointInput.removeAttribute("aria-invalid");
       pointInput.removeAttribute("title");
     }
     showPoints();
-    showSelection();
   };
-
-  // The row's actions edit the selected point and nothing else. A point nobody selected is not
-  // reachable from here, which is why the selection is drawn: what the buttons will change is on
-  // screen. `1` and `0` are the contract's two labels; the page grows no third.
-  pointActions.addEventListener("click", (event) => {
-    const button = event.target.closest("button");
-    if (!button || selected === null || !pointInput) return;
-    if (button.dataset.act === "drop") {
-      points.splice(selected, 1);
-      selected = null;
-    } else {
-      const point = points[selected];
-      points[selected] = [point[0], point[1], Number(button.dataset.label)];
-    }
-    commitPoints();
-    showSelection();
-  });
 
   // A click on the picture adds a point; a drag across it adds nothing. The same travel that tells a
   // box from a click tells a point from a pan, and pressing a marker never reaches here because the
@@ -1778,12 +1699,10 @@
     const at = press;
     press = null;
     if (travelled) return;   // a drag across the picture is not a new point
-    // The label the row names, written into the entry: what the reader chose is what the text says,
-    // and the marker carries the same number.
-    points = points.concat([[Math.round(at.x), Math.round(at.y), nextLabel]]);
-    selected = points.length - 1;
+    if (pointMode === "drop") return;   // a press on the picture removes nothing
+    // The pressed mode is the entry's label, so what the row says is what the text and the marker say.
+    points = points.concat([[Math.round(at.x), Math.round(at.y), Number(pointMode)]]);
     commitPoints();
-    showSelection();
   });
 
   stage.addEventListener("pointercancel", () => { press = null; });

@@ -545,19 +545,21 @@ def test_a_points_list_is_drawn_where_its_numbers_say(client: TestClient) -> Non
     assert "params.${type} coordinates must be inside the picture" in page
 
 
-def test_the_next_point_carries_the_label_the_row_names(client: TestClient) -> None:
-    """Adding several negative points costs one press each, not an add and a relabel.
+def test_a_press_on_a_point_does_what_the_mode_group_says(client: TestClient) -> None:
+    """One group decides what a press does: write 1, write 0, or remove.
 
-    The selector says what the next point will be; the selected point's actions say what an existing
-    one is. Two questions with the same two answers, which is why the groups share their wording and
-    their order but not their state: changing one must not silently change the other.
+    It replaced a selector for the next point beside a set of actions for the selected one — two
+    groups with the same two answers sitting next to each other in the row. Nothing is selected now:
+    the pressed mode is the whole state, so several negative points are one press each and a press
+    on a point is never ambiguous.
     """
     page = client.get(PLAY_PATH).text
 
-    assert "let nextLabel = 1;" in page
-    assert 'nextLabelPicker.setAttribute("aria-label", "label for a new point")' in page
-    assert "[[Math.round(at.x), Math.round(at.y), nextLabel]]" in page
-    assert "cell.append(nextLabelPicker, pointsMode, pointActions)" in page
+    assert 'pointModes.setAttribute("aria-label", "what a press does to a point")' in page
+    assert 'let pointMode = "1";' in page
+    assert "paintPoint(element, index, Number(pointMode))" in page
+    assert "[[Math.round(at.x), Math.round(at.y), Number(pointMode)]]" in page
+    assert "cell.append(pointModes, pointsMode)" in page
 
 
 def test_the_boxes_switch_drops_its_words_before_it_leaves_the_line(client: TestClient) -> None:
@@ -596,17 +598,16 @@ def test_a_point_takes_the_gestures_the_row_cannot(client: TestClient) -> None:
     """Add, carry, drop and relabel: one gesture each, and none of them needs a right button alone.
 
     The second button deletes on both geometry layers, and adding, carrying and relabelling are the
-    left button plus the row's actions — so a touch reader can do everything a mouse can, which is
-    why the actions act on a selection rather than on a hover.
+    left button plus the pressed mode — so a touch reader can do everything a mouse can and nothing
+    depends on a right button alone.
     """
     page = client.get(PLAY_PATH).text
 
     # The stage's cancel of a box being drawn, then one per geometry layer.
     assert page.count('addEventListener("contextmenu"') == 3
-    assert "points = points.concat([[Math.round(at.x), Math.round(at.y), nextLabel]])" in page
     assert "const dragPoint = (element, index, event) =>" in page
-    assert 'button.dataset.act === "drop"' in page
-    assert "String(Number(button.dataset.label) === label)" in page
+    assert 'if (pointMode === "drop")' in page
+    assert "points.splice(index, 1)" in page
     assert 'id="points" aria-hidden="true"' in page
 
 

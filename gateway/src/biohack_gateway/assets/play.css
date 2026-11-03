@@ -723,21 +723,20 @@ body {
   background: #ffffff;
 }
 /* In the points editor a marker answers to the pointer, and its target is larger than the 18 px it
-   draws: a fingertip is not a mouse, and a target the size of the dot would miss. */
+   draws: a fingertip is not a mouse, and a target the size of the dot would miss. The pressed mode
+   decides what the press does; the cursor says which before it lands. */
 #play #points.editing .point-mark {
   pointer-events: auto;
   cursor: grab;
+}
+#play #points.editing.dropping .point-mark {
+  cursor: pointer;
 }
 #play #points.editing .point-mark::after {
   content: "";
   position: absolute;
   inset: -7px;
   border-radius: 50%;
-}
-/* The point the row's actions act on: a ring outside the marker, so the mark keeps its own ink and
-   its number stays readable. */
-#play .point-mark.selected {
-  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #1f2328;
 }
 /* The switch that decides whether the picture edits a geometry list. It is not a lock on the input:
    typing coordinates and drawing on the picture are two ways in, and this picks which one is live.

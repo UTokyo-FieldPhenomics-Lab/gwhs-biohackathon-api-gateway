@@ -179,11 +179,11 @@ Package: `gateway/`. Shared constraints are in [`project.md`](project.md).
   and a `title`, because a switch on a line of its own reads as another form row. A model that
   declares no geometry list leaves both out of the document.
   [Layout](../references/2026110312_play-boxes-row-and-counting-example.md).
-- **Edit one geometry list at a time, and let a selection carry the changes a press cannot.** The
-  picture's press means one thing: asking to edit points locks the boxes and the reverse. Adding,
-  carrying and removing are the left and second buttons; relabelling and removing are the selected
-  mark's row, and what a new mark gets is a selector beside the list, so a touch reader can do
-  everything a mouse can and nothing depends on a right button alone.
+- **Edit one geometry list at a time, and let one mode group say what a press does.** The picture's
+  press means one thing: asking to edit points locks the boxes and the reverse, and the pressed mode
+  — write 1, write 0, remove — is the whole state, so a press on a mark is never ambiguous and
+  nothing needs a selection. Adding, carrying and removing are the left button; the second button
+  removes too, so a right click is a shortcut rather than the only way.
   [Points on the picture](../references/2026110316_play-points-on-the-picture.md).
 - **Write an example's address before its parameters.** Naming another picture drops the boxes drawn
   on the last one, so a chip that fills the parameters first loses its own; a list is written as JSON
