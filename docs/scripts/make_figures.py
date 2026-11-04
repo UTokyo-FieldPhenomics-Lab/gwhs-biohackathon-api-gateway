@@ -34,6 +34,7 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 DATASETS = REPO / "docs/content/datasets"
 EXAMPLES = REPO / "docs/content/examples"
 PREDICTION = FIXTURES / "gwfss-row4-prediction.json"
+SPROUT_PREDICTION = FIXTURES / "sprout-row4-prediction.json"
 CLIENT_PYTHON = REPO / "clients/python"
 PAGES = REPO / "docs/content"
 
@@ -168,6 +169,7 @@ def main() -> None:
         draw_bbox_diagram()
         draw_gwfss(images["gwfss"], images["gwfss_mask"], classes)
         draw_prediction(images["gwfss4"], images["gwfss4_mask"], classes)
+        draw_sprout(images["gwfss4"], images["gwfss4_mask"], classes)
         draw_dinov3(images["gwfss4"])
         draw_instance(images["instance"], objects, rles)
 
@@ -247,41 +249,90 @@ def draw_gwfss(
     save(mask, DATASETS / "mask-input.png")
 
 
+def tint(base: np.ndarray, masks: Mapping[str, np.ndarray],
+         colours: Mapping[str, tuple[int, int, int]]) -> Image.Image:
+    """Lay a set of class masks over a photograph, keeping the photograph visible under them.
+
+    The colour is mixed rather than painted, because the point of these figures is not that one
+    picture is prettier — it is which pixels two answers disagree about, and an organ hidden under an
+    opaque fill cannot be compared.
+
+    Parameters
+    ----------
+    base : numpy.ndarray
+        The photograph as `(height, width, 3)` float.
+    masks : mapping of str to numpy.ndarray
+        One boolean mask per class name.
+    colours : mapping of str to tuple of int
+        The RGB each class name is drawn in, from the dataset's own declaration.
+
+    Returns
+    -------
+    PIL.Image.Image
+        The tinted photograph.
+    """
+    canvas = base.copy()
+    for name, mask in masks.items():
+        colour = np.array(colours[name], dtype=np.float32)
+        canvas[mask] = 0.55 * colour + 0.45 * base[mask]
+    return Image.fromarray(canvas.astype(np.uint8))
+
+
+def prediction_masks(body: Mapping[str, object]) -> dict[str, np.ndarray]:
+    """Decode a recorded answer's objects into one boolean mask per class name."""
+    return {
+        str(obj["category"]): rle_mask(
+            str(obj["rle"]["counts"]), int(obj["rle"]["size"][0]), int(obj["rle"]["size"][1])
+        )
+        for obj in body["objects"]
+    }
+
+
 def draw_prediction(
     image: Image.Image, truth_mask: Image.Image, classes: Sequence[Mapping[str, str]]
 ) -> None:
     """The model's classes beside the dataset's own mask, on the row the demo uses.
 
-    Both panels are tinted the same way — the colour over the photograph, so the organ is still
-    visible under it — because the point is not that one picture is prettier, it is which pixels the
-    two disagree about.
+    Both panels are tinted the same way, so the difference a reader sees is a difference in the
+    answers rather than in how they were drawn.
     """
     prediction = json.loads(PREDICTION.read_text(encoding="utf-8"))
     base = np.asarray(image).astype(np.float32)
     colours = {entry["name"]: ImageColor.getrgb(entry["color"]) for entry in classes}
-
-    def tint(masks: dict[str, np.ndarray]) -> Image.Image:
-        canvas = base.copy()
-        for name, mask in masks.items():
-            colour = np.array(colours[name], dtype=np.float32)
-            canvas[mask] = 0.55 * colour + 0.45 * base[mask]
-        return Image.fromarray(canvas.astype(np.uint8))
-
-    predicted = {
-        str(obj["category"]): rle_mask(
-            str(obj["rle"]["counts"]), int(obj["rle"]["size"][0]), int(obj["rle"]["size"][1])
-        )
-        for obj in prediction["objects"]
-    }
     truth = np.asarray(truth_mask)
     measured = global_wheat.label_masks(truth, classes)
     measured.pop("background", None)
     save(
         figure(
-            (panel(tint(predicted), 420, 420), "gwfss-segformer-b4"),
-            (panel(tint(measured), 420, 420), "the dataset's mask"),
+            (panel(tint(base, prediction_masks(prediction), colours), 420, 420),
+             "gwfss-segformer-b4"),
+            (panel(tint(base, measured, colours), 420, 420), "the dataset's mask"),
         ),
         PAGES / "models" / "gwfss-row4-prediction.jpg",
+    )
+
+
+def draw_sprout(
+    image: Image.Image, truth_mask: Image.Image, classes: Sequence[Mapping[str, str]]
+) -> None:
+    """The model's classes beside the dataset's own mask, on the row the demo uses.
+
+    The same two panels the SegFormer's page draws, in the same tint and from the same photograph,
+    because this page describes one model and the only thing beside its answer worth showing is the
+    annotation it is measured against.
+    """
+    prediction = json.loads(SPROUT_PREDICTION.read_text(encoding="utf-8"))
+    base = np.asarray(image).astype(np.float32)
+    colours = {entry["name"]: ImageColor.getrgb(entry["color"]) for entry in classes}
+    measured = global_wheat.label_masks(np.asarray(truth_mask), classes)
+    measured.pop("background", None)
+    save(
+        figure(
+            (panel(tint(base, prediction_masks(prediction), colours), 420, 420),
+             "sprout-l-gwfss"),
+            (panel(tint(base, measured, colours), 420, 420), "the dataset's mask"),
+        ),
+        PAGES / "models" / "sprout-row4-prediction.jpg",
     )
 
 

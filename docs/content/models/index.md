@@ -1,13 +1,13 @@
 # Models
 
-Seven models answer today — eleven ids, because DINOv3 is served at two checkpoints, Nano Banana at
+Eight models answer today — twelve ids, because DINOv3 is served at two checkpoints, Nano Banana at
 three tiers, and YOLO26 with and without a mask head. Calling any of them is one request: **you send
 an image address (or your own photograph) and you get the answer back**. Five are general-purpose:
 one segments and detects what you describe in words, one answers in prose or pixels, one is a
 backbone whose tokens you fit a head to, one makes pictures from a prompt or an edit, and one detects
-and segments what it was trained on — COCO's classes, quickly. Two are specialized for wheat and plant
-phenotyping: one labels every pixel of a wheat canopy as head, stem or leaf, and one counts what you
-show it an example of. No weights travel to you, nothing runs on your machine, and there is no
+and segments what it was trained on — COCO's classes, quickly. Three are specialized for wheat and plant
+phenotyping: two label every pixel of a wheat canopy as head, stem or leaf — the dataset's own baseline
+and the laboratory's foundation model — and one counts what you show it an example of. No weights travel to you, nothing runs on your machine, and there is no
 environment to set up.
 
 ## The models
@@ -35,6 +35,7 @@ These were trained for a wheat or plant task.
 | model | what it is | tags | runs at |
 |---|---|---|---|
 | [`gwfss-segformer-b4`](gwfss-segformer-b4.md) | the GWFSS dataset's own SegFormer-B4 baseline — semantic organ segmentation, [CC-BY-4.0 weights](https://huggingface.co/GlobalWheat/GWFSS_Segformer_b4), no parameters | `segmentation` | 512 px square |
+| [`sprout-l-gwfss`](sprout-l-gwfss.md) | SPROUT-L — the laboratory's diffusion foundation model, fine-tuned on GWFSS; semantic organ segmentation at 361 M parameters, [Apache-2.0](https://github.com/UTokyo-FieldPhenomics-Lab/SPROUT). Trained on in-field canopies, so a `gwhs` desk photograph is outside it | `segmentation` | 512 px square |
 | [`tasselnetv4`](tasselnetv4.md) | TasselNetV4 — class-agnostic plant counting, [the paper's code and checkpoint](https://arxiv.org/abs/2509.20857); you show exemplar boxes and it answers a number | `counting` | 384 px tall, tiled |
 
 An id names **whose weights these are**, not where they run: a collaborator's fine-tune of the same
