@@ -498,6 +498,11 @@ class ComputedBy(BaseModel):
         The CUDA version the build was made against.
     torch : str or None
         The torch version that ran the forward pass.
+    dtype : str or None
+        The dtype the forward pass ran in, as the container chose it for its card — `bfloat16` where
+        the hardware has it, `float16` on a V100, `float32` for a model that never picks one. Two
+        cards can disagree on one call because of this field, so it is reported beside them rather
+        than inferred from the capability.
     """
 
     machine: str | None = None
@@ -505,6 +510,7 @@ class ComputedBy(BaseModel):
     compute_capability: str | None = None
     cuda: str | None = None
     torch: str | None = None
+    dtype: str | None = None
 
 
 class ModelWarning(BaseModel):

@@ -353,6 +353,24 @@ def test_one_model_is_the_entry_the_directory_carries(client: TestClient) -> Non
     assert detail.json() == directory[0]
 
 
+def test_a_card_that_chose_a_dtype_publishes_it(tmp_path: Path, index_dir: Path) -> None:
+    """The record names the dtype the forward pass ran in.
+
+    Two cards can answer one call differently, and the cheapest explanation is a field rather than a
+    guess: a V100 runs these weights in float16 while an RTX runs them in bfloat16, and both report
+    it beside the card whose hardware made the choice.
+    """
+    declaration = {
+        **DECLARATION,
+        "computed_by": {**DECLARATION["computed_by"], "dtype": "float16"},
+    }
+    client, _ = client_for(tmp_path, index_dir, declaration)
+
+    machine = client.get("/models", headers=KEY).json()["models"][0]["machines"][0]
+
+    assert machine["dtype"] == "float16"
+
+
 def test_a_model_nobody_configured_is_refused(client: TestClient) -> None:
     """An unconfigured id is a 404 in the contract's own shape."""
     response = client.get("/models/sam9.9", headers=KEY)
