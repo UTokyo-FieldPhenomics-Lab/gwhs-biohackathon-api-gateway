@@ -53,6 +53,16 @@ public contract publishes; neither is gateway code.
 - **Return the shared object shape with COCO compressed RLE, never another mask encoding.** Normalize
   inside the container so one client decoder handles every model and dataset surface.
   [Gateway contract](gateway.md#data-and-model-contract).
+- **Choose the half-precision by the card and publish which one ran.** `bfloat16` on compute
+  capability 8.0 and above, `float16` below it, and the choice goes in `computed_by.dtype` — a V100
+  has no bf16 hardware, and the two formats are the same two bytes, so the declaration's resident
+  figure holds either way. Set it from the capability rather than a constant, with an env override
+  for the case a container has to be pinned. [Measurement](../references/2026110418_dgx-station-v100-reachable.md).
+- **A model whose forward pass demands bfloat16 is Ampere-only.** `sam3.1-meta` runs inside
+  `torch.autocast(dtype=bfloat16)` and its own fused operators cast to it, so it cannot be served
+  on a V100 at all — in this pool that rules out the DGX Station, and leaves the RTX cards and the
+  rented L4. Changing that is a port of the operator path, not a dtype argument.
+  [Capability](../references/2026110418_dgx-station-v100-reachable.md).
 - **A counting model answers a count and the field it integrates, never invented points.** It has no
   mask, so its `objects` is an empty list rather than boxes or dots manufactured from a density map;
   `density` is that map, cell by cell, and its sum is the count. A point set belongs to a

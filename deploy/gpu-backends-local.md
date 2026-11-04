@@ -18,11 +18,12 @@ Three things this file does not argue, and only links:
 
 ## 1. The path, before any software
 
-**These are private addresses on the UTokyo Field Phenomics Lab tailnet, and only the gateway host
-can reach them.** Each room's router is a tailnet node advertising its own `/24`; the gateway host
-accepts those routes, so the address of `lab-5090` resolves from that host and from no other machine.
-Nothing is published to the internet and no port is forwarded. A reader outside this lab who tries
-one of these addresses gets a timeout — that is the design, not a fault.
+**These are private addresses, and what reaches them depends on the room.** A room LAN the campus
+already routes answers from a campus workstation; every other room LAN exists only as a tailnet
+subnet route, which only the gateway host accepts — so there, the address of `lab-5090` resolves from
+that host and from no other machine. Nothing is published to the internet and no port is forwarded.
+A reader outside this lab who tries one of these addresses gets a timeout — that is the design, not a
+fault.
 
 What makes a machine reachable is therefore two facts, and neither is a client on the machine:
 
@@ -47,6 +48,9 @@ Conventions that hold everywhere and are not re-decided per machine:
   collide there — and the host side carries the model's number. It sits outside both ephemeral
   ranges (`32768–60999` on Linux, `49152–65535` on Windows), and it is deliberately **not 8000**,
   which is the gateway's own socket on its host.
+- **A host with several cards publishes one port per card, and calls each card a machine.** One
+  address cannot tell two cards apart, so a second copy of the same model on one host takes another
+  port and another machine name (§3.2).
 - **A card is admitted against the card minus 1 GB**, never against the card — the desktop drives the
   same display. For scale, the demo model holds 8.5 GB resident.
 - **One router is one fault domain.** So however many machines the laboratory holds, they fail
@@ -56,21 +60,36 @@ Conventions that hold everywhere and are not re-decided per machine:
 
 ### Reaching a machine to look at it
 
-Every administrative connection goes **through the gateway host**, because it is the only machine
-that accepts the routes. Both `HostName` values below are in `.agents/local/pool.md`. A workstation
-on the laboratory LAN routes the backend's address to its own default gateway and gets nowhere, so a
-backend is unreachable "from the lab" while sitting in it.
+An administrative connection takes whichever route the LAN already has, and the two differ:
+
+- **A room LAN the campus routes to its neighbours** answers directly from a workstation. The
+  plant-factory room is one: its machines need no jump host from a laboratory PC.
+- **A room LAN only the tailnet carries** is reached through the gateway host, the one node that
+  accepts those routes. A workstation on the laboratory LAN routes such an address to its own
+  default gateway and gets nowhere, so a backend is unreachable "from the lab" while sitting in it.
+
+`ip route get <address>` answers which one applies, before any ssh attempt: `dev tailscale0` is the
+tailnet path and only appears on the gateway host; your own default gateway is the campus path.
+Addresses and both `HostName` values are in `.agents/local/pool.md`.
 
     Host gwhs-host
       HostName <the host's address>
       User admin
       IdentityFile ~/.ssh/gwhs-demo.pem
 
-    Host lab-5090
+    Host lab-5090                    # tailnet path: the jump host carries the route
       HostName <the 5090's address>
       User "Field of Phenomics"
       IdentityFile ~/.ssh/lab-5090
       ProxyJump gwhs-host
+
+    Host lab-intel3090               # campus path: no jump host
+      HostName <the 3090's address>
+      User crest
+      IdentityFile ~/.ssh/id_ed25519
+
+The DGX on that room LAN takes the third form — no `ProxyJump`, and its account name as `whoami`
+prints it.
 
 **The account name is not the profile directory name, and on Windows they usually differ.** The
 5090's key sits in `C:\Users\45952` but the account is `Field of Phenomics`; sshd resolves the
@@ -78,7 +97,30 @@ account, so sending the directory name answers `Invalid user 45952` before it lo
 which reads exactly like a rejected key. Ask the machine with `whoami` (`machine\account`). A name
 with spaces needs double quotes, as above.
 
-On **Linux**, `sshd` is normally installed and only needs enabling: `systemctl enable --now sshd`.
+On **Linux**, the server is normally installed and only needs enabling — but the unit is `ssh` on
+Debian/Ubuntu and `sshd` on Arch/RHEL, and `enable sshd` on a DGX answers `Unit sshd.service does
+not exist`:
+
+```bash
+sudo systemctl enable --now ssh                     # Ubuntu, DGX OS, Debian
+```
+
+A Linux host needs no server install, but it does need the caller's key, which nothing above
+supplies — and a key the server never reads fails exactly like a wrong one:
+
+```bash
+# on the caller: the workstation, or the gateway host if that is where the work runs
+cat ~/.ssh/id_ed25519.pub
+# on the backend, at its console, as the account sshd will resolve
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
+printf '%s\n' 'ssh-ed25519 AAAA…  the line printed above' >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+```
+
+Then `ssh <alias> whoami` from the caller, and `ssh -o BatchMode=yes <alias> true` to prove it is the
+key that answered rather than a password prompt. A key in the wrong account is the Linux twin of the
+Windows `Invalid user` above: `whoami` is the login name, not the desktop's profile name.
+
 **Windows ships no SSH server at all** — §2.2 installs one.
 
 ### Checking a path
@@ -100,13 +142,14 @@ machine what it listens on (`ss -lnt`) before concluding anything about the path
 
 ## 2. Docker on the machine
 
-Both recipes end in the same three facts: Docker runs, the GPU is visible **inside a container**, and
+Every recipe ends in the same three facts: Docker runs, the GPU is visible **inside a container**, and
 the port answers **from the gateway host**. Prove them in that order — a failure in the third is a
 network question, and a failure in the second has nothing to do with the network.
 
-### 2.1 Linux (Manjaro/Arch and Debian/Ubuntu)
+### 2.1 Linux (Manjaro/Arch, Debian/Ubuntu, and a DGX that already has it)
 
-Only the package line differs between distributions. Everything else — the toolkit, the runtime it
+Only the package line differs between distributions; a machine that already has the stack — a DGX —
+runs neither recipe and proves the same facts instead. Everything else — the toolkit, the runtime it
 registers with Docker, the boot service, the group — is the same, and all of it needs `sudo`.
 
 **Arch family (the laboratory 3090, the home 4090)**
@@ -131,6 +174,31 @@ sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
 sudo nvidia-ctk runtime configure --runtime=docker
 sudo systemctl restart docker
 ```
+
+**A DGX, or any machine that already has it.** DGX OS ships the driver, Docker and the toolkit, and a
+second install is how a working DGX stops working. Prove the three facts instead:
+
+```bash
+docker --version && docker info --format '{{.DefaultRuntime}}'
+nvidia-smi                                                     # the host sees the cards
+docker run --rm --gpus all nvidia/cuda:11.8.0-base-ubuntu20.04 nvidia-smi -L   # a container does
+```
+
+The DGX Station V100 lists only the runc variants in `docker info` — no `nvidia` runtime at all — and
+the test still prints all four cards. **The container is the authority; a runtime missing from
+`docker info` is not a toolkit missing.** Two facts that machine brings that the recipes above do
+not:
+
+- **The image has to fit the driver and the card.** It runs `550.144.03` / CUDA 12.4, so every cu12.x
+  image runs on it, and torch 2.10's cu128 wheels still carry `sm_70` — the pool's own images run
+  unmodified, and the two backbone containers pick `float16` here by themselves (§3.2). What does
+  not run is anything that insists on bfloat16 or FlashAttention-2: the card has neither, which is
+  `sam3.1-meta` and any checkpoint whose own autocast demands it. Check an image by running the
+  §3.2 line and one real call, not by its README.
+- **Docker's disk is not the big disk.** `/` holds `/var/lib/docker`, and the 5.2 TB RAID at
+  `/ssdraid0` is where weights and build contexts belong. Read `df -h /var/lib/docker` before the
+  first build — a stopped container keeps its writable layer, and 138 of them held 524 GB on this
+  machine until they were removed.
 
 **Without the toolkit, `--gpus all` fails rather than falling back to the host's driver:**
 
@@ -328,6 +396,12 @@ not in the image**, which is why `docker run` is written out in full:
   models on one host port: the gateway's list, the router and the firewall rule all name that
   number, and a model that borrowed another's would answer under the wrong name until the first
   call.
+- **On a host with several cards, `--gpus all` is the wrong flag.** It hands one container every
+  card; `--gpus '"device=2"'` hands it one, which appears as `0` inside because each container has
+  its own namespace. Give each container its own machine name: the router sums queue depth per
+  `computed_by.machine`, so four containers answering one name are four cards the gateway counts as
+  one and it will pass work over while three of them idle. One port per card follows, since they
+  share an address (§1).
 
 `docker start` needs none of it — everything is already recorded, which is why stop/start is safe and
 why a *changed* value means creating the container again. **Only the restart policy can be changed in
@@ -479,6 +553,7 @@ than working ends — a mismatched token still counts — so the probe in step 3
 | The room routers, the exit node, the latencies each path measured | [`../.agents/references/2026101610_backend-reachability-over-the-room-routers.md`](../.agents/references/2026101610_backend-reachability-over-the-room-routers.md) |
 | The 5090's bring-up: the credential helper, the token mismatch, the failover that took 61.2 s | [`../.agents/references/2026101621_deploying-sam31-on-the-5090.md`](../.agents/references/2026101621_deploying-sam31-on-the-5090.md) |
 | The 3090 becoming a container, and the toolkit that was missing | [`../.agents/references/2026101709_the-3090-becomes-a-container.md`](../.agents/references/2026101709_the-3090-becomes-a-container.md) |
+| The DGX Station V100: both routes to it, a toolkit Docker never lists, and 45 GB of free disk | [`../.agents/references/2026110418_dgx-station-v100-reachable.md`](../.agents/references/2026110418_dgx-station-v100-reachable.md) |
 | Why the port is `12711` and what moving it cost | [`../.agents/references/2026101622_moving-the-backend-port-to-12711.md`](../.agents/references/2026101622_moving-the-backend-port-to-12711.md) |
 | What a container answers, and where normalisation belongs | [`../.agents/plans/2026101609_gpu-compute-plane.md`](../.agents/plans/2026101609_gpu-compute-plane.md) |
 | What the gateway's resident and per-request figures rest on | [`../.agents/references/2026101612_model-vram-and-latency-reference.md`](../.agents/references/2026101612_model-vram-and-latency-reference.md) |
