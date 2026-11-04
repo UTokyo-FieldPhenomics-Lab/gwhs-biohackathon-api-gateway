@@ -105,6 +105,11 @@
   ];
   const MODEL_PRESETS = {
     "gwfss-segformer-b4": {geometry: false, legend: true, landing: true},
+    // The same dataset and the same answer shape as the landing model, from the laboratory's own
+    // foundation model fine-tuned on it — so a reader can put the two masks side by side without
+    // learning a second set of colours. It does not take the landing slot: a first-time reader
+    // should meet the checkpoint with the published evaluation.
+    "sprout-l-gwfss": {geometry: false, legend: true},
     // A backbone has no objects and no mask; what it publishes is the grid its `results` eye draws.
     // `results` is the layer for a model's pixel output, whatever shape it takes: a feature grid
     // tinted over the photograph, or a picture that replaces it. The eye is hidden again for every
