@@ -241,3 +241,29 @@ the counting model is a new template version with a third `docker pull`/`docker 
 **Basic image scanning reports no status in this account** — `imageScanStatus` is `null` for all three
 repositories, including the two baked on 2026-10-27, so `scanOnPush` is accepted and evidently not
 serving the per-image status here. Not a property of this push.
+
+## The dtype push, 2026-11-04/05
+
+The `computed_by.dtype` change reached ECR for four repositories and stopped at two.
+
+| Repository | Tag | Digest |
+|---|---|---|
+| `sam3.1-meta` | `20261105` | `sha256:f766f987f1b14dec3f1c71c82e554adbc54b079928dff7961115ca3513ff070b` |
+| `gwfss-segformer-b4` | `20261105` | `sha256:d56a4f86d3a7c1a1e5cc485e80de356d9005d2790b48baf66393baee61c4ae7a` |
+| `dinov3-vitl16` | `20261105` | `sha256:1ef50f888f4919f7e0467ceb888146c7c85904f19498f542b4fa7dabdd5098da` |
+| `dinov3-vith16plus` | `20261105` | `sha256:390aa079a36366abfa81ce8399218bd0951ec319d16aaa5101a91671a63ba64b` |
+| `tasselnetv4` | `20261102` | `sha256:6ae7d7aaf0c2f2ecf4c04efdd2f58248e944a1bd2b9dff0d119da71a57ebeaba` — **old** |
+| `internvl-u` | `20261103` | `sha256:b8cdcb03d6c7f08009d872a0446e3bca0930977109800420b4661cc727dccbba` — **old** |
+
+The four pushed in seconds each: their layers were already in the repository, so only the code layer
+and the manifest moved — 4 KB per tag.
+
+The two that did not: their earlier images were built by a different builder, so **none** of their
+layers matched and the push was the whole image. Measured on the DGX's uplink, 583 KB/s,
+which is hours for 12 and 18 GB. Both images are rebuilt and waiting on that machine
+(`tasselnetv4`, `internvl-u`, with the dtype code); the push was stopped rather than left running on
+the laboratory's shared link.
+
+Cheapest way to finish them when the instance is next wanted: build on the gateway host itself —
+the source archive is 31 MB, the base image and wheels download in-region at in-region speed, and the
+push back to ECR never leaves `eu-central-1`. The root volume has to hold one 18 GB image at a time.
