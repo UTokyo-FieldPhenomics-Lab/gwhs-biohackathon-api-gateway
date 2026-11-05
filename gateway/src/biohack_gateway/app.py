@@ -870,7 +870,6 @@ def create_app(
         """
         return play_page(docs_parent_origin, data_base_url)
 
-
     def example_route(name: str) -> Any:
         """Build the handler that serves one example photograph.
 
