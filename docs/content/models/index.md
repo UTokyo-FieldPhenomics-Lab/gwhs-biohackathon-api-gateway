@@ -1,11 +1,12 @@
 # Models
 
-Eight models answer today — twelve ids, because DINOv3 is served at two checkpoints, Nano Banana at
+Nine models answer today — thirteen ids, because DINOv3 is served at two checkpoints, Nano Banana at
 three tiers, and YOLO26 with and without a mask head. Calling any of them is one request: **you send
-an image address (or your own photograph) and you get the answer back**. Five are general-purpose:
-one segments and detects what you describe in words, one answers in prose or pixels, one is a
-backbone whose tokens you fit a head to, one makes pictures from a prompt or an edit, and one detects
-and segments what it was trained on — COCO's classes, quickly. Three are specialized for wheat and plant
+an image address (or your own photograph) and you get the answer back**. Six are general-purpose:
+one segments and detects what you describe in words, one finds instances of a phrase and masks each
+one, one answers in prose or pixels, one is a backbone whose tokens you fit a head to, one makes
+pictures from a prompt or an edit, and one detects and segments what it was trained on — COCO's
+classes, quickly. Three are specialized for wheat and plant
 phenotyping: two label every pixel of a wheat canopy as head, stem or leaf — the dataset's own baseline
 and the laboratory's foundation model — and one counts what you show it an example of. No weights travel to you, nothing runs on your machine, and there is no
 environment to set up.
@@ -19,6 +20,7 @@ These are upstream checkpoints, not trained on this project's data: they answer 
 | model | what it is | tags | runs at |
 |---|---|---|---|
 | [`sam3.1-meta`](sam3.1-meta.md) | SAM 3.1 — text-prompted segmentation, [Meta's own code and checkpoint](https://github.com/facebookresearch/sam3) | `segmentation` · `detection` | 672 / 784 / 896 / 1008 px square |
+| [`wevisone-vl-4b`](wevisone-vl-4b.md) | WeVisOne-VL-4B — text-prompted **instance** masks from [Tencent's own code and checkpoint](https://github.com/Tencent/WeVisOne-VL); the phrase you type is the class, and there is no confidence score | `segmentation` · `open-vocabulary` | your image's own size, up to 4 MP; masks decoded on a 1024 canvas |
 | [`internvl-u`](internvl-u.md) | InternVL-U — a 4B unified multimodal model, [MIT weights](https://huggingface.co/InternVL-U/InternVL-U); answers in prose, or produces and edits a picture | `vision-language` · `text-to-image` · `image-editing` | 1024 px on the longer side at most; `text` takes no size |
 | **Nano Banana** — [`nano-banana-2.1`](nano-banana.md) · [`nano-banana-2`](nano-banana.md) · [`nano-banana-pro`](nano-banana.md) | Google's hosted image models, served through Vertex AI: a picture from a prompt, or an edit of one you send | `text-to-image` · `image-editing` | 512 px – 2K on the longer side; 1K and 2K per id |
 | **YOLO26** — [`yolo26-ultralytics`](yolo.md) · [`yolo26-seg-ultralytics`](yolo.md) | Ultralytics' YOLO26 at the COCO checkpoints: a fast detector, and the same model with an instance-mask head; nothing trained on wheat | `detection` · `segmentation` | 640 / 1024 / 1280 px square |
