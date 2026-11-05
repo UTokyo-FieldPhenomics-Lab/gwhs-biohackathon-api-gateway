@@ -14,7 +14,7 @@ installed, and every client on this site is a convenience over what is on this p
 A response that points at an image carries an absolute `data.*` address: the gateway never carries
 bytes, so displaying an image is a request to the CDN and not to us.
 
-## Every route
+## Every participant route
 
 | call | what it is |
 |---|---|
@@ -27,11 +27,12 @@ bytes, so displaying an image is a request to the CDN and not to us.
 | `GET /models/<id>` | one model, with its parameters and its machines |
 | `POST /models/<id>/predict` | run a model on a published row |
 | `POST /models/<id>/predict/upload` | run a model on your own photograph |
+| `POST /models/<id>/generate` | make a picture from a prompt, with no image to address |
 
 The complete list — every parameter, every field of every answer, and a form that sends the call —
-is the [Base API reference](reference.md). The table above is the map, not the manual.
+is the [Live API reference](../reference.md). The table above is the map, not the manual.
 
-## Four calls
+## Five calls
 
 ```bash
 # the directory
@@ -48,6 +49,11 @@ curl -s -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
 # a model on your own photograph: the file itself, as the multipart field `file`
 curl -s -H "X-API-Key: $KEY" -F "file=@photo.jpg" \
   "$API/models/sam3.1-meta/predict/upload?prompt=wheat%20head"
+
+# a Nano Banana model: the prompt is the whole request, no body and no image
+curl -s -H "X-API-Key: $KEY" \
+  "$API/models/nano-banana-2.1/generate?prompt=a%20wheat%20field%20at%20golden%20hour&aspect_ratio=16:9&image_size=1K" \
+  -o answer.json
 ```
 
 A page of rows reports `next_cursor`; send it back as `cursor` for the next page, and stop when it is
@@ -57,9 +63,10 @@ A page of rows reports `next_cursor`; send it back as `cursor` for the next page
 ### Resizing before you send
 
 The upload route takes the file as the multipart field `file`, and **the model resizes whatever it
-receives to the side it runs at**: 1008 px for `sam3.1-meta`, 512 px for `gwfss-segformer-b4`. That
-side is the model's own and `GET /models/<id>` publishes it as `resolution`. A larger photograph buys
-nothing — the pixels beyond that side are discarded before the network sees them.
+receives to the side it runs at**. That side is the model's own, and `GET /models/<id>` publishes it
+as `resolution`; two examples are 1008 px for `sam3.1-meta` and 512 px for `gwfss-segformer-b4`. A
+larger photograph buys nothing — the pixels beyond that side are discarded before the network sees
+them.
 
 Send it at about that side. Pillow is usually already there, because it is what displays an image:
 
@@ -94,7 +101,7 @@ Every refusal is one body, whichever route produced it:
 | `401` | `invalid_key` | the key is wrong, or missing |
 | `404` | `not_found` | no such dataset or model |
 | `413` | `payload_too_large` | an upload over 15 MB — [resize it](#resizing-before-you-send) first |
-| `429` | `quota_exceeded` | this key already holds its inference lanes, the gateway is receiving too many uploads, or the upload link stayed full. This call was not forwarded for inference; when present, `Retry-After` says when to come back |
+| `429` | `quota_exceeded` | this key already holds its inference allowance, the gateway is receiving too many uploads, or the upload link stayed full. This call was not forwarded for inference; when present, `Retry-After` says when to come back |
 | `502` | `upstream_error` | a machine answered that it could not serve this request, or every machine for the model failed. Worth another call; one that keeps failing is worth reporting |
 | `503` | `unavailable` | no machine is answering this model. Safe to retry |
 | `504` | `upstream_timeout` | the model took too long, or an upload could not be delivered to it in time. Safe to retry |
@@ -110,7 +117,8 @@ by `GET /models/<id>` with their defaults and bounds. There is no wrapper vocabu
 `prompt`, `boxes`, `points`, `confidence_threshold`, `imgsz`; another model may declare something
 else entirely, and a name it did not declare is a `400` whose message lists what it does accept.
 
-They travel as **flat query parameters** on both predict routes, one value each:
+They travel as **flat query parameters** on the model-call routes — predict, upload and generate —
+one value each:
 
 ```bash
 "$API/models/sam3.1-meta/predict?prompt=wheat%20head&confidence_threshold=0.25"
@@ -178,7 +186,7 @@ A point-counting model would answer `points` instead of `density` — `[x, y, sc
 pixels, where `score` is that model's own score for the point, not comparable across models or
 pictures. No model on this service answers that way today.
 
-An answer may also carry `warnings`, in the same shape a clamped `imgsz` produces: a counting model
+An answer may also carry `warnings`, in the same shape a clamped `imgsz` produces. A counting model
 reports one when an exemplar is larger than the finest window it can count in — a spike that fills the
 frame — and the count is then a coarse one. The answer is an answer; the warning says which one.
 
@@ -212,8 +220,32 @@ grid = grid.reshape(*features["size"], features["dim"]).astype(np.float32)
 The vectors are not normalized; use cosine, not a raw dot product. `side` is the longer side of the
 frame and preserves the aspect ratio, each dimension floored to a multiple of the patch; a value
 above the declared maximum is answered at it with `resolution_clamped`, because the answer's size is
-the constraint. [The backbone page](../models/dinov3.md) explains what the tokens are and what
+the constraint. [The backbone page](../../models/dinov3.md) explains what the tokens are and what
 can be built on them; the fields here are the whole contract.
+
+### Prose and picture results
+
+`internvl-u` and the Nano Banana ids answer in words or pixels rather than geometry. They still
+return `objects: []`, so one client parses their answer with the same code as a segmenter's, and they
+carry two optional fields beside it:
+
+```json
+{ "model": "nano-banana-2.1", "objects": [],
+  "answer": "Here is a photorealistic shot of a single wheat spike against dark soil.",
+  "image": {"media_type": "image/png", "width": 1376, "height": 768,
+            "data": "iVBORw0KGgo…"} }
+```
+
+`answer` is prose the model wrote, absent when it wrote none. `image` is the encoded file itself:
+`media_type`, its own `width` and `height`, and base64 of the bytes in `data`. The clients decode it
+to a picture and keep the raw fields beside it. `internvl-u` chooses prose, a picture or both with
+its `mode` parameter; the Nano Banana ids answer a picture.
+
+A generation is `POST /models/<id>/generate`, with the prompt and the model's own parameters in the
+query string and no body. The Nano Banana ids are called this way; `internvl-u` produces its picture
+through `predict` with its `mode` parameter. An edit of a published row or of your own photograph is
+the predict route with a `prompt`. A generation is never cached: the same prompt twice is two
+pictures.
 
 ## Limits
 
@@ -228,7 +260,7 @@ can be built on them; the fields here are the whole contract.
 | an uploaded image, decoded | 50 megapixels | `400` |
 
 The three are three across the whole team, not three per person: one key is one team's share of the
-GPU pool. **Only the two predict routes count.** A dataset listing, a row's detail and the model
-directory are answered from memory and queue behind no machine, so they are never refused for being
-one request too many; a page that loads several of them at once is not competing with anybody's
-inference.
+GPU pool. **Only inference counts** — the two predict routes and `generate`. A dataset listing, a
+row's detail and the model directory are answered from memory and queue behind no machine, so they
+are never refused for being one request too many; a page that loads several of them at once is not
+competing with anybody's inference.

@@ -72,7 +72,7 @@ field that number was summed from, and `sam3.1-meta` or `gwfss-segformer-b4` ans
 what one megapixel and a four-billion-parameter model will give you.
 
 **It costs a card.** One prose answer holds the GPU for 0.7 s; one picture for 8–15 s. That is why it
-is its own id rather than a mode on a task model, and why it takes one of your three lanes like
+is its own id rather than a mode on a task model, and why it takes one of your three inferences like
 everything else.
 
 ## Measured

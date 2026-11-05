@@ -74,6 +74,13 @@ is faster and worse on small objects.
 `confidence_threshold` is the same name and the same bounds every object-answering model here
 publishes, so a caller that lowers it for `sam3.1-meta` lowers the same knob here.
 
+## What comes back
+
+`yolo26-ultralytics` answers one object per detection: `category`, `score` and `bbox` in the
+picture's own pixels. `yolo26-seg-ultralytics` answers the same objects and adds a COCO `rle` mask to
+each. `objects` is empty when the picture holds nothing the checkpoint knows — on a `gwhd` row, that
+is both ids' answer. The rest of the envelope is the shared one: `resolution_used` and `computed_by`.
+
 ## What it is not
 
 **It is not trained on wheat.** COCO's 80 classes do not include a wheat head, and a `gwhd` row
@@ -106,5 +113,5 @@ small enough that the pair shares a card with everything else the pool serves.
 The checkpoints are public and Ultralytics' own, so a fine-tune of your own is a path on your machine
 rather than an id to ask us for — and the API serves only the checkpoints it publishes. The
 [datasets](../datasets/gwhd.md) are public, the annotation format is
-[one decoder](../api/clients.md) in all three clients, and `GLOBAL_WHEAT_API` points a client at a
+[one decoder](../api/clients/index.md) in all three clients, and `GLOBAL_WHEAT_API` points a client at a
 host of your own.

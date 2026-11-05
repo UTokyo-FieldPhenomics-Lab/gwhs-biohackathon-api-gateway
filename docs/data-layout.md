@@ -19,8 +19,9 @@ release takes its own id, so that a later full release never renumbers an addres
 | `gwhs` | pending full annotation | — | — | objects: boxes, RLE geometry, tags, attributes |
 
 `gwhs-temp` exists for development and testing only. It is the rehearsal target: it exercises the
-whole publish path for the price of ten rows. It is not referenced by public material, and `gwhs`
-arrives as a separate dataset when the full annotation is released.
+whole publish path for the price of ten rows. It is not a released dataset — the participant site
+uses it as its development sample — and `gwhs` arrives as a separate dataset when the full annotation
+is released.
 
 Upstream revisions, adapters, class vocabularies, and licenses are recorded in
 `datasets/sources.yaml`, which is the provenance record. Distributing a dataset publicly requires

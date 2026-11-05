@@ -11,8 +11,8 @@ It is a **semantic** model, not an instance one. One call returns three masks, o
 nothing in the answer says how many heads the image holds. Counting them is a connected-component
 pass over the `head` mask, and [the example below](#counting-heads) is that pass.
 
-Ten of the dataset's 1,096 annotated rows are published today; the rest land before the event. Row 4,
-shown above and used throughout this page, is the demo image: cut heads lying on straw.
+All 1,096 annotated rows are published. Row 4, shown above and used throughout this page, is the
+demo image: cut heads lying on straw.
 
 **[Try it on the live demo](https://api.global-wheat.com/play?model=gwfss-segformer-b4)** — the model is
 already selected; pick `gwfss` row 4 and press Run.

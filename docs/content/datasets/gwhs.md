@@ -2,10 +2,10 @@
 
 ![One instance row: the image, its boxes, and the decoded masks](gwhs-row0-annotation.jpg)
 
-Not published yet: the full annotation follows the dataset release, so `GET /datasets/gwhs` answers
-nothing today. The figure above, and the object below, are a row of `gwhs-temp` — same schema, a crop
-of a 592×2509 photograph of one ear, 24 objects, each with a box and the mask its geometry decodes to.
-CC-BY-4.0.
+Not published yet: the full annotation follows the dataset release, so `gwhs` is not in
+`GET /datasets` and a call for one of its rows answers `404` today. The figure above, and the object
+below, are a row of `gwhs-temp` — same schema, a crop of a 592×2509 photograph of one ear, 24 objects,
+each with a box and the mask its geometry decodes to. CC-BY-4.0.
 
 ## The response
 

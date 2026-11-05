@@ -12,7 +12,12 @@ its parameters are still what the service serves. The `results` eye shows whatev
 made: a backbone's patch grid over the photograph, or a generated frame in place of it. A model that
 answers in words puts them under the picture.
 
-The `prompt` field is the one control that outlives a change of model: what you type there is kept in
+A model that declares `boxes` or `points` takes them from the picture: draw on it, and the list beside
+the model shows what you drew. One mode group says what a press does — add a positive entry, add a
+negative one, or remove one. The two lists are edited one at a time, so a click on the picture is
+never ambiguous.
+
+The `prompt` field is the one control that outlives a change of model. What you type there is kept in
 your browser and comes back on the next model, so comparing two of them on the same words is a change
 of id rather than a copy and paste. Every other control starts from what the model declares. Empty the
 field to forget the phrase.

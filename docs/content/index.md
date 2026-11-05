@@ -1,7 +1,8 @@
 # Start here
 
 Build an agricultural application **without downloading the dataset, deploying a model, or owning a
-GPU**. Two calls carry the whole thing: fetch one image, and get one model result.
+GPU**. Two calls carry the whole thing: fetch one image, and get one model result. The hosted Nano
+Banana models answer a prompt with no image at all.
 
 ## Three addresses
 
@@ -17,13 +18,14 @@ GPU, so every one of them carries a key.
 
 ## What you can get
 
-- **Three datasets** — `gwhd` (head boxes), `gwfss` (organ masks), `gwhs` (one mask per spikelet) —
-  addressed as `(dataset, row)`. → [Datasets](datasets/index.md)
-- **Two models** — `sam3.1-meta` for text, box or point prompts, and `gwfss-segformer-b4` for
-  semantic organ masks. →
+- **Datasets** — `gwhd` (head boxes) and `gwfss` (organ masks) are published in full; `gwhs` (one
+  mask per spikelet) follows its annotation release, and `gwhs-temp` is the development sample. All
+  are addressed as `(dataset, row)`. → [Datasets](datasets/index.md)
+- **Nine models, thirteen ids** — text- and geometry-prompted segmentation, semantic organ masks,
+  counting, feature backbones, prose and picture answers, and hosted image generation. →
   [Models](models/index.md)
 - **A client per language** — one file, downloaded rather than installed, which resolves an address,
-  fetches the object, walks pages, and decodes masks. → [Clients](api/clients.md)
+  fetches the object, walks pages, and decodes masks. → [Clients](api/clients/index.md)
 
 ## Your first call
 
@@ -38,14 +40,14 @@ export KEY=<your team's key>
 curl -s -H "X-API-Key: $KEY" "$API/datasets"
 ```
 
-The same call from a client is `client.datasets()`. The first ten rows of each published dataset
-answer today; the full sets are published before the event.
+The same call from a client is `client.datasets()`. `gwhd` and `gwfss` answer every published row;
+`gwhs` is not served until its annotation is released, and `gwhs-temp` is the development sample.
 
 ## Where to go
 
-- [Raw HTTP](api/http.md) — the contract, every route on one line, and the four calls
-- [Base API reference](api/reference.md) — every route with the fields of its answer, and a try-it form
-- [Clients](api/clients.md) — the same API as a function, in Python, JavaScript, or Java
+- [Raw HTTP](api/http/index.md) — the contract, every route on one line, and the five calls
+- [Live API reference](api/reference.md) — every route with the fields of its answer, and a try-it form
+- [Clients](api/clients/index.md) — the same API as a function, in Python, JavaScript, or Java
 - [Datasets](datasets/index.md) — what a row holds; one page per dataset
 - [Models](models/index.md) — what the model does, on what hardware, and when to use your own
-- [Live demo](examples/demo.md) · [Jupyter quickstart](examples/quickstart.md) — see it run, or run it yourself
+- [Live demo](examples/demo.md) · [Jupyter quickstart](examples/quickstart.md) · [Agent skills](examples/agent-skills.md) — see it run, run it yourself, or hand it to your agent

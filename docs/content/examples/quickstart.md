@@ -63,8 +63,8 @@ for dataset in client.datasets():
 
 <!-- output -->
 ``` { .text .output }
-gwfss          10 rows  palette
-gwhd           10 rows  boxes
+gwfss        1096 rows  palette
+gwhd         6512 rows  boxes
 gwhs-temp      10 rows  rle
 ```
 <!-- /output -->
@@ -177,9 +177,9 @@ for found in answer["objects"]:
 <!-- output -->
 ``` { .text .output }
 sam3.1-meta at 1008 px
-answered by lab-5090 NVIDIA GeForce RTX 5090
+answered by lab-3090 NVIDIA GeForce RTX 3090
 1 objects
-0 0.52 173716 [164.4509735107422, 227.70089721679688, 254.7406463623047, 1460.6804504394531]
+0 0.52 173777 [164.3638916015625, 227.89874267578125, 254.83975219726562, 1460.7940063476562]
 ```
 <!-- /output -->
 
@@ -265,8 +265,35 @@ no such row
 The client does not retry a failed call automatically: `502`, `503` and `504` are worth another
 call; `400` requires correcting the request. The gateway may already have tried another backend.
 
+## Model calls at a glance
+
+The calls below use the `client` from step 2. They are not executed by this notebook: one of them
+spends image credits, and the point is a line to copy, not an output to record. Each model page has
+the full parameter table and an example answer.
+
+| model | one call | you get back |
+|---|---|---|
+| `sam3.1-meta` | `client.predict("sam3.1-meta", "gwhs-temp", 0, prompt="wheat head")` | objects, each with a mask |
+| `wevisone-vl-4b` | `client.predict("wevisone-vl-4b", "gwhs-temp", 0, prompt="wheat head")` | instances, each with a mask; no score |
+| `internvl-u` | `client.predict("internvl-u", "gwhs-temp", 0, prompt="Describe this image.", mode="text")` | prose in `answer` |
+| `gwfss-segformer-b4` | `client.predict("gwfss-segformer-b4", "gwfss", 4)` | one mask per organ |
+| `sprout-l-gwfss` | `client.predict("sprout-l-gwfss", "gwfss", 4)` | one mask per organ |
+| `tasselnetv4` | `client.predict("tasselnetv4", "gwfss", 0, boxes=[[312, 143, 44, 55, 1]])` | `count` and `density` |
+| `dinov3-vitl16` | `client.predict("dinov3-vitl16", "gwfss", 0, side=512)` | `embedding` and `features` |
+| `dinov3-vith16plus` | `client.predict("dinov3-vith16plus", "gwfss", 0, side=384)` | `embedding` and `features` |
+| `yolo26-ultralytics` | `client.predict_file("yolo26-ultralytics", "photo.jpg")` | COCO boxes; empty on a wheat row |
+| `yolo26-seg-ultralytics` | `client.predict_file("yolo26-seg-ultralytics", "photo.jpg")` | COCO boxes and masks; empty on a wheat row |
+| **Nano Banana** — `nano-banana-2.1` · `nano-banana-2` · `nano-banana-pro` | `client.generate("nano-banana-2.1", prompt="a wheat field at golden hour", aspect_ratio="16:9", image_size="1K")` | a picture in `image`; the same call with either other id |
+
+`gwhs-temp` is the development sample; `gwhs` is not served until its annotation is released. The
+two YOLO ids were trained on COCO, so a `gwhd` row answers `[]` and your own photograph is the input
+they want. The Nano Banana call spends image credits, which is why this table is not run here.
+`client.model(id)["parameters"]` lists every parameter with its bounds; the same method names reach
+the JavaScript and Java clients, with their own parameter syntax in [Clients](../api/clients/index.md).
+
 ## Next
 
 - [Datasets](../datasets/index.md) — what each row holds, and what the fields mean
-- [Clients](../api/clients.md) — the methods, and the same file in JavaScript and Java
+- [Clients](../api/clients/index.md) — the methods, and the same file in JavaScript and Java
 - [Models](../models/sam3.1-meta.md) — the parameters, and what the model does and does not find
+- [Agent skills](agent-skills.md) — hand the API to your agent with one sentence

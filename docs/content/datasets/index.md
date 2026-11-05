@@ -4,10 +4,9 @@ One row is one image and its annotation, addressed as `(dataset, row)`. Row numb
 the dataset's pinned upstream revision, so a row number on its own means nothing — they repeat across
 datasets and will be renumbered by no one.
 
-Three datasets ship for the event. The API answers the **first ten rows** of each published one today,
-which is enough to build against; the full sets are published before the hackathon, and the same calls
-then return every row. `gwhs-temp` is the development sample of the third: same schema, a handful of
-rows, safe to call all day.
+Two datasets are published in full today: `gwhd` and `gwfss` answer every row. `gwhs` is not served
+until its full annotation is released, and `gwhs-temp` is the development sample of it: same schema, a
+handful of rows, safe to call all day. `GET /datasets` reports the current rows of each.
 
 | id | dataset | one row carries | licence |
 |---|---|---|---|
@@ -15,13 +14,16 @@ rows, safe to call all day.
 | `gwfss` | Global Wheat Full Semantic Organ Segmentation | an image and a mask, one colour per organ | CC-BY-4.0 |
 | `gwhs` | Global Wheat Head Segmentation | an image and one object per spikelet: box, mask, attributes | CC-BY-4.0 |
 
+`gwhs` appears here because its contract is fixed; it is not in `GET /datasets` until the annotation
+is released, so a call for one of its rows answers `404`.
+
 ## Which one
 
 - **Boxes around heads** → `gwhd`. Counting, density, detection — the classic task.
 - **Organ pixels** → `gwfss`. One mask image, one colour per class; split it and every pixel has a
   label.
-- **One object per spikelet** → `gwhs`. A box *and* a mask *and* attributes per spike, so counts and
-  sizes per ear become possible.
+- **One object per spikelet** → `gwhs` once its annotation is released. A box *and* a mask *and*
+  attributes per spike, so counts and sizes per ear become possible.
 
 ## The envelope
 

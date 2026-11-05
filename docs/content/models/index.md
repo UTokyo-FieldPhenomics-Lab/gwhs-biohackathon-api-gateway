@@ -1,15 +1,19 @@
 # Models
 
 Nine models answer today — thirteen ids, because DINOv3 is served at two checkpoints, Nano Banana at
-three tiers, and YOLO26 with and without a mask head. Calling any of them is one request: **you send
-an image address (or your own photograph) and you get the answer back**. Six are general-purpose:
-one segments and detects what you describe in words, one finds instances of a phrase and masks each
-one, one answers in prose or pixels, one is a backbone whose tokens you fit a head to, one makes
-pictures from a prompt or an edit, and one detects and segments what it was trained on — COCO's
-classes, quickly. Three are specialized for wheat and plant
-phenotyping: two label every pixel of a wheat canopy as head, stem or leaf — the dataset's own baseline
-and the laboratory's foundation model — and one counts what you show it an example of. No weights travel to you, nothing runs on your machine, and there is no
-environment to set up.
+three tiers, and YOLO26 with and without a mask head.
+
+Six are general-purpose: text- and geometry-prompted segmentation, open-vocabulary instance masks,
+prose and picture answers, feature backbones, hosted image generation, and COCO detection and
+instance segmentation.
+
+Three are specialized for wheat and plant phenotyping. `gwfss-segformer-b4` and `sprout-l-gwfss`
+label every pixel of a wheat canopy as head, stem or leaf — the dataset's own baseline and the
+laboratory's foundation model — and `tasselnetv4` counts what you show it an example of.
+
+Most calls send an image address, or your own photograph, and get the answer back. The Nano Banana
+ids also take a prompt with no image at all, through `POST /models/<id>/generate`. No weights travel
+to you, nothing runs on your machine, and there is no environment to set up.
 
 ## The models
 
@@ -22,7 +26,7 @@ These are upstream checkpoints, not trained on this project's data: they answer 
 | [`sam3.1-meta`](sam3.1-meta.md) | SAM 3.1 — text-prompted segmentation, [Meta's own code and checkpoint](https://github.com/facebookresearch/sam3) | `segmentation` · `detection` | 672 / 784 / 896 / 1008 px square |
 | [`wevisone-vl-4b`](wevisone-vl-4b.md) | WeVisOne-VL-4B — text-prompted **instance** masks from [Tencent's own code and checkpoint](https://github.com/Tencent/WeVisOne-VL); the phrase you type is the class, and there is no confidence score | `segmentation` · `open-vocabulary` | your image's own size, up to 4 MP; masks decoded on a 1024 canvas |
 | [`internvl-u`](internvl-u.md) | InternVL-U — a 4B unified multimodal model, [MIT weights](https://huggingface.co/InternVL-U/InternVL-U); answers in prose, or produces and edits a picture | `vision-language` · `text-to-image` · `image-editing` | 1024 px on the longer side at most; `text` takes no size |
-| **Nano Banana** — [`nano-banana-2.1`](nano-banana.md) · [`nano-banana-2`](nano-banana.md) · [`nano-banana-pro`](nano-banana.md) | Google's hosted image models, served through Vertex AI: a picture from a prompt, or an edit of one you send | `text-to-image` · `image-editing` | 512 px – 2K on the longer side; 1K and 2K per id |
+| **Nano Banana** — [`nano-banana-2.1`](nano-banana.md) · [`nano-banana-2`](nano-banana.md) · [`nano-banana-pro`](nano-banana.md) | Google's hosted image models, served through Vertex AI: a picture from a prompt, or an edit of one you send | `text-to-image` · `image-editing` | 512 px – 2K on the longer side, depending on the id |
 | **YOLO26** — [`yolo26-ultralytics`](yolo.md) · [`yolo26-seg-ultralytics`](yolo.md) | Ultralytics' YOLO26 at the COCO checkpoints: a fast detector, and the same model with an instance-mask head; nothing trained on wheat | `detection` · `segmentation` | 640 / 1024 / 1280 px square |
 | **DINOv3** — [`dinov3-vitl16`](dinov3.md) · [`dinov3-vith16plus`](dinov3.md) | [ViT-L/16](https://huggingface.co/facebook/dinov3-vitl16-pretrain-lvd1689m) and [ViT-H+/16](https://huggingface.co/facebook/dinov3-vith16plus-pretrain-lvd1689m) — one backbone at two checkpoints for dense features and a CLS descriptor, both LVD-1689M; no head, no classes | `features` | 224–768 px (L) / 224–640 px (H+) on the longer side; defaults 512 / 384 |
 
@@ -42,35 +46,39 @@ These were trained for a wheat or plant task.
 
 An id names **whose weights these are**, not where they run: a collaborator's fine-tune of the same
 model appears as an id of its own, named after the data it was trained on. Every id this API serves is
-something it answers — a model with no machine behind it answers `0` and a call is refused rather than
-queued.
+something it answers — a model with no machine behind it reports `backends_up: 0`, and a call is
+refused rather than queued.
 
-`GET /models` is the live answer for what is running: `backends_up` is how many machines answered the
-last probe and `checked_seconds_ago` is how long ago that was, so it is a verdict with an age rather
-than a promise, and `0` means a call is refused rather than queued. Every answer also names the
+`GET /models` is the live answer for what is running. `backends_up` is how many machines answered the
+last probe, and `checked_seconds_ago` is how long ago that was — a verdict with an age rather than a
+promise. A `backends_up` of `0` means a call is refused rather than queued. Every answer also names the
 machine that produced it in `computed_by`, and [the live demo](../examples/demo.md) shows both numbers
 above its run button.
 
 ## What the API fixes for you
 
-Two things come from the service rather than from the request:
+Two things are fixed by the service rather than left to the request.
 
-- **Each model runs at a side it was measured at.** `sam3.1-meta` runs at one of `672`, `784`, `896`
-  or `1008` pixels square, 1008 the default and the ceiling; `gwfss-segformer-b4` runs at the `512`
-  it was trained at and offers no choice at all; `tasselnetv4` resizes every picture to `384` px tall
-  and tiles it, because that is the training crop. Those task models resize to a square *without
-  preserving aspect ratio*. The two backbones are the exception: `side` is the longer side and the
-  shorter one follows the aspect ratio, each dimension floored to 16, so a 4:6 photograph at 512
-  runs at 336 × 512. `internvl-u` generates one megapixel at most, and an edit is no exception: a
-  photograph larger than that is re-run at the ceiling and answered smaller, with a warning saying
-  so. The answer reports `resolution_used` so you can tell how coarse a result is at full size. A larger value is not an error for a clamped ceiling: the model runs at it and says so
-  in `warnings`. A smaller one is faster and worse on small objects — the table on the model page has
-  the numbers. A task model accepts only a resolution it was run at; a backbone accepts the range it
-  declares.
-- **Three inferences in flight per key, no queue.** Over it, `429`. The three are three across the
-  whole team, not three per person, and only the predict routes take one — a dataset listing or the
-  model directory is answered from memory and never queues behind a GPU; see
-  [Limits](../api/http.md#limits).
+**Each model runs at a side it was measured at.** `sam3.1-meta` runs at one of `672`, `784`, `896` or
+`1008` pixels square, 1008 the default and the ceiling. `gwfss-segformer-b4` runs at the `512` it was
+trained at and offers no choice at all. `tasselnetv4` resizes every picture to `384` px tall and tiles
+it, because that is the training crop. Those task models resize to a square *without preserving
+aspect ratio*.
+
+The two backbones are the exception: `side` is the longer side and the shorter one follows the aspect
+ratio, each dimension floored to 16, so a 4:6 photograph at 512 runs at 336 × 512. `internvl-u`
+generates one megapixel at most, and an edit is no exception: a photograph larger than that is re-run
+at the ceiling and answered smaller, with a warning saying so.
+
+The answer reports `resolution_used`, so you can tell how coarse a result is at full size. A value
+above the published ceiling is not an error: the model runs at the ceiling and says so in `warnings`.
+A smaller one is faster and worse on small objects — the table on the model page has the numbers. A
+task model accepts only a resolution it was run at; a backbone accepts the range it declares.
+
+**Three inferences in flight per key, no queue.** Over it, `429`. The three are three across the whole
+team, not three per person. Only inference takes one of them — the two predict routes and `generate`.
+A dataset listing or the model directory is answered from memory and never queues behind a GPU; see
+[Limits](../api/http/index.md#limits).
 
 **What is not a parameter, and why.** `device`, `half` and any per-request precision or memory switch
 describe the machine, not the model: they belong to the deployment, and a caller who could set them

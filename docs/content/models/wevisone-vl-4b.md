@@ -63,7 +63,7 @@ mask followed its own head — separate masks through a cluster, awns cut off, n
 
 **Its nearest neighbour here is [`sam3.1-meta`](sam3.1-meta.md), and the difference is where the pixels
 come from.** SAM 3.1 runs the picture at a fixed 1008-pixel square and answers masks from its own
-detector; this model keeps your image's own resolution (up to four megapixels), writes a box per
+detector. This model keeps your image's own resolution (up to four megapixels), writes a box per
 instance as text, and decodes each mask on a 1024 square before upsampling it to your size. It also
 reports no score, so a caller accepts every instance or none rather than choosing a threshold.
 
@@ -72,8 +72,9 @@ frame and the same machinery returns leaves.
 
 ## What it is not
 
-- **Fast.** About 25 seconds for forty instances, proportional to how many it finds. It holds a lane
-  for that long, which is why the declaration gives it 90 seconds rather than the default ten.
+- **Fast.** About 25 seconds for forty instances, proportional to how many it finds. It holds one of
+  your three inferences for that long, which is why the declaration gives it 90 seconds rather than
+  the default ten.
 - **A detector with confidences.** No score means a caller cannot threshold an answer; the model's own
   judgement about what counts as an instance is the whole filter.
 - **One phrase per call.** Two classes are two requests, not one.

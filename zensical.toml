@@ -27,11 +27,11 @@ edit_uri = "edit/main/docs/content/"
 # The framed API pages need one file: it sizes each frame and passes the reader's palette into it. It
 # lives in `docs/content/api/`, beside the pages that use it.
 extra_javascript = ["api/frame.js"]
-# Two stylesheets: the footer's two-block credit, whose text is in
+# Three stylesheets: the footer's two-block credit, whose text is in
 # `docs/overrides/partials/copyright.html` — one place, because a credit split between a config value
-# and a template is a credit that goes stale — and the quickstart's recorded results, which take a
-# code block's monospace without its card.
-extra_css = ["footer.css", "output.css"]
+# and a template is a credit that goes stale — the quickstart's recorded results, which take a
+# code block's monospace without its card, and the wrapped prompt blocks.
+extra_css = ["footer.css", "output.css", "typography.css"]
 
 # The interactive reference is an external link rather than a generated section: it is FastAPI's own
 # Swagger UI on the API host, which needs no renderer here and cannot be a static page. Every page
@@ -41,9 +41,16 @@ nav = [
   { "Start here" = "index.md" },
   { "Calling the API" = [
       { "Calling the API" = "api/index.md" },
-      { "Raw HTTP" = "api/http.md" },
-      { "Base API reference" = "api/reference.md" },
-      { "Clients" = "api/clients.md" },
+      { "Raw HTTP" = [
+          { "Raw HTTP" = "api/http/index.md" },
+          { "Live API reference" = "api/reference.md" },
+      ] },
+      { "Clients" = [
+          { "Clients" = "api/clients/index.md" },
+          { "Python" = "api/clients/python.md" },
+          { "JavaScript" = "api/clients/javascript.md" },
+          { "Java" = "api/clients/java.md" },
+      ] },
   ] },
   { "Datasets" = [
       { "Datasets" = "datasets/index.md" },
@@ -53,19 +60,24 @@ nav = [
   ] },
   { "Models" = [
       { "Models" = "models/index.md" },
-      { "sam3.1-meta" = "models/sam3.1-meta.md" },
-      { "gwfss-segformer-b4" = "models/gwfss-segformer-b4.md" },
-      { "SPROUT-L" = "models/sprout-l-gwfss.md" },
-      { "tasselnetv4" = "models/tasselnetv4.md" },
-      { "internvl-u" = "models/internvl-u.md" },
-      { "WeVisOne-VL" = "models/wevisone-vl-4b.md" },
-      { "DINOv3 backbones" = "models/dinov3.md" },
-      { "YOLO26" = "models/yolo.md" },
-      { "Nano Banana" = "models/nano-banana.md" },
+      { "General models" = [
+          { "sam3.1-meta" = "models/sam3.1-meta.md" },
+          { "wevisone-vl-4b" = "models/wevisone-vl-4b.md" },
+          { "internvl-u" = "models/internvl-u.md" },
+          { "Nano Banana" = "models/nano-banana.md" },
+          { "YOLO26" = "models/yolo.md" },
+          { "DINOv3 backbones" = "models/dinov3.md" },
+      ] },
+      { "Specialized models" = [
+          { "gwfss-segformer-b4" = "models/gwfss-segformer-b4.md" },
+          { "SPROUT-L" = "models/sprout-l-gwfss.md" },
+          { "tasselnetv4" = "models/tasselnetv4.md" },
+      ] },
   ] },
   { "Examples" = [
       { "Live demo" = "examples/demo.md" },
       { "Jupyter quickstart" = "examples/quickstart.md" },
+      { "Agent skills" = "examples/agent-skills.md" },
   ] },
 ]
 
@@ -82,6 +94,7 @@ features = [
   "content.footnote.tooltips",
   "content.tabs.link",
   "content.tooltips",
+  "navigation.expand",
   "navigation.footer",
   "navigation.indexes",
   "navigation.instant",

@@ -1,0 +1,8 @@
+/* A prompt is prose that happens to live in a code block: it is copied as one instruction, but a
+ * URL makes the line longer than any pane. Wrap only the blocks marked `{ .wrap }`, so ordinary
+ * code keeps its horizontal scroll and its indentation. */
+.md-typeset .wrap pre,
+.md-typeset .wrap code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

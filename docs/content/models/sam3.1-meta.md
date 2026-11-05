@@ -29,7 +29,7 @@ the model does accept — so a typo costs one round trip, not a guess.
 
 Every parameter is optional: leaving one out is the default in the table. Two of them are not simple
 values — `boxes` and `points` are JSON, and `imgsz` has a ceiling — and both are described once, in
-[Raw HTTP § Model parameters](../api/http.md#model-parameters).
+[Raw HTTP § Model parameters](../api/http/index.md#model-parameters).
 
 ## Prompting
 
@@ -107,7 +107,8 @@ with `counts` truncated, because it is one long string:
 ```json
 { "model": "sam3.1-meta", "resolution_used": 1008,
   "computed_by": { "machine": "lab-3090", "gpu": "NVIDIA GeForce RTX 3090",
-                   "compute_capability": "8.6", "cuda": "12.8", "torch": "2.10.0+cu128" },
+                   "compute_capability": "8.6", "cuda": "12.8", "torch": "2.10.0+cu128",
+                   "dtype": "bfloat16" },
   "objects": [
     { "idx": 0, "category": "wheat head", "score": 0.582, "area": 259818.0,
       "bbox": [2321.0, 1876.7, 766.1, 766.7],
@@ -119,19 +120,26 @@ with `counts` truncated, because it is one long string:
 - **`bbox` is `[x, y, width, height]`** in the image's own pixels — the same convention the dataset
   surface uses, so one drawing routine reads both.
 - **`rle` is COCO's compressed mask**, the same format `gwhs` publishes, and decoding it is
-  [the client's](../api/clients.md) job — it also keeps the raw `rle` beside the mask so the decoded
+  [the client's](../api/clients/index.md) job — it also keeps the raw `rle` beside the mask so the decoded
   pixel count can be checked against `area`.
 - **`area` is the decoded mask's pixel count, and `bbox` is the model's own box.** They are separate
   predictions and do not agree exactly: slack between a mask and the box around it is this contract
   working as declared, not a mistake.
 - **`computed_by` names the machine that produced the answer** — the operator's label for it, the card,
-  the compute capability, the CUDA and torch versions. A mask's boundary is the output of kernels the
-  runtime chooses, so two machines can disagree by a pixel, by a percent of a mask's area, or by one
-  object at the margin; when they do, this is the field to read. It is a reproducibility record, not an
-  inventory: no address, no memory figure, no path.
+  the compute capability, the CUDA and torch versions, and the dtype the forward pass ran in. A mask's
+  boundary is the output of kernels the runtime chooses, so two machines can disagree by a pixel, by a
+  percent of a mask's area, or by one object at the margin; when they do, this is the field to read. It
+  is a reproducibility record, not an inventory: no address, no memory figure, no path.
 - **`resolution_used` is the side the model actually ran at.** A mask computed at 1008 and mapped back
   onto a 2509-pixel-tall photograph is upscaled about 2.5×, and its boundary is visibly coarse at full
   size.
+
+## What it is not
+
+Not a wheat fine-tune: it is Meta's checkpoint, and whether it finds a head depends on the words or
+the example you give it. Not a counter: an answer is a set of masks with scores, and a count is how
+many survive your threshold. Not a per-object classifier: a mask's category is the phrase you asked
+for, or `null` when you gave geometry alone.
 
 ## Try it
 

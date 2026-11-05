@@ -2,8 +2,7 @@
 
 ![One gwhd row with every published head boxed](gwhd-row0-boxes.jpg)
 
-Row 0 of the demo set: a 1024×1024 plot photograph with **one box per wheat head**, 144 of them, drawn
-here in pink. The highlighted one is the row's first object. CC-BY-4.0.
+Row 0: a 1024×1024 plot photograph with **one box per wheat head**, 144 of them, drawn here in pink. The highlighted one is the row's first object. CC-BY-4.0.
 
 ## The response
 

@@ -205,8 +205,8 @@ the other picture's cell.
 
 ## See also
 
-- [Clients](../api/clients.md) — `features.grid`, already decoded, in Python, JavaScript and Java
-- [Raw HTTP § Backbone results](../api/http.md#backbone-results) — the fields and their encodings
+- [Clients](../api/clients/index.md) — `features.grid`, already decoded, in Python, JavaScript and Java
+- [Raw HTTP § Backbone results](../api/http/index.md#backbone-results) — the fields and their encodings
 - [`dinov3-vith16plus`](https://huggingface.co/facebook/dinov3-vith16plus-pretrain-lvd1689m) and
   [`dinov3-vitl16`](https://huggingface.co/facebook/dinov3-vitl16-pretrain-lvd1689m) — the model
   cards

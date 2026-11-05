@@ -26,7 +26,7 @@ turns the photograph off so the field is read on its own.
 `400`. The label must be `1` — extract-and-match has no negative exemplar, so a `0` would be silently
 ignored and is refused instead. Nothing else is exposed: no threshold, no point count, no resolution.
 The prompt is geometry in the image's own pixels; see
-[Raw HTTP § Geometry](../api/http.md#geometry-boxes-and-points).
+[Raw HTTP § Geometry](../api/http/index.md#geometry-boxes-and-points).
 
 An exemplar can be larger than the finest window the model counts in — a spike that fills the frame.
 That is not refused: the model counts at its coarsest window and the answer says so with
