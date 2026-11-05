@@ -1088,6 +1088,32 @@
     image.src = url;
   });
 
+  // A picture answer can be a canvas the service had to build: a model that only generates at its
+  // own ratios is given the caller's picture padded to the nearest one, and the answer records the
+  // box the picture occupies. Cutting that box out is what makes the result line up with the
+  // photograph, and it is the same record the three clients apply. Nothing here reads a canvas
+  // holding the photograph — only the answer's own `data:` picture is drawn and read back — so the
+  // cross-origin taint the pane cannot clear is not in play.
+  const cutToFrame = async (picture, frame) => {
+    const content = frame && Array.isArray(frame.content) ? frame.content : null;
+    if (!content) return picture;
+    const [left, top, right, bottom] = content;
+    if (left <= 0 && top <= 0 && right >= 1 && bottom >= 1) return picture;
+    const x = Math.max(0, Math.floor(left * picture.naturalWidth));
+    const y = Math.max(0, Math.floor(top * picture.naturalHeight));
+    const width = Math.max(
+      1, Math.min(picture.naturalWidth, Math.ceil(right * picture.naturalWidth)) - x,
+    );
+    const height = Math.max(
+      1, Math.min(picture.naturalHeight, Math.ceil(bottom * picture.naturalHeight)) - y,
+    );
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext("2d").drawImage(picture, x, y, width, height, 0, 0, width, height);
+    return loadImage(canvas.toDataURL("image/png"));
+  };
+
   // The canvas bitmap holds the image at close to its own size, so the mask's edge is the mask's edge
   // rather than a resampling artifact — how large that is *displayed* is a separate matter and
   // belongs to the pane, which fits the whole canvas inside itself. An upload can be far larger than
@@ -2118,7 +2144,10 @@
     let resultError = null;
     if (answer.image && answer.image.data) {
       try {
-        result = await loadImage("data:" + answer.image.media_type + ";base64," + answer.image.data);
+        result = await cutToFrame(
+          await loadImage("data:" + answer.image.media_type + ";base64," + answer.image.data),
+          answer.frame,
+        );
       } catch (error) {
         resultError = error.message;
       }

@@ -276,6 +276,41 @@ def test_a_hit_carries_the_record_of_the_machine_that_ran(tmp_path: Path, index_
     assert hit["resolution_used"] == 1008
 
 
+def test_a_frame_is_returned_and_kept_by_the_cache(tmp_path: Path, index_dir: Path) -> None:
+    """The box a client crops by is part of the answer, and a hit does not drop it."""
+    frame = {"width": 1024, "height": 512, "content": [0.0, 0.0556, 1.0, 0.9444]}
+    framed = {
+        **PREDICTION,
+        "image": {"media_type": "image/png", "width": 4, "height": 2, "data": "AAAA"},
+        "frame": frame,
+    }
+
+    class Framed(FakeBackends):
+        """Answer every prediction with a picture and the box it maps back to."""
+
+        def __call__(
+            self,
+            method: str,
+            url: str,
+            headers: Mapping[str, str],
+            body: bytes | None,
+            timeout: float,
+        ) -> Reply:
+            """Keep the health answer, and frame every prediction."""
+            reply = super().__call__(method, url, headers, body, timeout)
+            if url.endswith("/health"):
+                return reply
+            return Reply(status=200, body=json.dumps(framed).encode())
+
+    with _client(tmp_path, index_dir, Framed(), _cache(tmp_path)) as client:
+        first = _predict(client, row=0).json()
+        second = _predict(client, row=0).json()
+
+    assert first["frame"] == frame
+    assert second["frame"] == frame
+    assert second["cached"] is True
+
+
 def test_the_same_parameters_in_another_order_are_the_same_question(
     tmp_path: Path, index_dir: Path
 ) -> None:

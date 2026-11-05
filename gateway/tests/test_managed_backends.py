@@ -24,6 +24,7 @@ from biohack_gateway.cache import ResultCache
 from biohack_gateway.limits import ConcurrencyGate
 from biohack_gateway.models import (
     MAX_RESPONSE_TIMEOUT_SECONDS,
+    ModelPrediction,
     ModelRegistry,
     Reply,
     create_model_router,
@@ -100,6 +101,28 @@ class Fake:
 def _registry(url: str, fake: Fake, token: str = BACKEND_TOKEN) -> ModelRegistry:
     """Build a registry whose one model is served by one fake backend."""
     return ModelRegistry({MODEL: [url]}, token, transport=fake)
+
+
+def test_a_frame_is_a_box_inside_the_picture() -> None:
+    """The canvas record is relayed, and a box that leaves the frame is not this contract.
+
+    A backend that says the caller's picture occupies half the answer twice, or starts past where
+    it ends, has answered something no client can crop.
+    """
+    framed = {
+        **PREDICTION,
+        "frame": {"width": 1024, "height": 512, "content": [0.0, 0.0556, 1.0, 0.9444]},
+    }
+
+    body = ModelPrediction.model_validate(framed)
+    assert body.frame is not None
+    assert body.frame.width == 1024
+    assert body.frame.content == (0.0, 0.0556, 1.0, 0.9444)
+
+    with pytest.raises(ValueError, match="frame.content"):
+        ModelPrediction.model_validate(
+            {**PREDICTION, "frame": {"width": 10, "height": 10, "content": [0.6, 0.0, 0.4, 1.0]}}
+        )
 
 
 def test_a_declared_budget_is_handed_to_the_transport() -> None:

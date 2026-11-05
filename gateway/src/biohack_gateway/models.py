@@ -51,7 +51,7 @@ from pathlib import Path
 from typing import Any, Literal, NoReturn
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from biohack_gateway.admission import UploadQueue, UploadRefused
 from biohack_gateway.cache import CachedAnswer, ResultCache, canonical_request
@@ -579,6 +579,55 @@ class ImageFeatures(BaseModel):
     data: str
 
 
+class ReferenceFrame(BaseModel):
+    """The frame of the picture an answer edits, and where that picture sits in the answer.
+
+    A model that only generates at its own set of ratios has to be given a canvas rather than the
+    caller's frame. The service that builds that canvas records it here, so the answer can be cut
+    back to the shape the caller sent instead of being a picture nobody can line up with theirs.
+
+    Attributes
+    ----------
+    width, height : int
+        The picture the caller sent, in pixels, as the service prepared it.
+    content : tuple of four float
+        Where that picture sits in the returned one, as fractions — left, top, right, bottom. The
+        whole frame is ``(0.0, 0.0, 1.0, 1.0)``; anything smaller means the answer carries a band
+        the service added before the model saw it.
+    """
+
+    width: int = Field(gt=0)
+    height: int = Field(gt=0)
+    content: tuple[float, float, float, float]
+
+    @field_validator("content")
+    @classmethod
+    def _ordered(
+        cls, value: tuple[float, float, float, float]
+    ) -> tuple[float, float, float, float]:
+        """Refuse a box that leaves the frame or is not a rectangle.
+
+        Parameters
+        ----------
+        value : tuple of four float
+            The box as the backend wrote it.
+
+        Returns
+        -------
+        tuple of four float
+            The same box.
+
+        Raises
+        ------
+        ValueError
+            A coordinate is outside ``0..1``, or the edges are reversed or empty.
+        """
+        left, top, right, bottom = value
+        if not (0.0 <= left < right <= 1.0 and 0.0 <= top < bottom <= 1.0):
+            raise ValueError("frame.content must be an ordered box inside (0, 0, 1, 1)")
+        return value
+
+
 class GeneratedImage(BaseModel):
     """A picture a model produced: a generation, an edit, or anything else that is not geometry.
 
@@ -650,6 +699,11 @@ class ModelPrediction(BaseModel):
         geometry, a count, a descriptor or prose; a body carrying it still sends ``objects: []``,
         so one client parses every model. It is relayed byte for byte: the gateway decodes nothing
         and re-encodes nothing, so a picture's format is the container's decision.
+    frame : ReferenceFrame or None
+        The picture this answer edits, and where it sits in the returned one, where the model had
+        to be given a canvas to generate at a ratio it accepts. Absent for a generation and for
+        every model that does not edit a picture; a body carrying it still sends ``objects: []``.
+        It describes the raw ``image``: a decoder cuts the box out and leaves the rest alone.
     resolution_used : int or None
         The side the model actually ran at, where it reports one. This is the field that explains a
         mask's blockiness, and the one that makes a clamped `imgsz` visible without a warning.
@@ -677,6 +731,7 @@ class ModelPrediction(BaseModel):
     features: ImageFeatures | None = None
     answer: str | None = None
     image: GeneratedImage | None = None
+    frame: ReferenceFrame | None = None
     resolution_used: int | None = None
     computed_by: ComputedBy | None = None
     warnings: list[ModelWarning] = field(default_factory=list)

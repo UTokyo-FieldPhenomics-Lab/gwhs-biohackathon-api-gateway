@@ -980,3 +980,16 @@ def test_an_example_photograph_is_fetched_once_and_served_without_a_key(
     # outside it is closed like every other path here — with a key it is simply not a route.
     assert client.get("/play/example/other.jpg").status_code == 401
     assert client.get("/play/example/other.jpg", headers=KEY).status_code == 404
+
+
+def test_a_picture_answer_is_cut_back_to_the_frame_it_edits(client: TestClient) -> None:
+    """A padded canvas is recorded, and the page crops the result to the photograph's own frame.
+
+    The crop applies the same `frame` record the three clients apply, so the picture on screen is
+    the one mapped to the photograph rather than the canvas the model generated.
+    """
+    page = client.get(PLAY_PATH).text
+
+    assert "const cutToFrame = async (picture, frame)" in page
+    assert "await cutToFrame(" in page
+    assert 'canvas.toDataURL("image/png")' in page
