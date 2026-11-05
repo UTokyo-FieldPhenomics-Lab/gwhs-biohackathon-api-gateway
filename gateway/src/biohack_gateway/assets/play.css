@@ -137,8 +137,11 @@ body {
   width: auto;
 }
 /* A `boxes` value that is not yet a list of boxes: the field says so and the picture keeps the last
-   value that parsed, so a reader halfway through typing is marked rather than emptied. */
-#play input[aria-invalid="true"] {
+   value that parsed, so a reader halfway through typing is marked rather than emptied. A text
+   parameter carried from another model can be longer than this one accepts, and it is marked the
+   same way rather than cut or dropped. */
+#play input[aria-invalid="true"],
+#play textarea[aria-invalid="true"] {
   border-color: var(--bad);
 }
 #play select {

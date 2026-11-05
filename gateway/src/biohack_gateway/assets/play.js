@@ -5,6 +5,11 @@
   // and nothing else on this page writes it anywhere.
   let key = "";
   let fields = [];   // one entry per declared parameter: {name, type, input, read}
+  // The text a reader typed, per model id, and the id whose controls are on screen. A phrase is the
+  // one thing worth carrying across a model switch: the picture and a drawn box list already survive
+  // one, and a reader comparing two models on the same words should not have to retype them.
+  const typedText = new Map();
+  let shownModel = "";
   let datasetRows = new Map();   // dataset id -> its row count, as the surface last reported it
 
   const $ = (id) => document.getElementById(id);
@@ -218,17 +223,17 @@
       ],
     },
     // Text in, instances out: the only model here whose class is a phrase rather than a declared
-    // label list, which is why its chip writes a `query` and not a threshold. It writes one box per
+    // label list, which is why its chip writes a `prompt` and not a threshold. It writes one box per
     // instance and decodes a mask for each, so an answer takes about half a minute — `max_instances`
-    // is the control that bounds the wait, and the legend is where the query and the areas are read.
+    // is the control that bounds the wait, and the legend is where the phrase and the areas are read.
     "wevisone-vl-4b": {
       legend: true,
       examples: [
-        {label: "43 heads", dataset: "gwhd", row: 4, params: {query: "wheat head"}},
+        {label: "43 heads", dataset: "gwhd", row: 4, params: {prompt: "wheat head"}},
         // A photograph of the reader's own kind of subject, not a wheat row: the point of an
         // open-vocabulary model is that the phrase chooses the class, and six carrots answer in
         // seven seconds — which is also what a short answer costs compared with forty heads.
-        {label: "carrots", image: DEMO_IMAGE_PREFIX + "carrot.jpg", params: {query: "carrot"}},
+        {label: "carrots", image: DEMO_IMAGE_PREFIX + "carrot.jpg", params: {prompt: "carrot"}},
       ],
     },
   };
@@ -405,8 +410,11 @@
     return box;
   };
 
-  const controlFor = (parameter) => {
-    const value = parameter.default;
+  const controlFor = (parameter, seed) => {
+    // A carried phrase arrives as a seed rather than as the parameter's default: the declaration's
+    // default belongs to the model, and a value the reader typed is theirs to keep — so a seeded
+    // control is already "touched" and goes out with the request.
+    const value = typeof seed === "string" ? seed : parameter.default;
     const bounded = typeof parameter.minimum === "number" && typeof parameter.maximum === "number";
     const numeric = bounded || typeof value === "number";
     const choices = parameter.values || parameter.enum;
@@ -537,7 +545,21 @@
     showPoints();
   };
 
-  const showParameters = (declaration) => {
+  const showParameters = (declaration, id) => {
+    // What the model being left was holding, before its controls go: `fields` is read here and
+    // replaced below, so this is the last moment the text exists. Kept per id as well, because a
+    // model with no text parameter at all sits on the way back to one that has.
+    const typed = {};
+    for (const field of fields) {
+      if (field.type !== "text") continue;
+      const value = field.read();
+      if (value !== null) typed[field.name] = value;
+    }
+    if (shownModel) {
+      if (Object.keys(typed).length) typedText.set(shownModel, typed);
+      else typedText.delete(shownModel);
+    }
+    shownModel = id;
     parameters.replaceChildren();
     // A declaration replaces the controls, and with them the picture's editor: a model without a
     // `boxes` parameter has nothing to draw, while the list itself stays for the next one that has.
@@ -552,7 +574,22 @@
       // The description goes on the name, not the label: the label is `display: contents`, so it has
       // no box of its own and a tooltip hung on it would never appear.
       if (parameter.description) name.title = parameter.description;
-      const input = controlFor(parameter);
+      // The model just left wins while the parameter names agree — that is the comparison the reader
+      // is making — and otherwise this model's own last phrase, which is what comes back after a
+      // switch through a model with no text field at all.
+      const seed = parameter.type === "text"
+        ? (typed[parameter.name] ?? (typedText.get(id) || {})[parameter.name])
+        : undefined;
+      const input = controlFor(parameter, seed);
+      // A phrase carried from a model whose limit was longer arrives whole: cutting it silently would
+      // answer a different question than the one on screen, and dropping it would lose the text. The
+      // field says the limit here and the request's own refusal says the rest.
+      if (parameter.type === "text" && typeof input.value === "string"
+        && typeof parameter.max_length === "number"
+        && input.value.length > parameter.max_length) {
+        input.setAttribute("aria-invalid", "true");
+        input.title = `this model takes at most ${parameter.max_length} characters`;
+      }
       // One cell per row: the control and, for a slider, the number it is on. A grid places cells,
       // not controls, and a readout left loose would take a row of its own.
       const cell = document.createElement("span");
@@ -837,7 +874,7 @@
     // drag that draws into a hidden layer is a gesture with no visible result.
     if (!view.geometry) editor = null;
     showView();
-    showParameters(declaration);
+    showParameters(declaration, id);
     showExamples(id, declaration);
     showFacts(declaration);
     $("run").disabled = !declaration.backends_up;
@@ -927,6 +964,8 @@
     dataset.replaceChildren();
     parameters.replaceChildren();
     fields = [];
+    typedText.clear();
+    shownModel = "";
     boxInput = null;
     boxes = [];
     showMode();

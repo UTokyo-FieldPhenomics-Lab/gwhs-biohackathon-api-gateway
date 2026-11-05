@@ -50,7 +50,7 @@ what runs.
 |---|---|
 | Image | `wevisone-vl-4b:20261105b`, 20.7 GB, on the DGX |
 | Container | `--gpus device=1`, `-p 12720:12711`, `WEVISONE_MACHINE=dgx-v100` |
-| Declaration | id `wevisone-vl-4b`, `resolution: 1024`, `response_timeout_seconds: 90`, `query` + `max_instances` |
+| Declaration | id `wevisone-vl-4b`, `resolution: 1024`, `response_timeout_seconds: 90`, `prompt` + `max_instances` |
 | `models.json` | one URL, `dgx-v100:12720`, resolved in `.agents/local/pool.md`; family `WeVisOne-VL`, label `4B` |
 
 The container reports `budget ok: needs 15.2 GB, budget 31.0 GB`, loads in **9.6 s** and warms in
@@ -58,7 +58,7 @@ The container reports `budget ok: needs 15.2 GB, budget 31.0 GB`, loads in **9.6
 warmed — the first real caller pays about three seconds more than the model itself. That is written
 down rather than papered over.
 
-Through the gateway, `POST /models/wevisone-vl-4b/predict?query=wheat head` on `gwhd` row 4 answered
+Through the gateway, `POST /models/wevisone-vl-4b/predict?prompt=wheat head` on `gwhd` row 4 answered
 **200 in 24.45 s, 14,452 bytes, 43 objects**, `resolution_used: 1024`, `computed_by.machine: dgx-v100`,
 `dtype: float16`. Five of those masks were decoded with `clients/python/global_wheat.py`'s own
 `rle_decode` and every one summed to the published `area` exactly, which is the check that a

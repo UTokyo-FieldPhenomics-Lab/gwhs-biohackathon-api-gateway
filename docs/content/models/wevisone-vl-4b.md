@@ -17,11 +17,13 @@ already selected; type what to look for, or press one of the two example chips.
 <!-- parameters:start -->
 | parameter | default | accepts | what it does |
 |---|---|---|---|
-| `query` | — | text, at most 120 characters | What to find, in words: a class name or a phrase, e.g. 'wheat head'. Every object in the answer is one instance of it, and a frame with none answers an empty list. |
+| `prompt` | — | text, at most 120 characters | What to find, in words: a class name or a phrase, e.g. 'wheat head'. Every object in the answer is one instance of it, and a frame with none answers an empty list. |
 | `max_instances` | `64` | `1` – `100` | How many instances to answer. It is the wait as much as the count: each one costs about half a second, and the model stops looking at this number. |
 <!-- parameters:end -->
 
-`query` is **required**: this model has no default class, and an empty phrase would ask for "something".
+`prompt` is **required**: this model has no default class, and an empty phrase would ask for "something".
+Tencent's own package calls it `query`; this contract calls it `prompt`, like every other model here
+that takes text, so one script can point at two models by changing the id.
 `max_instances` is the wait as much as the count — the model writes one six-token box per instance and
 decodes a mask for each, so **sixty instances is about half a minute** and one is a few seconds. It
 stops looking at that number rather than generating more and dropping the rest.
@@ -46,7 +48,7 @@ One object per instance, in the same shape a dataset's annotations arrive in:
 - **There is no `score`.** The model either names an object or answers `None` for a target it cannot
   find; it publishes no per-instance confidence, and one invented from a mask's area would be a fact
   about this service rather than about the picture.
-- **`category` is your query**, because that is the class: two calls on one frame with different
+- **`category` is your prompt**, because that is the class: two calls on one frame with different
   phrases are two different questions.
 - **`rle` is COCO's compressed counts**, decoded by the same client code a dataset's geometry is.
   `area` is there so a decoder can be checked against one number.
