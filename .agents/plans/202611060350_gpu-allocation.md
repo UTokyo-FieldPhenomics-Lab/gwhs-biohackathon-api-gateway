@@ -106,8 +106,11 @@ started before Monday's session and stopped after Friday's, which is what brings
 
 ## The first g7e, and the one-week probe
 
-`deploy/probe-gpu-capacity.sh` runs hourly from 09:00 to 15:00 JST (01:00–07:00 in Frankfurt) and
-stops itself on 2026-11-13: the question is what the small hours look like, not a permanent watch.
+`deploy/probe-gpu-capacity.sh` asks every ten minutes between 09:00 and 15:00 JST (01:00–07:00 in
+Frankfurt) and stops itself on 2026-11-13: the question is what the small hours look like, not a
+permanent watch. A miss is retried ten minutes later; a launch cools the probe for an hour, because a
+second question so soon after a hit says nothing new. That cadence is what makes the log a record of
+availability *density* rather than of two arbitrary moments.
 
 Every launch it makes is a probe and is terminated within seconds — except the first `g7e.*`, which is
 held for **at most 60 minutes** and then destroyed whatever the trial reached. On that one instance the

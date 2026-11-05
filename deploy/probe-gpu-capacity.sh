@@ -50,6 +50,8 @@ LOG=${LOG:-$HOME/.local/state/gwhs/gpu-capacity.log}
 STATE_DIR=${STATE_DIR:-$HOME/.local/state/gwhs}
 TRIAL_MARKER="$STATE_DIR/g7e-trial-done"
 TRIAL_MAX_MINUTES=${TRIAL_MAX_MINUTES:-60}
+COOLDOWN_SECONDS=${COOLDOWN_SECONDS:-3600}
+LAST_HIT="$STATE_DIR/gpu-last-hit"
 PROBE_UNTIL=${PROBE_UNTIL:-2026-11-13}
 TRIAL=${TRIAL:-1}
 TYPES=(g7e.2xlarge g7e.4xlarge g6.xlarge g6e.xlarge)
@@ -59,6 +61,16 @@ exec 9>"$LOG.lock"
 if ! flock -n 9; then
   echo "another probe is running" >&2
   exit 0
+fi
+
+# A hit cools the probe for an hour: the question is how often capacity appears, and asking again ten
+# minutes later after getting one tells us nothing new about that. A miss is retried in ten minutes.
+if [[ -f $LAST_HIT ]]; then
+  since=$(( $(date +%s) - $(cat "$LAST_HIT" 2>/dev/null || echo 0) ))
+  if (( since < COOLDOWN_SECONDS )); then
+    echo "$(date -Is) cooldown ${since}s since the last hit — skipping" >>"$LOG"
+    exit 0
+  fi
 fi
 
 if [[ $(date +%Y-%m-%d) > $PROBE_UNTIL ]]; then
@@ -131,6 +143,7 @@ for type in "${TYPES[@]}"; do
 
     case "$out" in
       i-*)
+        date +%s >"$LAST_HIT"
         if [[ $trial_this == yes ]]; then
           echo "$(date -Is) $type $az LAUNCHED $out — held for the trial" >>"$LOG"
           run_trial "$out"

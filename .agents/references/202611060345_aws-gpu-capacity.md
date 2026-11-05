@@ -58,11 +58,17 @@ three cents. An instance that changes AZ changes its private address, so `models
 subnets, logs one line per attempt to `~/.local/state/gwhs/gpu-capacity.log`, and terminates anything
 it launches. The subnet ids, the AMI and the security group are host-private and are not in the script:
 it sources `~/.config/gwhs/gpu-probe.env` (mode 0600), so the repository carries the question and the
-machine carries the identifiers. A crontab entry on the workstation runs it hourly from 09:00 to 15:00
-JST, which is 01:00–07:00 in Frankfurt, and the script removes that entry itself after 2026-11-13 —
-one week is enough to learn what the small hours look like:
+machine carries the identifiers. A crontab entry on the workstation runs it every ten minutes from
+09:00 to 15:00 JST, which is 01:00–07:00 in Frankfurt, and the script removes that entry itself after
+2026-11-13 — one week is enough to learn what the small hours look like:
 
-    0 9-15 * * * /home/crest/Documents/Github/gwhs-biohackaton-api-gateway/deploy/probe-gpu-capacity.sh
+    */10 9-15 * * * /home/crest/Documents/Github/gwhs-biohackaton-api-gateway/deploy/probe-gpu-capacity.sh
+
+**Ten minutes after a miss, an hour after a hit.** A launch writes its timestamp to
+`~/.local/state/gwhs/gpu-last-hit` and every pass inside the next hour exits without asking. The
+asymmetry is the point: consecutive misses tell us capacity is absent at that minute, and a hit needs
+no confirmation, so the next useful question is an hour later. What the log then holds is a
+ten-minute-resolution record of when Frankfurt will take a modern GPU — which is what "how often" means.
 
 ## The first g7e is held, once, for one hour
 
