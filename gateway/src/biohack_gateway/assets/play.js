@@ -760,6 +760,112 @@
     return search.toString();
   };
 
+  // The same request in the shape each client takes. A parameter is read from the control that
+  // already decided whether it is sent, and its value is converted to the type the client's language
+  // expects: a geometry parameter is one JSON list, not a string that happens to look like one.
+  const codeParameter = (field) => {
+    const value = field.read();
+    if (value === null) return null;
+    if (field.type === "boxes" || field.type === "points") {
+      const parsed = parseGeometry(value, field.type, last?.image);
+      if (parsed.error) return {name: field.name, type: "invalid"};
+      return {name: field.name, type: field.type, value: parsed.value};
+    }
+    if (field.type === "number") {
+      const number = Number(value);
+      return {name: field.name, type: "number", value: Number.isFinite(number) ? number : value};
+    }
+    if (field.type === "boolean") {
+      return {name: field.name, type: "boolean", value: value === "true"};
+    }
+    return {name: field.name, type: field.type, value};
+  };
+
+  const quote = (value) => JSON.stringify(value);
+
+  const pythonValue = (parameter) => {
+    if (parameter.type === "boolean") return parameter.value ? "True" : "False";
+    if (parameter.type === "number") return String(parameter.value);
+    return quote(parameter.value);
+  };
+
+  const jsValue = (parameter) => {
+    if (parameter.type === "number" || parameter.type === "boolean") return String(parameter.value);
+    return quote(parameter.value);
+  };
+
+  const javaList = (value) => Array.isArray(value)
+    ? "List.of(" + value.map(javaList).join(", ") + ")"
+    : (typeof value === "string" ? quote(value) : String(value));
+
+  const javaValue = (parameter) => {
+    if (parameter.type === "number" || parameter.type === "boolean") return String(parameter.value);
+    if (parameter.type === "boxes" || parameter.type === "points") return javaList(parameter.value);
+    return quote(parameter.value);
+  };
+
+  const uploadedName = () => {
+    const chosen = $("file").files[0];
+    return chosen ? chosen.name : "photo.jpg";
+  };
+
+  const pythonCall = (id, upload, params, resize) => {
+    const args = upload
+      ? `${quote(id)}, ${quote(uploadedName())}`
+      : `${quote(id)}, ${quote(dataset.value)}, ${Number($("row").value)}`;
+    const options = params.map((parameter) => `${parameter.name}=${pythonValue(parameter)}`);
+    if (upload && !resize) options.push("resize_before_submit=False");
+    if (!options.length) return `client.${upload ? "predict_file" : "predict"}(${args})`;
+    return `client.${upload ? "predict_file" : "predict"}(\n    ${args},\n` +
+      options.map((option) => `    ${option},`).join("\n") + "\n)";
+  };
+
+  const javascriptCall = (id, upload, params, resize) => {
+    const args = upload
+      ? `${quote(id)}, file`
+      : `${quote(id)}, ${quote(dataset.value)}, ${Number($("row").value)}`;
+    const options = [];
+    if (upload && !resize) options.push("resizeBeforeSubmit: false");
+    for (const parameter of params) options.push(`${parameter.name}: ${jsValue(parameter)}`);
+    if (!options.length) return `client.${upload ? "predict_file" : "predict"}(${args});`;
+    return `client.${upload ? "predict_file" : "predict"}(${args}, {\n` +
+      options.map((option) => `  ${option},`).join("\n") + "\n});";
+  };
+
+  const javaCall = (id, upload, params, resize) => {
+    const args = upload
+      ? `${quote(id)}, new java.io.File(${quote(uploadedName())})`
+      : `${quote(id)}, ${quote(dataset.value)}, ${Number($("row").value)}`;
+    const entries = params.map((parameter) =>
+      `      ${quote(parameter.name)}, ${javaValue(parameter)}`);
+    const map = entries.length ? `Map.of(\n${entries.join(",\n")})` : "Map.of()";
+    if (upload) {
+      return `Map<String, Object> answer = client.predict_file(\n    ${args},\n` +
+        `    ${map}, ${resize});`;
+    }
+    return `Map<String, Object> answer = client.predict(\n    ${args},\n` +
+      `    ${map});`;
+  };
+
+  const clientCalls = () => {
+    const id = selectedModel();
+    if (!id) return null;
+    const params = [];
+    for (const field of fields) {
+      const parameter = codeParameter(field);
+      if (parameter === null) continue;
+      if (parameter.type === "invalid") return {invalid: field.name};
+      params.push(parameter);
+    }
+    const upload = $("source").value === "upload";
+    const resize = $("resize").checked;
+    return {
+      python: pythonCall(id, upload, params, resize),
+      javascript: javascriptCall(id, upload, params, resize),
+      java: javaCall(id, upload, params, resize),
+    };
+  };
+
   // The same call, as a command line, so a reader can take it to a shell. Three things shape it, and
   // each is the reason for something that would otherwise look like fuss:
   //
@@ -771,7 +877,7 @@
   //     whatever the reader typed, and a shell is not the place to find out that one held a quote.
   const shell = (text) => "'" + String(text).replace(/'/g, "'\\''") + "'";
 
-  const requestText = () => {
+  const curlText = () => {
     const id = selectedModel();
     if (!id) return "";
     const upload = $("source").value === "upload";
@@ -799,9 +905,24 @@
 
   /** Show the call the controls currently describe, or hide the panel when they describe none. */
   const refreshRequest = () => {
-    const text = requestText();
-    $("request-body").textContent = text;
-    $("request").hidden = !text;
+    const id = selectedModel();
+    $("request").hidden = !id;
+    if (!id) return;
+    $("request-curl").textContent = curlText();
+    const calls = clientCalls();
+    const invalid = $("request-invalid");
+    invalid.hidden = !(calls && calls.invalid);
+    if (calls && calls.invalid) {
+      invalid.textContent =
+        `The ${calls.invalid} field is not a valid list of coordinates; fix it to see the client calls.`;
+    }
+    const tabs = $("request-tabs");
+    tabs.hidden = Boolean(calls && calls.invalid);
+    if (!tabs.hidden) {
+      $("request-python").textContent = calls.python;
+      $("request-javascript").textContent = calls.javascript;
+      $("request-java").textContent = calls.java;
+    }
   };
 
   const fill = (select, entries, label) => {
@@ -2631,7 +2752,7 @@
   // listened to as a whole, because how many controls it holds is the model's business and not this
   // page's. The model is deliberately not in this list: the command waits for its declaration, so the
   // parameters in it are the ones that model declares rather than the ones the last one did.
-  for (const id of ["source", "dataset", "row", "file"]) {
+  for (const id of ["source", "dataset", "row", "file", "resize"]) {
     $(id).addEventListener("input", refreshRequest);
     $(id).addEventListener("change", refreshRequest);
   }

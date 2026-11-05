@@ -164,10 +164,27 @@ __PLAY_CSS__
   </figure>
 
   <details id="request" hidden>
-    <summary>The equivalent curl</summary>
-    <p class="note">The call this page makes, with your key left as <code>$KEY</code> — the page never
-      prints it.</p>
-    <pre id="request-body"></pre>
+    <summary>The equivalent call</summary>
+    <p class="note">The request these controls describe, from a downloaded client and as curl. The
+      page never prints your key: the clients read <code>GLOBAL_WHEAT_API_KEY</code>, and the curl
+      uses <code>$KEY</code>.</p>
+    <p class="note" id="request-invalid" hidden></p>
+    <div class="call-tabs" id="request-tabs">
+      <input type="radio" name="call-language" id="call-python-tab" checked>
+      <input type="radio" name="call-language" id="call-javascript-tab">
+      <input type="radio" name="call-language" id="call-java-tab">
+      <input type="radio" name="call-language" id="call-http-tab">
+      <div class="call-tab-labels">
+        <label for="call-python-tab">Python</label>
+        <label for="call-javascript-tab">JavaScript</label>
+        <label for="call-java-tab">Java</label>
+        <label for="call-http-tab">HTTP</label>
+      </div>
+      <pre id="request-python" class="call-panel"></pre>
+      <pre id="request-javascript" class="call-panel"></pre>
+      <pre id="request-java" class="call-panel"></pre>
+      <pre id="request-curl" class="call-panel"></pre>
+    </div>
   </details>
 
   <details id="response" hidden>

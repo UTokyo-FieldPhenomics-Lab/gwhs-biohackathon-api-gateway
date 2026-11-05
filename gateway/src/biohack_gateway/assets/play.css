@@ -808,3 +808,57 @@ body {
   border-radius: 6px;
   font-size: 0.85em;
 }
+
+/* The equivalent call: one panel, four languages. Radio buttons carry the choice, so the tabs need
+ * no script and a reader's choice survives the next parameter edit. */
+#play .call-tabs {
+  margin-top: 0.6rem;
+}
+#play .call-tabs[hidden] {
+  display: none;
+}
+#play .call-tabs input {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+}
+#play .call-tab-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.4rem;
+  border-bottom: 1px solid var(--line);
+}
+#play .call-tab-labels label {
+  padding: 0.35rem 0 0.45rem;
+  margin-bottom: -1px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+#play .call-tab-labels label:hover {
+  color: var(--ink);
+}
+#play .call-panel {
+  display: none;
+  margin-top: 0.6rem;
+}
+#play #call-python-tab:checked ~ .call-tab-labels label[for="call-python-tab"],
+#play #call-javascript-tab:checked ~ .call-tab-labels label[for="call-javascript-tab"],
+#play #call-java-tab:checked ~ .call-tab-labels label[for="call-java-tab"],
+#play #call-http-tab:checked ~ .call-tab-labels label[for="call-http-tab"] {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+#play #call-python-tab:checked ~ #request-python,
+#play #call-javascript-tab:checked ~ #request-javascript,
+#play #call-java-tab:checked ~ #request-java,
+#play #call-http-tab:checked ~ #request-curl {
+  display: block;
+}
+#play .call-tabs:has(input:focus-visible) .call-tab-labels {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
