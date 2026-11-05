@@ -69,10 +69,25 @@ With that in place: 43 masks, zero NaN, and the masks are good.
   plus `<OBJ>` — about 270 tokens at the ~12 tok/s the card sustains. Dense scenes scale with the
   object count, not with the image size, so a field view with 60 heads is ~35 s and a sparse one is
   seconds.
-- **`decoder_batch_size` is a real memory knob.** The default 16 needs 29.4 GB for 43 instances and
-  OOMs outright once its inputs are float32; 4 needs 15.0 GB. A 24 GB card must declare 4.
-- **4B is the model to use.** 2B found 38 instances and labelled leaves as heads — several boxes sit
-  on awns and blades rather than on grain. The speed it buys is 30 %, not worth the errors.
+- **`decoder_batch_size` buys half a second and costs memory.** Same image, same 43 instances,
+  decode only:
+
+  | batch | decode | peak VRAM |
+  |---|---|---|
+  | 2 | 5.05 s | 12.6 GB |
+  | 4 | 3.36 s | 15.0 GB |
+  | 8 | 2.89 s | 19.8 GB |
+  | 16 | — | OOM on this 32 GB card |
+
+  The default 16 squeezed into 29.4 GB on the first cold run and then OOM'd on the same card, which
+  is a setting sitting on the edge rather than a working one. About 2.4 s of every decode is fixed —
+  teacher-forcing the response back through the VLM to capture the `<OBJ>` hidden states — so
+  batching the head over instances is worth 0.5 s, not the half of the request a naive reading
+  suggests.
+- **4B is the model to use, and it is the largest release.** The Hugging Face collection holds two
+  checkpoints, 2B and 4B, and the paper; nothing bigger exists to switch to. 2B found 38 instances
+  and labelled leaves as heads — several boxes sit on awns and blades rather than on grain. The
+  speed it buys is 30 %, not worth the errors.
 
 The answer format is the one the earlier note recorded, with the mask decoded from the same tokens:
 `<ref>wheat head</ref><box><145><790><216><836><OBJ>,…</box>`, 1149 characters for 43 instances,
@@ -94,7 +109,7 @@ The gap to a `wevisone-vl` model id is a container, not research:
    instance with `bbox`, `rle` and the query as `category`.
 3. Declare `response_timeout_seconds: 60` — 26 s measured, and the gateway's default 10 s would cut
    a real image off. Declare `decoder_batch_size=4` and about 16 GB resident, so it does not share a
-   24 GB card.
+   24 GB card; 8 buys half a second and costs five more gigabytes.
 4. bf16 on Ampere and above needs no patch; fp16 on the V100 needs it. The dtype goes in
    `computed_by.dtype` like every other container.
 5. The weights are Apache-2.0 and the model page must carry that notice, per
