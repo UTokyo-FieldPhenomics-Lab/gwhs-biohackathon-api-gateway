@@ -70,7 +70,8 @@ public contract publishes; neither is gateway code.
   NaN, and a decoder returns correct boxes with every mask empty while bf16 and fp32 are unaffected —
   so a model that "works" on Ampere can fail only on the V100. Fix it in the container, and say in
   the record which dtype was actually measured.
-  [The case](../references/2026110521_wevisone-vl-masks.md).
+  [The case](../references/2026110521_wevisone-vl-masks.md),
+  [DINOv3 on a V100](../references/202611060155_dgx-four-cards.md).
 - **A counting model answers a count and the field it integrates, never invented points.** It has no
   mask, so its `objects` is an empty list rather than boxes or dots manufactured from a density map;
   `density` is that map, cell by cell, and its sum is the count. A point set belongs to a

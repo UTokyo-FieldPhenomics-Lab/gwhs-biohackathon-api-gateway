@@ -79,9 +79,10 @@ their alias, so their run lines still need the machine label; the dated cells ab
 they served.
 
 No card on `dgx-v100-*` runs `sam3.1-meta` (its forward pass demands bfloat16) or `internvl-u` (bf16
-weights, no measured fp16 conversion). The two DINOv3 ids run there in `float32`: their own
-capability choice, `float16`, answers 500 with NaN features on a V100, so that host pins
-`DINOV3_DTYPE=float32` until the container's default is fixed.
+weights, no measured fp16 conversion). The two DINOv3 ids run there in `float32` because their image
+now chooses it below compute capability 8.0: `float16` overflows this release's positional encoding
+and answers 500 with NaN features, measured on a V100 2026-11-06. The same images still load
+`bfloat16` on 8.0 and above, so the 3090, 4090 and 5090 are unchanged.
 [Four cards](../references/202611060155_dgx-four-cards.md).
 
 Location groups are conservative labels, not proven independent fault domains. Separate laboratory
