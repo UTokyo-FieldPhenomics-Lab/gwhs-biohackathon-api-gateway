@@ -417,6 +417,35 @@ def test_the_model_page_loads_the_site_own_client(client: TestClient) -> None:
     assert "function rle_decode" not in page  # the decoder is loaded, never copied
 
 
+def test_the_curl_quotes_a_form_path_for_curls_own_parser(client: TestClient) -> None:
+    """A `;` in a file name is curl's option separator, not part of the path.
+
+    The shell quoting is one layer; curl reads the form value again after the shell has handed it
+    over. `formFile` is the second layer, and it has to stay on the `-F` line rather than beside it.
+    The browser behaviour — a `;` name uploading as one file — is checked by hand; this is the part
+    a unit test can hold.
+    """
+    page = client.get(PLAY_PATH).text
+
+    assert "const formFile = " in page
+    assert 'file=@"' in page
+    assert "shell(formFile(" in page
+
+
+def test_the_page_says_what_the_javascript_file_variable_is(client: TestClient) -> None:
+    """The JavaScript upload takes a File or Blob, so its snippet cannot name a path.
+
+    The note is shown only for that tab and an upload, but the page without it leaves the reader a
+    free variable: this test is why removing the explanation is a failing test rather than a quiet
+    return of the confusion the release check found.
+    """
+    page = client.get(PLAY_PATH).text
+
+    assert 'id="request-file-note"' in page
+    assert "await readFile" in page
+    assert "File</code> or <code>Blob" in page
+
+
 def test_the_model_page_names_no_model_and_no_parameter_outside_its_presets(
     client: TestClient,
 ) -> None:

@@ -154,6 +154,22 @@ java -ea -cp /tmp/opencode/global-wheat-java-checks Checks
 `GLOBAL_WHEAT_LIVE=1` enables client live smoke tests and requires a participant key in
 `GLOBAL_WHEAT_API_KEY`. Ordinary checks use local fixtures or HTTP servers.
 
+### Live API conformance
+
+`gateway/tests/test_live_contract.py` calls the deployed API the way the participant site documents
+it: the gate, the dataset and image surface, the public `data.*` plane, every model's answer shape,
+the parameter and body refusals, uploads, the result cache and the per-team lanes. It is skipped
+unless `GLOBAL_WHEAT_LIVE=1`; `GLOBAL_WHEAT_API` points it at another host.
+
+```bash
+GLOBAL_WHEAT_LIVE=1 GLOBAL_WHEAT_API_KEY=... \
+  uv run --project gateway pytest gateway/tests/test_live_contract.py
+```
+
+A hosted generation spends money and a 16 MB upload spends the link, so those two are behind
+`GLOBAL_WHEAT_LIVE_GENERATE=1` and `GLOBAL_WHEAT_LIVE_BIG_UPLOAD=1`. A model whose pool entry has no
+machine answering is skipped rather than failed: the contract is what is under test, not the roster.
+
 ### Documentation site
 
 `zensical.toml` builds `docs/content/` into the ignored `site/` directory. The workflow in
