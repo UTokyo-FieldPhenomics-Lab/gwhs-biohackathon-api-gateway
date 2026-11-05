@@ -5,12 +5,16 @@
   // and nothing else on this page writes it anywhere.
   let key = "";
   let fields = [];   // one entry per declared parameter: {name, type, input, read}
-  // The one text field that outlives a model switch: `prompt`. It is the phrase a reader compares two
-  // models on, so it is kept in `localStorage` — a reload does not cost it either. Nothing else is
-  // carried: a threshold, a size or a box list means something different to every model that declares
-  // one, and the picture and a drawn box list already survive a switch on their own.
-  const promptMemory = (() => {
-    const NAME = "biohack-gateway/prompt";
+  // The words a reader typed, which outlive both a change of model and a reload: they are the one
+  // thing two models are compared on, and they are kept in `localStorage` for it. Only text controls
+  // take part. A threshold, a size or a box list means something different to every model that
+  // declares one, so those start from the declaration; the picture and a drawn box list already
+  // survive a switch on their own.
+  //
+  // The rule is a type and not a name: naming the field here would be this page knowing a model's
+  // declaration, which is the one thing it is built not to do.
+  const phraseMemory = (() => {
+    const NAME = "biohack-gateway/phrase";
     let held = "";
     return {
       read: () => {
@@ -583,14 +587,12 @@
       // The description goes on the name, not the label: the label is `display: contents`, so it has
       // no box of its own and a tooltip hung on it would never appear.
       if (parameter.description) name.title = parameter.description;
-      // `prompt` is the field the store fills; every other control starts from the declaration, which
-      // is the only thing this page is allowed to know about a model.
-      const seed = parameter.type === "text" && parameter.name === "prompt"
-        ? promptMemory.read() || undefined
-        : undefined;
+      // A text control starts from what the reader last typed; every other one starts from the
+      // declaration, which is the only thing this page is allowed to know about a model.
+      const seed = parameter.type === "text" ? phraseMemory.read() || undefined : undefined;
       const input = controlFor(parameter, seed);
-      if (parameter.type === "text" && parameter.name === "prompt") {
-        input.addEventListener("input", () => promptMemory.write(input.value.trim()));
+      if (parameter.type === "text") {
+        input.addEventListener("input", () => phraseMemory.write(input.value.trim()));
       }
       // A phrase carried from a model whose limit was longer arrives whole: cutting it silently would
       // answer a different question than the one on screen, and dropping it would lose the text. The

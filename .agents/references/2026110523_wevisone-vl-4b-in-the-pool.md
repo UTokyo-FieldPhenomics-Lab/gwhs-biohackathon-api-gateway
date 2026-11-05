@@ -70,16 +70,27 @@ different canonical query and misses that key; that is the cache behaving as the
 
 ## The demo
 
-Two changes in `play.js`:
+Three changes in `play.js`:
 
 - **A clock.** `running… 12 s`, ticked once a second, cleared first thing in `finally` so a tick cannot
   overwrite an error. A half-minute request with a frozen line reads as a page that has stopped.
-- **The preset.** Two chips on `gwhd` row 4 — `wheat head` and `leaf` — because an open-vocabulary
-  model is shown by changing the phrase, and a legend, because the query and the areas are what the
-  answer is read for.
+- **The preset.** Two chips — `wheat head` on `gwhd` row 4, and `carrot` on the demo's own carrot
+  photograph — because an open-vocabulary model is shown by changing the phrase, and a legend,
+  because the phrase and the areas are what the answer is read for. The first version's second chip
+  was `leaf`, and the page's class-colour invariant refused it: a dataset's class name may not be
+  written into the page.
+- **The phrase memory.** A text control survives a change of model, and it is kept in `localStorage`
+  so a reload does not cost it either; every other control starts from the declaration. Today that is
+  one field, `prompt`, on every model that has one. It began as a per-id map of every text parameter,
+  and that was too much: a confidence threshold or a box list means something different to each model
+  that declares one, and the reader cannot see which values were carried. It is keyed on the type and
+  not on the name, because naming a parameter in the page is the invariant that says the page is built
+  from `GET /models` — the test caught the literal within a comment, which is how the rule found out.
+  Verified by typing `carrot` on `wevisone-vl-4b`, reloading the page onto `sam3.1-meta`, and watching
+  a frame that answers 18 heads on its own default answer **0 objects**.
 
 Verified in the browser rather than by reading: the page lists the id, the two chips, a textarea for
-`query` and a slider for `max_instances`; pressing the chip then Run showed `running… 12 s`, then
+`prompt` and a slider for `max_instances`; pressing the chip then Run showed `running… 12 s`, then
 `43 objects · Σ mask area = 105,457 px`, with the legend naming `dgx-v100`, the V100, CUDA 12.8 and
 torch 2.10.0+cu128.
 

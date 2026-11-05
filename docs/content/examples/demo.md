@@ -12,6 +12,11 @@ its parameters are still what the service serves. The `results` eye shows whatev
 made: a backbone's patch grid over the photograph, or a generated frame in place of it. A model that
 answers in words puts them under the picture.
 
+The `prompt` field is the one control that outlives a change of model: what you type there is kept in
+your browser and comes back on the next model, so comparing two of them on the same words is a change
+of id rather than a copy and paste. Every other control starts from what the model declares. Empty the
+field to forget the phrase.
+
 Under the panel the page prints the same call as a `curl` command, with your key left as `$KEY`. To
 check that your **own** client works rather than the service's, run the
 [notebook](quickstart.md) — it records its outputs, so a difference is the thing to debug.
