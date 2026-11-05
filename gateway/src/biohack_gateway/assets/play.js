@@ -5,11 +5,34 @@
   // and nothing else on this page writes it anywhere.
   let key = "";
   let fields = [];   // one entry per declared parameter: {name, type, input, read}
-  // The text a reader typed, per model id, and the id whose controls are on screen. A phrase is the
-  // one thing worth carrying across a model switch: the picture and a drawn box list already survive
-  // one, and a reader comparing two models on the same words should not have to retype them.
-  const typedText = new Map();
-  let shownModel = "";
+  // The one text field that outlives a model switch: `prompt`. It is the phrase a reader compares two
+  // models on, so it is kept in `localStorage` — a reload does not cost it either. Nothing else is
+  // carried: a threshold, a size or a box list means something different to every model that declares
+  // one, and the picture and a drawn box list already survive a switch on their own.
+  const promptMemory = (() => {
+    const NAME = "biohack-gateway/prompt";
+    let held = "";
+    return {
+      read: () => {
+        try {
+          return localStorage.getItem(NAME) || "";
+        } catch (error) {
+          // A browser that will not answer keeps it for this page's lifetime, which is what the page
+          // did before there was a store.
+          return held;
+        }
+      },
+      write: (value) => {
+        held = value;
+        try {
+          if (value) localStorage.setItem(NAME, value);
+          else localStorage.removeItem(NAME);
+        } catch (error) {
+          // Held for this page only, which the reader cannot tell apart and does not need to.
+        }
+      },
+    };
+  })();
   let datasetRows = new Map();   // dataset id -> its row count, as the surface last reported it
 
   const $ = (id) => document.getElementById(id);
@@ -545,21 +568,7 @@
     showPoints();
   };
 
-  const showParameters = (declaration, id) => {
-    // What the model being left was holding, before its controls go: `fields` is read here and
-    // replaced below, so this is the last moment the text exists. Kept per id as well, because a
-    // model with no text parameter at all sits on the way back to one that has.
-    const typed = {};
-    for (const field of fields) {
-      if (field.type !== "text") continue;
-      const value = field.read();
-      if (value !== null) typed[field.name] = value;
-    }
-    if (shownModel) {
-      if (Object.keys(typed).length) typedText.set(shownModel, typed);
-      else typedText.delete(shownModel);
-    }
-    shownModel = id;
+  const showParameters = (declaration) => {
     parameters.replaceChildren();
     // A declaration replaces the controls, and with them the picture's editor: a model without a
     // `boxes` parameter has nothing to draw, while the list itself stays for the next one that has.
@@ -574,13 +583,15 @@
       // The description goes on the name, not the label: the label is `display: contents`, so it has
       // no box of its own and a tooltip hung on it would never appear.
       if (parameter.description) name.title = parameter.description;
-      // The model just left wins while the parameter names agree — that is the comparison the reader
-      // is making — and otherwise this model's own last phrase, which is what comes back after a
-      // switch through a model with no text field at all.
-      const seed = parameter.type === "text"
-        ? (typed[parameter.name] ?? (typedText.get(id) || {})[parameter.name])
+      // `prompt` is the field the store fills; every other control starts from the declaration, which
+      // is the only thing this page is allowed to know about a model.
+      const seed = parameter.type === "text" && parameter.name === "prompt"
+        ? promptMemory.read() || undefined
         : undefined;
       const input = controlFor(parameter, seed);
+      if (parameter.type === "text" && parameter.name === "prompt") {
+        input.addEventListener("input", () => promptMemory.write(input.value.trim()));
+      }
       // A phrase carried from a model whose limit was longer arrives whole: cutting it silently would
       // answer a different question than the one on screen, and dropping it would lose the text. The
       // field says the limit here and the request's own refusal says the rest.
@@ -874,7 +885,7 @@
     // drag that draws into a hidden layer is a gesture with no visible result.
     if (!view.geometry) editor = null;
     showView();
-    showParameters(declaration, id);
+    showParameters(declaration);
     showExamples(id, declaration);
     showFacts(declaration);
     $("run").disabled = !declaration.backends_up;
@@ -964,8 +975,6 @@
     dataset.replaceChildren();
     parameters.replaceChildren();
     fields = [];
-    typedText.clear();
-    shownModel = "";
     boxInput = null;
     boxes = [];
     showMode();
