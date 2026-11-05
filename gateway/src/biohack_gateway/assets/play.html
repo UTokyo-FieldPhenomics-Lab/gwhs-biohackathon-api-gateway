@@ -184,6 +184,11 @@ __PLAY_CSS__
       <pre id="request-javascript" class="call-panel"></pre>
       <pre id="request-java" class="call-panel"></pre>
       <pre id="request-curl" class="call-panel"></pre>
+      <p class="note" id="request-file-note" hidden>In the JavaScript tab, <code>file</code> is a
+        <code>File</code> or <code>Blob</code>: a browser gets one from an
+        <code>&lt;input type="file"&gt;</code>, and a Node script from
+        <code>const file = await readFile("photo.jpg")</code>, imported from
+        <code>node:fs/promises</code>.</p>
     </div>
   </details>
 

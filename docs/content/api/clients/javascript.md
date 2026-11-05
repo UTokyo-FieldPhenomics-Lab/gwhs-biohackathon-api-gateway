@@ -56,7 +56,9 @@ for (const found of answer.objects) {
 ```
 
 `gwhs-temp` is the development sample of `gwhs`, so this call works before the full annotation is
-released. On your own photograph, use `predict_file("sam3.1-meta", file, {prompt: "wheat head"})`.
+released. On your own photograph, use `predict_file("sam3.1-meta", file, {prompt: "wheat head"})`,
+where `file` is a `File` or `Blob`: a browser gets one from an `<input type="file">`, and a Node
+script from `const file = await readFile("photo.jpg")`, imported from `node:fs/promises`.
 
 ## Pass model parameters
 

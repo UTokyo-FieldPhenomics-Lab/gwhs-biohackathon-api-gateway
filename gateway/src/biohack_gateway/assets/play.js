@@ -916,6 +916,11 @@
     $("request").hidden = !id;
     if (!id) return;
     $("request-curl").textContent = curlText();
+    // The JavaScript upload takes bytes rather than a path, so its snippet names a variable; this
+    // says what that variable is, and only while that snippet is the one on screen.
+    $("request-file-note").hidden = !(
+      $("call-javascript-tab").checked && $("source").value === "upload"
+    );
     const calls = clientCalls();
     const invalid = $("request-invalid");
     invalid.hidden = !(calls && calls.invalid);
@@ -2764,6 +2769,11 @@
     $(id).addEventListener("change", refreshRequest);
   }
   parameters.addEventListener("input", refreshRequest);
+  // The note under the panels belongs to one tab and one source, so choosing either has to tell it
+  // again — the panels themselves are shown by the radio group's own CSS.
+  for (const id of ["call-python-tab", "call-javascript-tab", "call-java-tab", "call-http-tab"]) {
+    $(id).addEventListener("change", refreshRequest);
+  }
 
   // A key this browser already holds — entered on the reference page, or here on an earlier visit —
   // is used without being typed again: one key, one place, and both pages start on the same one.

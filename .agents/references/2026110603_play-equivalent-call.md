@@ -22,6 +22,9 @@ For each state:
   with the Node client, and the Java snippet compiled once and run — all ten answered;
 - the curl command was run verbatim in `bash` with `$KEY` exported, including an upload whose file
   name carries a `;`, a `"` and a backslash;
+- the note that explains the JavaScript tab's `file` was checked in a local copy of the page with the
+  working-tree assets, since the live page serves the deployed one: it appears for the JavaScript tab
+  and an upload and is hidden for a row, the Python tab and the HTTP tab;
 - both example-chip paths were exercised: `tasselnetv4`'s "3 exemplars" chip wrote three boxes and
   its generated Python call answered 41.4 on `gwhd` row 4, and `yolo26-ultralytics`'s photograph chip
   loaded `carrot.jpg` into the file control and its Python and curl both answered three carrots;
@@ -43,8 +46,8 @@ untouched — but it is the tab a reader with a shell reaches for.
 
 `play.js` now builds the part with `formFile`, which double-quotes the path inside the value and
 escapes a `"` or a `\` in it: `-F 'file=@"a;b.jpg"'`. Verified against curl with `a;b.jpg`,
-`my photo.jpg`, `a"b.jpg`, `a\b.jpg` and `photo.jpg`; all five upload and answer. The change is in the
-working tree, so the live page keeps the old line until the gateway is redeployed.
+`my photo.jpg`, `a"b.jpg`, `a\b.jpg` and `photo.jpg`; all five upload and answer. The change is
+committed, and the live page keeps the old line until the gateway is redeployed.
 
 ### 2. The JavaScript upload snippet names a variable nothing defines
 
@@ -61,11 +64,18 @@ client then uploads the string `[object HTMLInputElement]` as bytes, which the A
 JavaScript page uses the same placeholder ("use `predict_file(..., file, ...)`"), so the page and the
 guide agree and disagree with the runnable case at the same time.
 
-The JavaScript client takes bytes, not a path, so a one-line snippet has to name *something*. Two
-honest options: emit `const file = await readFile("photo.jpg");` above the call (runs in Node, needs
-the import), or keep the placeholder and say under the panel what it is (a `File`/`Blob`; in Node,
-`await readFile(...)`). The first is runnable, the second keeps the page and the guide aligned. Left
-unchanged here because the choice changes the documented example.
+The JavaScript client takes bytes, not a path, so a one-line snippet has to name *something*. The
+page keeps the placeholder, and now says what it is instead of leaving the reader to find out: a note
+under the panels, shown only for the JavaScript tab on an upload, reads "`file` is a `File` or `Blob`:
+a browser gets one from an `<input type="file">`, and a Node script from
+`const file = await readFile("photo.jpg")`, imported from `node:fs/promises`". The JavaScript guide
+defines it at the same place its first upload example appears. Verified in a local copy of the page
+with the working-tree assets: the note appears for the JavaScript tab and an upload, and is hidden for
+a row, for the Python tab and for the HTTP tab.
+
+The snippet itself is unchanged; it is still a call that assumes the reader has the bytes. The
+alternative — emitting `const file = await readFile(...)` above the call — would be runnable in Node
+and wrong in a browser, and the page is a browser page.
 
 ## Smaller observations
 
