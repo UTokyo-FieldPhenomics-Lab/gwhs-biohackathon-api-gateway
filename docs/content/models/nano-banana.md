@@ -43,7 +43,7 @@ one URL, with no body and no image to address.
 | parameter | default | accepts | what it does |
 |---|---|---|---|
 | `prompt` | — | text, at most 300 characters | What to draw, or how to change the picture you sent. Required: this model has no default prompt. |
-| `aspect_ratio` | `1:1` | `1:1`, `2:3`, `3:2`, `3:4`, `4:3`, `4:5`, `5:4`, `9:16`, `16:9`, `21:9` | The shape of the frame the model produces. |
+| `aspect_ratio` | `auto` | `auto`, `1:1`, `2:3`, `3:2`, `3:4`, `4:3`, `4:5`, `5:4`, `9:16`, `16:9`, `21:9` | The shape of the answer. `auto` keeps the frame of the picture you sent on an edit — the canvas is extended to the nearest supported ratio and the answer maps back to it — and is 1:1 for a generate. Any other value asks for a new frame: the answer is then a reframe and does not align with the picture you sent. |
 | `image_size` | `1K` | `1K`, `2K` | The longer side of the picture. The list is what this deployment offers, not the upstream model's full range: 4K is left out because its answer can exceed the gateway's payload ceiling. |
 <!-- parameters:nano-banana-2.1:end -->
 
@@ -53,7 +53,7 @@ one URL, with no body and no image to address.
 | parameter | default | accepts | what it does |
 |---|---|---|---|
 | `prompt` | — | text, at most 300 characters | What to draw, or how to change the picture you sent. Required: this model has no default prompt. |
-| `aspect_ratio` | `1:1` | `1:1`, `2:3`, `3:2`, `3:4`, `4:3`, `4:5`, `5:4`, `9:16`, `16:9`, `21:9` | The shape of the frame the model produces. |
+| `aspect_ratio` | `auto` | `auto`, `1:1`, `2:3`, `3:2`, `3:4`, `4:3`, `4:5`, `5:4`, `9:16`, `16:9`, `21:9` | The shape of the answer. `auto` keeps the frame of the picture you sent on an edit — the canvas is extended to the nearest supported ratio and the answer maps back to it — and is 1:1 for a generate. Any other value asks for a new frame: the answer is then a reframe and does not align with the picture you sent. |
 | `image_size` | `1K` | `512`, `1K`, `2K` | The longer side of the picture. The list is what this deployment offers, not the upstream model's full range: 4K is left out because its answer can exceed the gateway's payload ceiling. |
 <!-- parameters:nano-banana-2:end -->
 
@@ -63,7 +63,7 @@ one URL, with no body and no image to address.
 | parameter | default | accepts | what it does |
 |---|---|---|---|
 | `prompt` | — | text, at most 300 characters | What to draw, or how to change the picture you sent. Required: this model has no default prompt. |
-| `aspect_ratio` | `1:1` | `1:1`, `2:3`, `3:2`, `3:4`, `4:3`, `4:5`, `5:4`, `9:16`, `16:9`, `21:9` | The shape of the frame the model produces. |
+| `aspect_ratio` | `auto` | `auto`, `1:1`, `2:3`, `3:2`, `3:4`, `4:3`, `4:5`, `5:4`, `9:16`, `16:9`, `21:9` | The shape of the answer. `auto` keeps the frame of the picture you sent on an edit — the canvas is extended to the nearest supported ratio and the answer maps back to it — and is 1:1 for a generate. Any other value asks for a new frame: the answer is then a reframe and does not align with the picture you sent. |
 | `image_size` | `1K` | `1K` | The longer side of the picture. The list is what this deployment offers, not the upstream model's full range: 4K is left out because its answer can exceed the gateway's payload ceiling. |
 <!-- parameters:nano-banana-pro:end -->
 
