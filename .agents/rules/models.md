@@ -63,6 +63,12 @@ public contract publishes; neither is gateway code.
   on a V100 at all — in this pool that rules out the DGX Station, and leaves the RTX cards and the
   rented L4. Changing that is a port of the operator path, not a dtype argument.
   [Capability](../references/2026110418_dgx-station-v100-reachable.md).
+- **Check that a release survives the cast, not only that it runs.** A dtype cast reaches
+  non-persistent buffers too: a table of powers of two saturates at `2**16` in fp16, `sin(inf)` is
+  NaN, and a decoder returns correct boxes with every mask empty while bf16 and fp32 are unaffected —
+  so a model that "works" on Ampere can fail only on the V100. Fix it in the container, and say in
+  the record which dtype was actually measured.
+  [The case](../references/2026110521_wevisone-vl-masks.md).
 - **A counting model answers a count and the field it integrates, never invented points.** It has no
   mask, so its `objects` is an empty list rather than boxes or dots manufactured from a density map;
   `density` is that map, cell by cell, and its sum is the count. A point set belongs to a

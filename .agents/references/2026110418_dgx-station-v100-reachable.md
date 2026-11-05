@@ -115,7 +115,9 @@ Three facts worth keeping:
 - **WeVisOne answers in its own format without its package**: asked to count circles it returned
   `<ref>circles</ref><point><147><259>,<293><676>,…`, which is the coordinate-token contract working.
   Turning those into masks needs its 9.6M-parameter decoder from the GitHub package, which was not
-  installed — so "detects and points" is measured, "produces a mask" is not.
+  installed at the time. It has since been measured, and it does produce masks — 26 s and 15 GB for
+  43 wheat heads — once one fp16 buffer cast is fixed:
+  [`2026110521_wevisone-vl-masks.md`](2026110521_wevisone-vl-masks.md).
 
 At 11–16 tok/s, 60 tokens of prose cost 4–5 s and 200 cost 15: a VLM in this pool would need a
 declared `response_timeout_seconds`, and it is not a chat interface.
