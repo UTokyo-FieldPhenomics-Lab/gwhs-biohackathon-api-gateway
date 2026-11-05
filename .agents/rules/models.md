@@ -11,11 +11,11 @@ public contract publishes; neither is gateway code.
   repository's AGENTS/rules rather than copy them.
   [Split](../references/2026101605_models-submodule-and-weight-distribution.md).
 - **A managed-API wrapper is a model service, not gateway code.** It runs as its own container on the
-  gateway host, answers the same declaration and the same three routes, and is reached on
-  `127.0.0.1` with the backend credential. It holds no weights. Its service account is least
-  privilege — `roles/aiplatform.user`, or a custom role holding only `aiplatform.endpoints.predict`
-  — never an owner credential, and its key is a read-only file mount, never an image layer or an
-  environment value. [Runbook](../../deploy/nanobanana.md).
+  gateway host, answers the same declaration and the same routes — predict, upload and generate —
+  and is reached on `127.0.0.1` with the backend credential. It holds no weights. Its service account
+  is least privilege — `roles/aiplatform.user`, or a custom role holding only
+  `aiplatform.endpoints.predict` — never an owner credential, and its key is a read-only file
+  mount, never an image layer or an environment value. [Runbook](../../deploy/nanobanana.md).
 - **Keep the spend gate inside the wrapper.** A hosted model costs money per call, so the team
   allowance, the daily breaker and the pot floor are the wrapper's: it is the thing that spends and
   the only place that knows a price. The gateway forwards the authenticated team id and nothing
@@ -46,7 +46,9 @@ public contract publishes; neither is gateway code.
   to requiring a versioned weight-store revision. [Weight decision](../references/2026101620_weights-fetched-inside-the-build.md).
 - **Two checkpoints mean two model ids, never a request `variant`.** Checkpoint selection changes
   admitted memory; environment-selected builds/containers may share code but not a declaration for
-  distinct weight sets. [Semantic baseline](../plans/2026101813_gwfss-segformer-model.md).
+  distinct weight sets. A fine-tune is another id, named after the data it learned from; it is never
+  a flag on the upstream id. [Page rule](docs.md),
+  [semantic baseline](../plans/2026101813_gwfss-segformer-model.md).
 - **Semantic models return one object per nonempty foreground class, with an extent box.** Do not
   invent instances or background objects; participant examples may demonstrate post-processing.
   [Semantic output](../plans/2026101813_gwfss-segformer-model.md).
@@ -86,6 +88,13 @@ public contract publishes; neither is gateway code.
   A hosted model's page says that it is served through the provider and links the provider's terms;
   the weights are not ours to distribute, and the page must not imply otherwise.
   [DINOv3 License](https://ai.meta.com/resources/models-and-libraries/dinov3-license/).
+- **An edit answers in the picture's frame, and records how.** A model that only generates at its own
+  set of ratios is given the caller's picture on a canvas at the nearest one — this service extends
+  the edge pixels into the band rather than letting the provider decide the frame — and the answer
+  carries `frame`: the input's pixel size and the box it occupies, as fractions. The picture bytes
+  stay the provider's, and a client crops; the service does not re-encode the answer. A caller who
+  names another ratio has asked for a reframe, so that answer carries no `frame` and says so in
+  `warnings`. [Frame contract](../references/2026110610_nanobanana-frame-mapping.md).
 - **A model that answers in prose or pixels still answers with `objects: []`.** It publishes `answer`
   and `image` beside the empty list, so one client parses every model. The picture is bounded to what
   the card was measured to carry — an edit of a 3456×5184 frame will otherwise ask the decoder for

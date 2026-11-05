@@ -4,16 +4,83 @@ InternVL-U — a 4B unified multimodal model from Shanghai AI Lab that **underst
 in words, and can produce a new one**. It is the one model here that does not answer with geometry: no
 mask, no box, no count.
 
-Three modes, chosen with `mode`:
+## At a glance
 
-- **`text`** — a sentence or two about the picture you sent.
-- **`image`** — a picture made from your `prompt`, or an edit of the picture you sent.
-- **`text_image`** — the model reasons first, then produces the picture.
+| field | value |
+|---|---|
+| Task | image understanding, generation and editing |
+| Input | a dataset image or upload, plus `prompt`; `mode` and `size` choose the answer |
+| Output | prose in `answer`, a picture in `image`, or both |
+| Runs at | 512 / 768 / 1024 px on the longer side; one megapixel at most |
+| Typical wait | 0.67 s for prose; 11–15 s for a picture |
+| License | [MIT](#references) |
 
 **[Try it on the live demo](https://api.global-wheat.com/play?model=internvl-u)** — the model is
 already selected and three example calls are one click away. The `results` eye shows the picture the
 model produced; closing it brings the photograph back, and the words appear in the bar under the
 picture.
+
+## When to use it
+
+**Good at**
+
+- Describing what is in a picture, in a sentence or two.
+- Comparing or interpreting a scene: whether a spike looks diseased, what changed between photographs.
+- Making a picture from a prompt, or editing one you send at the level of the whole frame.
+
+**Not for**
+
+- **Counting or measuring.** The language model inside is 1.7B; a count it gives you is a guess in
+  prose. Use [`tasselnetv4`](tasselnetv4.md) for a count and [`sam3.1-meta`](sam3.1-meta.md) or
+  [`gwfss-segformer-b4`](gwfss-segformer-b4.md) for masks.
+- **Fixing one detail.** "Colder evening light" or "a botanical illustration of this" returns a
+  plausible new frame; a request to fix one awn is beyond one megapixel and four billion parameters.
+- **A fast, cheap picture.** One prose answer holds the GPU for under a second; one picture for 8–15 s,
+  and it takes one of your three inferences.
+
+**Limits**
+
+- `prompt` is at most 300 characters and is required in every mode.
+- `size` is ignored by `text`; above 1024 it is clamped and the answer says so in `warnings`.
+- The picture is generated at **one megapixel at most**; a larger edit is re-run at the ceiling.
+
+## Call it
+
+With the client from [Clients](../api/clients/index.md) set up, or the `API` and `KEY` variables from [Raw HTTP](../api/http/index.md#five-calls):
+
+=== "Python"
+
+    ```python
+    answer = client.predict(
+        "internvl-u", "gwhs-temp", 0,
+        prompt="Describe this image.", mode="text",
+    )
+    ```
+
+=== "JavaScript"
+
+    ```js
+    const answer = await client.predict("internvl-u", "gwhs-temp", 0, {
+      prompt: "Describe this image.",
+      mode: "text",
+    });
+    ```
+
+=== "Java"
+
+    ```java
+    Map<String, Object> answer = client.predict(
+        "internvl-u", "gwhs-temp", 0,
+        Map.of("prompt", "Describe this image.", "mode", "text"));
+    ```
+
+=== "HTTP"
+
+    ```bash
+    curl -s -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
+      -d '{"dataset": "gwhs-temp", "row": 0}' \
+      "$API/models/internvl-u/predict?prompt=Describe%20this%20image.&mode=text"
+    ```
 
 ## Parameters
 
@@ -33,6 +100,21 @@ The picture is generated at **one megapixel at most**, and an edit is no excepti
 upload is re-run at the ceiling and comes back at about 1024 px on its longer side. The answer always
 reports the size it actually produced in `image.width` and `image.height`, and a reduced edit carries
 `{"code": "resolution_clamped"}`.
+
+
+## Using it
+
+### Modes
+
+- **`text`** — a sentence or two about the picture you sent.
+- **`image`** — a picture made from your `prompt`, or an edit of the picture you sent.
+- **`text_image`** — the model reasons first, then produces the picture.
+
+### Editing
+
+Send a photograph with `mode="image"` and a prompt that describes the change. The model edits at the
+level of the frame, not the detail: it redraws the whole picture, so the answer lines up with yours
+while its pixels are new.
 
 ## What comes back
 
@@ -58,24 +140,17 @@ The prose arrives in `answer`, the picture in `image`:
 `image.data` is base64 of the encoded file, exactly as the container wrote it. The clients decode it
 for you — `image["picture"]` is a Pillow image in Python, the file's bytes in JavaScript and Java — and
 nothing on this service re-encodes it, so what you save is what the model produced. A 1024 px answer
-is about 1 MB of PNG, in a body of about 1.4 MB, well inside the 15 MB an upload may be.
+is about 1 MB of PNG, in a body of about 1.4 MB.
 
-## What it is and is not for
 
-**It describes; it does not measure.** Ask it what is in a picture, whether a spike looks diseased, or
-what changed between two photographs. Do not ask it how many heads there are: the language model
-inside is 1.7B and a count it gives you is a guess in prose. `tasselnetv4` answers a number with the
-field that number was summed from, and `sam3.1-meta` or `gwfss-segformer-b4` answer masks.
+## Performance
 
-**It edits at the level of the frame, not the detail.** An instruction like "colder evening light" or
-"a botanical illustration of this" returns a plausible new frame; a request to fix one awn is beyond
-what one megapixel and a four-billion-parameter model will give you.
+### Quality
 
-**It costs a card.** One prose answer holds the GPU for 0.7 s; one picture for 8–15 s. That is why it
-is its own id rather than a mode on a task model, and why it takes one of your three inferences like
-everything else.
+It describes; it does not measure. Its value is a sentence about what is visible, or a new frame that
+follows the instruction, not a number you can count on.
 
-## Measured
+### Speed
 
 On a single RTX 4090, bfloat16, one request at a time:
 
@@ -86,22 +161,14 @@ On a single RTX 4090, bfloat16, one request at a time:
 | `text_image`, 1024² generated | 11.7 s | prose and the same frame |
 | `image`, 3456 × 5184 edit → 768 × 1152 | 15.3 s | 0.9 MB PNG |
 
-The container holds 8.5 GiB resident and peaks at 13.9 GiB during a picture, which is why it runs on a
-card of its own rather than beside the segmentation models.
+The wait depends on what you ask for: prose is sub-second, a generated picture is around 11–12 s, and
+an edit of a large upload is around 15 s.
 
-## Licence
+## References
 
-InternVL-U is served under the **MIT License**, Copyright (c) 2026 OpenGVLab. The copyright notice and
-this permission notice are reproduced with it:
-
-> Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
-> associated documentation files (the "Software"), to deal in the Software without restriction,
-> including without limitation the rights to use, copy, modify, merge, publish, distribute,
-> sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
-> furnished to do so, subject to the following conditions:
->
-> The above copyright notice and this permission notice shall be included in all copies or substantial
-> portions of the Software.
-
-The checkpoint is [InternVL-U/InternVL-U](https://huggingface.co/InternVL-U/InternVL-U); the report is
-[arXiv:2603.09877](https://arxiv.org/abs/2603.09877).
+- **Paper** — Tian et al., “InternVL-U: Democratizing Unified Multimodal Models for Understanding,
+  Reasoning, Generation and Editing,” arXiv 2026. [arXiv:2603.09877](https://arxiv.org/abs/2603.09877)
+- **Code** — [OpenGVLab/InternVL-U](https://github.com/OpenGVLab/InternVL-U)
+- **Weights** — [InternVL-U/InternVL-U](https://huggingface.co/InternVL-U/InternVL-U)
+- **License** — [MIT](https://github.com/OpenGVLab/InternVL-U/blob/main/LICENSE), Copyright (c) 2026
+  OpenGVLab

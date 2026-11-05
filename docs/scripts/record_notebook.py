@@ -24,9 +24,9 @@ render. What is not: `stderr`, because a library's warning on our machine is noi
 a participant's kernel would not print it either. A cell with nothing on stdout and no result
 simply gets no region — the page's `curl` is quiet for that reason.
 
-Images are written beside the page as `quickstart-step<N>.png`, numbered by the page's own step
-heading; the recorder deletes any it did not just write, so a picture that is no longer produced
-does not linger in the tree.
+Images are written beside the page as `quickstart-<heading>.png`, named after the nearest section
+heading; the recorder deletes any it did not just write, so a picture that is no longer produced does
+not linger in the tree.
 """
 
 from __future__ import annotations
@@ -46,8 +46,8 @@ import make_notebook
 EXAMPLES = make_notebook.SOURCE.parent
 """The directory the page lives in, and where a recorded picture is written beside it."""
 
-SECTION = re.compile(r"^##\s+(?P<step>\d+)\.")
-"""A step heading: the number an image is named after comes from here."""
+HEADING = re.compile(r"^#{2,4}\s+(?P<label>.+?)\s*$")
+"""A section heading: the nearest one names a picture written under it."""
 
 OPEN = "<!-- output -->"
 """Where a recorded region starts. `make_notebook.OUTPUT` is what reads both ends."""
@@ -276,15 +276,31 @@ def text_lines(text: str) -> list[str]:
     return lines
 
 
-def picture(block: Block, step: str, taken: int, written: list[Path]) -> list[str]:
+def slug(text: str) -> str:
+    """Turn a section heading into a file-name stem.
+
+    Parameters
+    ----------
+    text : str
+        A heading, as the page writes it.
+
+    Returns
+    -------
+    str
+        Lowercase words joined by hyphens, with no punctuation.
+    """
+    return re.sub(r"[^a-z0-9]+", "-", text.replace("`", "").lower()).strip("-") or "picture"
+
+
+def picture(block: Block, label: str, taken: int, written: list[Path]) -> list[str]:
     """Write one display result beside the page and return the markdown that shows it.
 
     Parameters
     ----------
     block : Block
         The image block, its body the base64 PNG Jupyter would have shown.
-    step : str
-        The page's step number, which the file is named after.
+    label : str
+        The nearest section heading, which the file is named after.
     taken : int
         How many pictures this cell has already written, so a second one gets a suffixed name.
     written : list of pathlib.Path
@@ -298,15 +314,15 @@ def picture(block: Block, step: str, taken: int, written: list[Path]) -> list[st
     Raises
     ------
     Unrecordable
-        The picture is outside a numbered step, which is the only thing its name comes from.
+        The picture is outside a section heading, which is the only thing its name comes from.
     """
-    if not step:
-        raise Unrecordable("a cell displays a picture outside a numbered step, so it has no name")
+    if not label:
+        raise Unrecordable("a cell displays a picture outside a section heading, so it has no name")
     suffix = "" if taken == 1 else f"-{taken}"
-    path = EXAMPLES / f"quickstart-step{step}{suffix}.png"
+    path = EXAMPLES / f"quickstart-{slug(label)}{suffix}.png"
     path.write_bytes(base64.b64decode(block.body))
     written.append(path)
-    return [f"![What step {step} returns]({path.name})"]
+    return [f"![{label}]({path.name})"]
 
 
 def html_block(block: Block) -> list[str]:
@@ -328,15 +344,15 @@ def html_block(block: Block) -> list[str]:
     return ['<div class="output">', "", *block.body.strip().splitlines(), "", "</div>"]
 
 
-def region(blocks: list[Block], step: str, written: list[Path]) -> list[str]:
+def region(blocks: list[Block], label: str, written: list[Path]) -> list[str]:
     """Turn one cell's results into the page's output region.
 
     Parameters
     ----------
     blocks : list of Block
         What the cell produced, in order.
-    step : str
-        The page's step number, used to name a picture.
+    label : str
+        The nearest section heading, used to name a picture.
     written : list of pathlib.Path
         Where files written this run are collected.
 
@@ -350,7 +366,7 @@ def region(blocks: list[Block], step: str, written: list[Path]) -> list[str]:
     for block in blocks:
         if block.kind == "image":
             pictures += 1
-            shown.append(picture(block, step, pictures, written))
+            shown.append(picture(block, label, pictures, written))
         elif block.kind == "html":
             shown.append(html_block(block))
         else:
@@ -386,7 +402,7 @@ def splice(page: str, recorded: list[list[Block]]) -> tuple[str, list[Path]]:
     out: list[str] = []
     written: list[Path] = []
     cell = 0
-    step = ""
+    label = ""
     at = 0
     skipping = False
     while at < len(lines):
@@ -399,9 +415,9 @@ def splice(page: str, recorded: list[list[Block]]) -> tuple[str, list[Path]]:
         if skipping:
             at += 1
             continue
-        heading = SECTION.match(line)
+        heading = HEADING.match(line)
         if heading:
-            step = heading["step"]
+            label = heading["label"]
         fence = make_notebook.FENCE.match(line)
         if fence and fence["lang"] in {"python", "bash"}:
             close = at + 1
@@ -411,7 +427,7 @@ def splice(page: str, recorded: list[list[Block]]) -> tuple[str, list[Path]]:
             at = close + 1
             blocks = recorded[cell] if cell < len(recorded) else []
             cell += 1
-            recorded_here = region(blocks, step, written)
+            recorded_here = region(blocks, label, written)
             if recorded_here:
                 out.append("")
                 out.extend(recorded_here)
@@ -452,7 +468,7 @@ def write() -> tuple[int, int]:
     Raises
     ------
     Unrecordable
-        The key is missing, a cell failed, or a picture was produced outside a numbered step.
+        The key is missing, a cell failed, or a picture was produced outside a section heading.
     """
     token = key()
     page = make_notebook.SOURCE.read_text()
@@ -461,7 +477,7 @@ def write() -> tuple[int, int]:
     recorded = collect(nb)
     spliced, written = splice(page, recorded)
     make_notebook.SOURCE.write_text(spliced)
-    for stale in EXAMPLES.glob("quickstart-step*.png"):
+    for stale in EXAMPLES.glob("quickstart-*.png"):
         if stale not in written:
             stale.unlink()
     return sum(1 for blocks in recorded if blocks), len(written)

@@ -17,12 +17,23 @@ Package: `clients/`. Shared constraints are in [`project.md`](project.md); distr
 - **Keep public method and parameter names identical across languages.** Only a decoded layer's
   container shape varies naturally: a mask as a NumPy array, `{data, width, height}` or a Java
   `Mask`, and a counting field as an array of rows.
-  [API guide](../../docs/content/api/clients.md).
+  [API guide](../../docs/content/api/clients/index.md).
+- **A new route or answer field lands with its clients.** A model id alone needs no new method —
+  `predict` carries it — but a new route updates `routes.json` and is checked by the gateway contract
+  test, and a new answer field needs its decoder in Python, JavaScript and Java in the same change. A
+  client that silently drops a field is a client that disagrees with the server.
+  [Contract test](../../gateway/tests/test_clients_contract.py).
 - **A generation is a method on every client, with its own timeout.** `generate(model, prompt=…)`
-  posts to `/models/{id}/generate` with the parameters in the query and no body, and it waits
-  longer than a predict: the gateway may give a hosted image model up to three minutes, while the
-  client's default is 60. The method decodes `image` like a predict answer; it does not invent a dataset or
-  a row to make a generation look like one.
+  posts to `/models/{id}/generate` with the parameters in the query and no body. It waits up to
+  180 seconds — the gateway's three-minute cap — while an ordinary call defaults to 60. The method
+  decodes `image` like a predict answer; it does not invent a dataset or a row to make a generation
+  look like one.
+- **A picture answer is cut back to the frame it edits in the decoded layer.** `image.data` stays the
+  model's own file, canvas included; `image.picture` is that file cropped to `frame.content` — in
+  Python and Java in the client, in JavaScript by the browser or Node entry's `framer`, because the
+  core has no image codec. A frame covering the whole picture is left untouched, so the common
+  answer is not re-encoded. The crop never resizes: the answer keeps the model's resolution, and a
+  caller overlays it by one scale. [Frame contract](../references/2026110610_nanobanana-frame-mapping.md).
 - **Own RLE, palette and field decoding here, once per language.** Decode COCO column-major masks
   into row-major containers on receipt, retaining raw `rle` and other fields so area remains
   checkable; reshape a counting answer's `density.values` into `density.grid`, retaining `size` and

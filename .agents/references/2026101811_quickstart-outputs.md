@@ -13,7 +13,7 @@ under each cell that produces one, and the `.ipynb` beside it still ships empty.
 | `docs/content/output.css` | new: a result takes a code block's monospace without its card, with a small `Output` label, aligned with the code above |
 | `zensical.toml` | `extra_css = ["footer.css", "output.css"]` |
 | `quickstart.md` | `curl -sSO`, and eleven recorded regions |
-| `quickstart-step5.png`, `-step6.png` | what the two image cells display, committed |
+| `quickstart-step5.png`, `-step6.png` | what the two image cells displayed, committed; the [three-part pass](2026110602_quickstart-three-parts.md) renamed them after their headings |
 | `.agents/rules/docs.md` | "no output is committed with a snippet" became "the notebook commits no output; the page's are recorded" |
 
 The notebook is unchanged in kind: 26 cells, 13 of them code, `outputs: []` throughout, no marker
@@ -34,8 +34,9 @@ uv run --project docs --with nbconvert --with ipykernel --with requests --with n
 3. `stdout` and every result are collected per cell — `text/plain`, `image/png`, or `text/html` —
    with stderr dropped.
 4. The page's regions are deleted, then re-emitted in fence order; pictures become
-   `quickstart-step<N>.png`, `<N>` taken from the enclosing `## N.` heading; any
-   `quickstart-step*.png` not written this run is removed.
+   `quickstart-<slug>.png`, named after the nearest heading, and any `quickstart-*.png` not written
+   this run is removed. (The first implementation used `quickstart-step<N>.png` from the enclosing
+   `## N.` heading; [the three-part pass](2026110602_quickstart-three-parts.md) changed it.)
 
 A second run immediately after the first produced a byte-identical page, so the rewrite is stable.
 

@@ -1,13 +1,83 @@
 # `gwhs` — Global Wheat Head Segmentation
 
-![One instance row: the image, its boxes, and the decoded masks](gwhs-row0-annotation.jpg)
+Each image is a single wheat ear and carries **one object per spikelet**: a box, a COCO RLE mask, an
+area and its attributes. The full annotation is not published yet; `gwhs-temp` is the ten-image
+development sample with the same schema, and it is what this page uses for its figures and examples. The released
+`gwhs` is CC-BY-4.0; the sample's card declares no licence.
 
-Not published yet: the full annotation follows the dataset release, so `gwhs` is not in
-`GET /datasets` and a call for one of its rows answers `404` today. The figure above, and the object
-below, are a row of `gwhs-temp` — same schema, a crop of a 592×2509 photograph of one ear, 24 objects,
-each with a box and the mask its geometry decodes to. CC-BY-4.0.
+## At a glance
 
-## The response
+| field | value |
+|---|---|
+| Task | spikelet instance segmentation |
+| One image carries | objects: box, RLE mask, area, attributes |
+| Images | pending the full annotation; `gwhs-temp` has 10 |
+| Splits | pending; the sample is `train` |
+| Image | varies; sample image 0 is 592×2509 |
+| Annotation | objects with `bbox`, `rle`, `area`, `attributes`; image tags |
+| Licence | [CC-BY-4.0](#references) for `gwhs`; the sample declares none |
+| Status | not served; `gwhs-temp` is development only |
+
+![One instance image: the image, its boxes, and the decoded masks](gwhs-row0-annotation.jpg)
+
+The figure is an image from `gwhs-temp`: a crop of a 592×2509 photograph of one ear, 24 objects, each with
+a box and the mask its geometry decodes to.
+
+## When to use it
+
+**Good at**
+
+- One object per spikelet, with both a box and a mask.
+- Counts and sizes per ear, including attributes such as `Green-Spikelet`.
+- Close-up photographs of a single ear, where the spikelets are visible.
+
+**Not for**
+
+- **A call today.** `gwhs` is not in `GET /datasets`; a call for one of its images answers `404`.
+- **A canopy.** The images are single ears on a desk, not in-field plots; use [`gwfss`](gwfss.md) for
+  organ pixels or [`gwhd`](gwhd.md) for head boxes.
+- **A released sample.** `gwhs-temp` is for development, declares no licence, and has ten images.
+
+**Limits**
+
+- The full annotation, its image count and its splits are pending.
+- The sample is ten images; do not use it for a benchmark or a published result.
+- The sample's card declares no licence; the released `gwhs` is CC-BY-4.0.
+
+## Get one image
+
+With the client from [Clients](../api/clients/index.md) set up, or the `API` and `KEY` variables from
+[Raw HTTP](../api/http/index.md#five-calls). The full `gwhs` is not served; this call uses
+`gwhs-temp`:
+
+=== "Python"
+
+    ```python
+    row = client.image("gwhs-temp", 0)
+    ```
+
+=== "JavaScript"
+
+    ```js
+    const row = await client.image("gwhs-temp", 0);
+    ```
+
+=== "Java"
+
+    ```java
+    Map<String, Object> row = client.image("gwhs-temp", 0);
+    ```
+
+=== "HTTP"
+
+    ```bash
+    curl -s -H "X-API-Key: $KEY" "$API/datasets/gwhs-temp/images/0"
+    ```
+
+## What one image holds
+
+An image's record carries the shared envelope — dataset, `row`, split, `width`, `height`, `image_url` —
+plus `objects` and its tags. One object of `gwhs-temp` image 0 (`row` 0):
 
 ```json
 { "idx": 0, "category": "spikelet_-_side1", "bbox": [231.0, 923.0, 126.0, 162.0],
@@ -15,24 +85,21 @@ each with a box and the mask its geometry decodes to. CC-BY-4.0.
   "rle": { "size": [2509, 592], "counts": "Zofa05S…" } }
 ```
 
-Every object carries a box, a **run-length mask**, an area, and its attributes, and the row carries
-its tags. Where `gwhd` returns one box per head, this returns one box *and one mask per spikelet*,
-which is what makes counts and sizes per spikelet possible.
+Every object carries a box, a **run-length mask**, an area, and its attributes. Where `gwhd` returns
+one box per head, this returns one box *and one mask per spikelet*, which is what makes counts and
+sizes per spikelet possible.
 
-## The mask
+### Reading the fields
 
-`rle.size` is `[height, width]`, and `rle.counts` is that object's COCO-compressed string, verbatim —
-the same format a hosted model answers with, so one decoder reads ground truth and prediction alike.
-Decoding it is not something you write:
+- **`rle.size` is `[height, width]`**, and `rle.counts` is that object's COCO-compressed string,
+  verbatim — the same format a hosted model answers with, so one decoder reads ground truth and
+  prediction alike.
+- **`area` is the decoded mask's pixel count.** The client keeps the raw `rle` beside the `mask`, so
+  the mask's pixel count can be checked against the reported area.
+- **`attributes`** are the upstream's labels for that spikelet; the image's `tags` are separate.
+- **`category`** is the spikelet class, such as `spikelet_-_side1`.
 
-![One object: in the image, decoded, and over the image](rle-input-output.jpg)
-
-The client decodes it as the answer arrives and keeps the raw `rle` beside the `mask`, which is what
-makes the answer checkable: the mask's pixel count is the `area` the response reports, and that is the
-cheapest proof that a mask is right. `12074` pixels is what `objects[0].mask.sum()` prints for this
-object.
-
-## The container
+### The container
 
 What the client hands you differs only in the container:
 
@@ -53,32 +120,33 @@ What the client hands you differs only in the container:
 === "Java"
 
     ```java
-    GlobalWheat.Mask mask = (GlobalWheat.Mask) objects.get(0).get("mask");
+    import java.util.List;
+    import java.util.Map;
+
+    List<?> objects = (List<?>) row.get("objects");
+    GlobalWheat.Mask mask =
+            (GlobalWheat.Mask) ((Map<?, ?>) objects.get(0)).get("mask");
     System.out.println(mask.count());       // a row-major boolean[]
     ```
 
 COCO flattens masks column-major; every one of them is transposed once, by the decoder, so `mask[y][x]`
 — or `data[y * width + x]` — is the pixel at `(x, y)`. Nothing in your code transposes anything.
 
-## Get one row
+## What you can do with it
 
-=== "Python"
+Decode the mask and overlay it on the image:
 
-    ```python
-    row = client.image("gwhs-temp", 0)
-    ```
+![One object: in the image, decoded, and over the image](rle-input-output.jpg)
 
-=== "JavaScript"
+The mask is the size of the image, so compositing it is ordinary array work — the same as a `gwfss`
+mask. Counting objects is the length of `objects`; counting spikelets per ear is one object per
+spikelet, already separated.
 
-    ```js
-    const row = await client.image("gwhs-temp", 0);
-    ```
+[The quickstart notebook](../examples/quickstart.md) calls the same image and draws the mask.
 
-=== "Java"
+## References
 
-    ```java
-    Map<String, Object> row = client.image("gwhs-temp", 0);
-    ```
-
-Compositing the masks over the image, and running a model on the same row, is
-[the quickstart notebook's](../examples/quickstart.md) job.
+- **Dataset** — [Global Wheat Head Segmentation](https://www.global-wheat.com/gwhs.html)
+- **Sample** — [GlobalWheat/GWHS_v1.0_sample](https://huggingface.co/datasets/GlobalWheat/GWHS_v1.0_sample)
+- **Licence** — [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/) for the released `gwhs`;
+  the sample declares no licence.

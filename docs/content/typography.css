@@ -6,3 +6,73 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* The theme makes a section and its subsection the same weight and colour, only a few pixels apart.
+ * A rule above the section and a muted accent beside the subsection show the level before the reader
+ * parses the words. */
+.md-typeset h2 {
+  margin-top: 2.4rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--md-default-fg-color--lightest);
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+
+.md-typeset h3 {
+  margin-top: 1.6rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--md-default-fg-color--light);
+}
+
+/* A child list keeps the theme's zero padding and sits almost under its parent. One indent step makes
+ * the hierarchy visible in the References weights and in any nested list. */
+.md-typeset ul ul {
+  margin-left: 0.2rem;
+  padding-left: 1.1rem;
+}
+
+/* A wide table scrolls inside its own box rather than losing its last column at the page edge.
+ * Material already wraps every table in this element; on a narrow screen it had no scroll. */
+.md-typeset__table {
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+/* The theme makes the table itself inline-block, so its cells overflow a box that cannot scroll.
+ * Keeping it a table lets the wrapper above scroll the columns that do not fit. */
+.md-typeset .md-typeset__table > table {
+  display: table;
+}
+
+/* A code block's scrollbar is a scrollbar, not a state indicator: the theme turns its thumb accent
+ * on hover, which reads as a change in the code rather than in the scrollbar. Keep one colour,
+ * including while the block has focus. */
+.md-typeset pre > code,
+.md-typeset pre > code:hover,
+.md-typeset pre > code:focus,
+.md-typeset pre > code:focus-within {
+  scrollbar-color: var(--md-default-fg-color--lighter) #0000;
+}
+
+.md-typeset pre > code::-webkit-scrollbar-thumb,
+.md-typeset pre > code::-webkit-scrollbar-thumb:hover {
+  background-color: var(--md-default-fg-color--lighter);
+}
+
+/* The navigation drawer uses the same accent-on-hover scrollbar. A reader scrolling the menu should
+ * not see the thumb change colour either. */
+.md-sidebar__scrollwrap,
+.md-sidebar__scrollwrap:hover,
+.md-sidebar__scrollwrap:focus-within {
+  scrollbar-color: var(--md-default-fg-color--lighter) #0000;
+}
+
+.md-sidebar__scrollwrap::-webkit-scrollbar-thumb,
+.md-sidebar__scrollwrap::-webkit-scrollbar-thumb:hover,
+.md-sidebar__scrollwrap:hover::-webkit-scrollbar-thumb,
+.md-sidebar__scrollwrap:focus-within::-webkit-scrollbar-thumb,
+.md-sidebar__scrollwrap:focus-within::-webkit-scrollbar-thumb:hover {
+  background-color: var(--md-default-fg-color--lighter);
+}

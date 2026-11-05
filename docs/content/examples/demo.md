@@ -1,30 +1,20 @@
 # Live demo
 
-The panel below is served by `api.global-wheat.com` and framed here, so it is **same-origin with the
-API**: no cross-origin call is involved anywhere, and your key is typed into the API's own page — this
-site never sees it. The [reference](../api/reference.md) remembers the same key on the same origin:
-set it on either page and the other uses it, Forget on either clears it for both.
-
-Pick a row or drop in a photograph, pick a model, press **Run** — the answer is drawn on the picture,
-and the corner says which machine produced it. **Examples** fills in a call that was measured to work;
-one chip and Run is the shortest way to a first answer, and a chip only appears while its dataset and
-its parameters are still what the service serves. The `results` eye shows whatever pixels the model
-made: a backbone's patch grid over the photograph, or a generated frame in place of it. A model that
-answers in words puts them under the picture.
+The panel is served by `api.global-wheat.com` and framed here, so it is **same-origin with the API**:
+your key stays on the API's own page, and the [reference](../api/reference.md) remembers it on that
+origin. Pick a dataset image or drop in a photograph, choose a model and press **Run** — the answer is
+drawn on the picture, and the corner names the machine. **Examples** fills a measured call that still
+matches what the service serves; the `results` eye shows a backbone grid or a generated frame, and
+prose appears under the picture.
 
 A model that declares `boxes` or `points` takes them from the picture: draw on it, and the list beside
-the model shows what you drew. One mode group says what a press does — add a positive entry, add a
-negative one, or remove one. The two lists are edited one at a time, so a click on the picture is
-never ambiguous.
+the model shows what you drew. One mode group chooses add-positive, add-negative or remove, and the
+two lists are edited one at a time, so a click is never ambiguous. The `prompt` field is the one control
+kept across model changes; every other control starts from the model's declaration. Empty it to forget
+the phrase.
 
-The `prompt` field is the one control that outlives a change of model. What you type there is kept in
-your browser and comes back on the next model, so comparing two of them on the same words is a change
-of id rather than a copy and paste. Every other control starts from what the model declares. Empty the
-field to forget the phrase.
-
-Under the panel the page prints the same call as a `curl` command, with your key left as `$KEY`. To
-check that your **own** client works rather than the service's, run the
-[notebook](quickstart.md) — it records its outputs, so a difference is the thing to debug.
+The panel prints the same call as `curl`, with your key as `$KEY`. To check your own client, run the
+[notebook](quickstart.md) — its recorded outputs make a difference visible.
 
 <div id="play-frame">
   <iframe

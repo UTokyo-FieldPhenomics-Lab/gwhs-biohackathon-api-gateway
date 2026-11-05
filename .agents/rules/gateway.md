@@ -18,7 +18,8 @@ Package: `gateway/`. Shared constraints are in [`project.md`](project.md).
 - **Cap teams at three inferences by policy, independent of pool width.**
   `BIOHACK_MAX_CONCURRENT_PER_TOKEN` overrides the startup default; `0` disables it. Refuse excess
   work immediately with `429`: upload lanes are acquired in middleware, row lanes only after a
-  cache miss in the handler. Metadata and cached answers take no lane.
+  cache miss in the handler, and a generation always takes one there. Metadata and cached answers
+  take no lane.
   [Decision and tests](../references/2026102115_documentation-and-implementation-alignment.md).
 - **The token CLI owns one flat `{team_id: token}` file.** `tokens list|add|remove` shares the
   reader's model and defaults to `~/.config/biohack-gateway/tokens.json`; `--file` supports copies.
@@ -70,7 +71,7 @@ Package: `gateway/`. Shared constraints are in [`project.md`](project.md).
   takes two in a row, and any `200` — a request's or the probe's — clears the streak, so a machine
   that keeps answering probes is never retired by a lossy link. Publish `last_failure`,
   `failed_seconds_ago`, `failures` and `passed_over` on `/pool`, because `alive` alone cannot tell a
-  dead card from a lossy link. [Measurement](../references/202610291500_campus-egress-loss.md).
+  dead card from a lossy link. [Measurement](../references/202610291100_campus-egress-loss.md).
 - **Distinguish connect, send and read budgets.** A send timeout does not condemn the machine or
   resend its upload. Retries share one elapsed-time deadline; limit response bytes and close
   incomplete exchanges rather than pooling or caching them.

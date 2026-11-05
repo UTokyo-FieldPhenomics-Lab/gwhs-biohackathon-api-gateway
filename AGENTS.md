@@ -49,7 +49,8 @@ of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-layout.md
 ├── .agents/
 │   ├── rules/             short, binding constraints (project.md + design-philosophy.md + one per package)
 │   ├── references/        detailed execution records and lessons learned
-│   └── plans/             agreed execution plans; a finished one is renamed with ✅ and left as an archive
+│   ├── plans/             agreed execution plans; a finished one is renamed with ✅ and left as an archive
+│   └── skills/            agent-facing skills; each is a directory with a SKILL.md
 ├── zensical.toml          docs site config: docs/content → site/, published to GitHub Pages
 ├── docs/                  documentation subproject (Zensical)
 │   ├── data-layout.md     internal contract: object layout, addressing, index fields — unpublished
@@ -60,7 +61,8 @@ of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-layout.md
 │       ├── api/           the contract, the clients, the framed reference, and the frame's script
 │       ├── datasets/      what a row is, then one page per dataset, with their figures
 │       ├── models/        the GPUs behind the API, then one page per model or family
-│       └── examples/      the live demo, and the notebook page the .ipynb is generated from
+│       └── examples/      the live demo, the notebook page the .ipynb is generated from,
+│                          and the agent-skills page
 ├── clients/               the API as a function, one directory per language; routes.json is shared
 │   ├── python/            global_wheat.py + its pyproject, lock, and the pytest checks
 │   ├── js/                core + browser/Node entries, package.json and node --test checks
@@ -145,6 +147,10 @@ of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-layout.md
 - **`plans/` — agreed execution plans.** `YYYYMMDDHH_<topic>.md`, kept current while the work is
   open, and renamed `YYYYMMDDHH_✅<topic>.md` when it is finished so it stops being updated. It is
   an archive at that point; the record of what actually happened belongs in `references/`.
+- **`skills/` — agent-facing skills.** Each skill is a directory with a `SKILL.md` carrying `name`
+  and `description` frontmatter. It is public and may be fetched by a participant's agent; keep it
+  to the instructions an agent needs, link the contract rather than copying it, and never put a
+  credential or a private address in it.
 
 ## Where to Look
 
@@ -159,6 +165,8 @@ of the pinned upstream revision; see [`docs/data-layout.md`](docs/data-layout.md
   and the reason an address there means nothing outside the lab's tailnet. A machine is named there
   by the alias its answers carry, and the alias-to-address map is `.agents/local/pool.md`: untracked,
   and a clone without it resolves no machine.
+- The participant-facing agent skill:
+  [`.agents/skills/global-wheat-api/SKILL.md`](.agents/skills/global-wheat-api/SKILL.md)
 - Execution records and lessons: [`.agents/references/`](.agents/references)
 - Host reachability troubleshooting:
   [`references/2026101513_host-unreachable-from-the-utokyo-network.md`](.agents/references/2026101513_host-unreachable-from-the-utokyo-network.md)

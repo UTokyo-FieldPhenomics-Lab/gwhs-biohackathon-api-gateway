@@ -23,6 +23,11 @@ in `references/`. How to decide what to build is in [`design-philosophy.md`](des
 - **The event contract has no version prefix and only additive changes.** Pydantic models and
   `docs/data-layout.md` are the two handwritten contract sources; schema-shaped references and
   examples project them rather than define a second schema. [Contract](../../docs/data-layout.md).
+- **A new model id or API route is one change across gateway, clients and docs.** The id is served
+  and recorded before its page exists; a new route updates `clients/routes.json` and is covered by
+  the contract test, and a new answer field needs its decoder in all three client files; the model
+  or API page, index row and nav entry land in the same change. A docs-only model page is a promise
+  the API cannot keep. [Clients rules](clients.md), [docs rules](docs.md).
 - **Do not compute or maintain local content hashes or checksums.** Use canonical request text for
   cache keys and upstream revisions, names, object versions or platform-issued tokens for identity.
   Treat ETags as opaque; test doubles do not need hash implementations. Reconsider only against a

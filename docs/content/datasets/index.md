@@ -1,21 +1,25 @@
 # Datasets
 
-One row is one image and its annotation, addressed as `(dataset, row)`. Row numbers are positions in
-the dataset's pinned upstream revision, so a row number on its own means nothing — they repeat across
-datasets and will be renumbered by no one.
+An image is addressed as `(dataset, row)`. `row` is the image's position in the dataset's pinned
+upstream revision — the API's name for which image, not a stable id: it repeats across datasets, and a
+new revision can renumber it.
 
-Two datasets are published in full today: `gwhd` and `gwfss` answer every row. `gwhs` is not served
-until its full annotation is released, and `gwhs-temp` is the development sample of it: same schema, a
-handful of rows, safe to call all day. `GET /datasets` reports the current rows of each.
+Two datasets are published in full: `gwhd` and `gwfss` answer every image. `gwhs` is not served until
+its full annotation is released; `gwhs-temp` is the ten-image development sample of it, with the same
+schema.
 
-| id | dataset | one row carries | licence |
-|---|---|---|---|
-| `gwhd` | Global Wheat Head Detection | an image and a bounding box per wheat head | CC-BY-4.0 |
-| `gwfss` | Global Wheat Full Semantic Organ Segmentation | an image and a mask, one colour per organ | CC-BY-4.0 |
-| `gwhs` | Global Wheat Head Segmentation | an image and one object per spikelet: box, mask, attributes | CC-BY-4.0 |
+## At a glance
+
+| id | task | one image carries | images | licence | status |
+|---|---|---|---|---|---|
+| [`gwhd`](gwhd.md) | head detection | one box per head | 6,512 | CC-BY-4.0 | published |
+| [`gwfss`](gwfss.md) | organ segmentation | one palette mask | 1,096 | CC-BY-4.0 | published |
+| [`gwhs`](gwhs.md) | spikelet segmentation | objects (box, RLE, attributes) | pending | CC-BY-4.0 | not served |
+| [`gwhs-temp`](gwhs.md) | `gwhs` sample | the same schema, ten images | 10 | none declared | development only |
 
 `gwhs` appears here because its contract is fixed; it is not in `GET /datasets` until the annotation
-is released, so a call for one of its rows answers `404`.
+is released, so a call for one of its images answers `404`. `gwhs-temp` is the callable stand-in: same
+schema, ten images, and not a released dataset.
 
 ## Which one
 
@@ -24,43 +28,46 @@ is released, so a call for one of its rows answers `404`.
   label.
 - **One object per spikelet** → `gwhs` once its annotation is released. A box *and* a mask *and*
   attributes per spike, so counts and sizes per ear become possible.
+- **The same schema today** → `gwhs-temp`. Ten images for development; its card declares no licence, so
+  do not treat it as a released dataset.
 
-## The envelope
+## What one image holds
 
-The three share a shape, which is why one client handles all of them:
+The three share a shape, which is why one client handles all of them. A **list** page carries one
+summary per image and never the annotation:
+
+```json
+{ "dataset": "gwhd", "count": 1, "next_cursor": "…",
+  "images": [
+    { "row": 0, "split": "test", "width": 1024, "height": 1024,
+      "image_url": "https://data.global-wheat.com/gwhd/images/00000000.jpg", "mask_url": null,
+      "statistics": { "objects": 144 } }
+  ] }
+```
+
+A **detail** response adds the image's annotation and its provenance:
 
 ```json
 { "dataset": "gwhd", "row": 0, "split": "test", "width": 1024, "height": 1024,
   "image_url": "https://data.global-wheat.com/gwhd/images/00000000.jpg", "mask_url": null,
-  "objects": [], "statistics": { "objects": 144, "classes": ["0"] } }
+  "country": "Australia", "development_stage": "Filling - Ripening",
+  "objects": [ { "idx": 0, "category": "0", "bbox": [227.0, 3.0, 58.0, 47.0] } ] }
 ```
 
 - `image_url` and `mask_url` are absolute `data.*` addresses with no key. They are the only way to get
-  bytes; the gateway never carries them.
+  bytes; the gateway does not carry dataset images.
 - `width` and `height` are the image's own pixels, which is what `bbox` is measured in.
-- `objects` is absent from a **list** response and present in a **detail** response; `statistics`
-  summarises a row inside a list, so you can choose rows without fetching each one.
-- A row also carries whatever the dataset annotates it with — location, growth stage, tags — and those
+- `objects` appears in a detail response; `statistics` summarises an image in a list, so you can choose
+  images without fetching each one.
+- An image also carries whatever the dataset annotates it with — location, growth stage, tags — and those
   are exactly the filter keys the dataset publishes.
-
-## Where each thing comes from
-
-| what you show | where it comes from |
-|---|---|
-| the image | `image_url`, served by `data.global-wheat.com`, no key |
-| the mask | `mask_url`, same, where the dataset has one |
-| a box on the image | `objects[].bbox` — `[x, y, w, h]` in the image's pixels |
-| a class or a colour | `classes[].name` and `classes[].color` where the dataset publishes a palette; `objects[].category` on a row |
-| segments of one object | `objects[].rle`, decoded to a mask the size of the image |
-| how many objects | `statistics.objects` in a list, the length of `objects` in a detail |
-| what you can filter by | the `filters` block of `GET /datasets/<id>`, with the values it actually holds |
 
 ## Filters
 
-`GET /datasets/<id>` publishes a `filters` block: every key its rows can be narrowed by, and the
+`GET /datasets/<id>` publishes a `filters` block: every key its images can be narrowed by, and the
 values that actually occur — no guessing whether `Australia` is spelled `Australia`. Send them as query
 parameters (`?split=train`), repeat a key to narrow further (`?split=train&split=val` means both), and
 walk the pages with the `next_cursor` a list response reports.
 
-The three pages that follow are one dataset each: what a row holds, one real response, and the fields
-that are easy to misread.
+Each dataset page below shows one real response and the fields that are easy to misread:
+[`gwhd`](gwhd.md), [`gwfss`](gwfss.md), [`gwhs`](gwhs.md).

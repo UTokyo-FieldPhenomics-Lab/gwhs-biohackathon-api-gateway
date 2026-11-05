@@ -1,22 +1,24 @@
 # Java client
 
-One file, no dependency and no build file: `GlobalWheat.java` compiles with the JDK you already
-have, and the same source runs on Android. It is the same API the other two clients speak, with masks
-as a row-major `boolean[]` and backbone grids as `float[][][]`.
+One file, no dependency and no build file. Masks arrive as a row-major `boolean[]`; backbone grids as
+a `float[][][]`. It targets the desktop JDK: Android has no `java.awt` or `javax.imageio`, so uploads
+and picture decoding there need platform code.
 
-## Load it
+## Setup
+
+JDK 17 or newer.
 
 ```bash
 curl -O https://docs.global-wheat.com/clients/GlobalWheat.java
-javac GlobalWheat.java
+export GLOBAL_WHEAT_API_KEY='YOUR_TEAM_KEY'
 ```
 
-Drop the file into your source tree and call it. On Android, declare the `INTERNET` permission and
-call the client off the main thread, which is where the network belongs anyway.
+Drop the file into your source tree and compile it with the code that calls it. There is nothing to
+add to a build file.
 
-## A runnable example
+## Run an example
 
-With `GLOBAL_WHEAT_API_KEY` set, compile this beside the client and run it:
+Save this as `Main.java` beside the client:
 
 ```java
 import java.util.List;
@@ -47,38 +49,42 @@ javac GlobalWheat.java Main.java
 java Main
 ```
 
-## Calls and parameters
+`gwhs-temp` is the development sample of `gwhs`, so this call works before the full annotation is
+released. On your own photograph, use `predict_file("sam3.1-meta", new java.io.File("photo.jpg"),
+Map.of("prompt", "wheat head"), true)`.
 
-The full method list is on the [overview](index.md#methods); these are the calls and options you
-will use most:
+## Pass model parameters
 
-| call | what you pass | notes |
-|---|---|---|
-| `new Client()` / `new Client(key)` | a token, or the environment | construction fails without a key |
-| `image(dataset, row)` / `image(dataset, row, false)` | an address and a decode switch | `false` leaves `rle` as the wire wrote it |
-| `images(dataset, limit, cursor, filters)` | `null` for no cursor or filters | the page reports `next_cursor` |
-| `iter_images(dataset, limit, filters)` | the same filters | walks every page for you |
-| `predict(model, dataset, row, params)` | a `Map<String, ?>` of the model's parameters | always decodes |
-| `predict_file(model, file, params, false)` | a `File`, a parameter map and `resizeBeforeSubmit` | `false` sends the original bytes |
-| `generate(model, params)` | `prompt`, and what the model declares | waits up to 180 seconds |
-| `label_masks(pixels, width, height, dataset)` | an `int[]` of pixels and its sides | one `Mask` per class |
+Parameters are a `Map` with the names `GET /models/<id>` publishes. An unknown name is a `400`, not a
+silent default.
 
-There is no `decode` switch on `predict`, `predict_file` or `generate`: the Java client always
-decodes masks, counting grids and backbone grids, and leaves the raw fields beside them. A model's
-parameters are a `Map` with the names `GET /models/<id>` publishes; an unknown name is a `400`, not a
-silent default. A geometry parameter is one value: `Map.of("boxes", List.of(List.of(480, 290, 110,
-360, 1)))`, never five repeated names.
+```java
+Map<String, Object> sam = client.predict("sam3.1-meta", "gwhs-temp", 0,
+        Map.of("prompt", "wheat head", "confidence_threshold", 0.5));
 
-## What is different here
+Map<String, Object> counted = client.predict("tasselnetv4", "gwfss", 0,
+        Map.of("boxes", List.of(List.of(312, 143, 44, 55, 1))));
+```
 
-- A mask is a `GlobalWheat.Mask` with `width`, `height`, a row-major `boolean[] data`, and
-  `count()`; `count()` is the `area` beside it.
+A geometry parameter is one value — a `List` of entries — never repeated names. The [model
+pages](../../models/index.md) say what each parameter does; [Model
+parameters](../http/index.md#model-parameters) is the wire contract.
+
+## Read decoded outputs
+
+- A mask is a `GlobalWheat.Mask` with `width`, `height`, a row-major `boolean[] data` and `count()`;
+  the raw `rle` stays beside it.
 - A counting answer's `density.grid` is a `double[][]` of rows; a backbone's `features.grid` is a
   `GlobalWheat.Features` with a `float[][][] grid`.
-- A generated picture is `image.picture`, a `byte[]` of the encoded file; `image.data` remains the
-  base64 string. `GlobalWheat.decode_image(field)` decodes one field on its own.
-- `GlobalWheat.ApiError` carries `status`, `code` and the API's own `message`; nothing is retried for
-  you.
+- A picture is `image.picture`, a `byte[]`. On an edit that carries `frame`, it is already cropped to
+  that box — the shape of the picture you sent — while `image.data` remains the model's full file.
+- There is no `decode` switch: the Java client always decodes.
+
+## When it goes wrong
+
+A refusal raises `GlobalWheat.ApiError` with `status`, `code` and the API's own `message`. Nothing is
+retried for you: `429` means wait, `503`/`504` are worth one more call, and `400` needs the request
+fixed. [Refusals](../http/index.md#refusals) lists every code.
 
 ## Next
 

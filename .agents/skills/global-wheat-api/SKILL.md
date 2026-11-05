@@ -5,9 +5,9 @@ description: Use the Global Wheat BioHackathon API for wheat image data, segment
 
 # Global Wheat BioHackathon API
 
-Use the API at `https://api.global-wheat.com` for wheat and plant images. Every route except
-`GET /health` needs the team key in `X-API-Key`; read it from `GLOBAL_WHEAT_API_KEY` and never print
-it.
+Use the API at `https://api.global-wheat.com` for wheat and plant images. Every data call needs the
+team key in `X-API-Key`; `/health`, `/docs`, `/play` and `/openapi.json` are the public exceptions.
+Read the key from `GLOBAL_WHEAT_API_KEY` and never print it.
 
 This is an orientation, not a frozen copy of the contract. Read `GET /models/<id>` and the OpenAPI
 before a call you have not made before; the API is the authority.
@@ -38,7 +38,7 @@ Do not hardcode row counts or model lists; the API changes. `gwhs` is not served
 
 A row is the absolute row of the pinned upstream revision. `GET /datasets/<id>/images?limit=…`
 pages; `next_cursor` goes back as `cursor`. A row's `image_url` and `mask_url` are public `data.*`
-addresses with no key; bytes never come from `api.*`.
+addresses with no key. Dataset bytes never come from `api.*`; uploads and generated pictures do.
 
 ## Choose a model
 
@@ -83,8 +83,9 @@ curl -s -H "X-API-Key: $GLOBAL_WHEAT_API_KEY" -H "Content-Type: application/json
 `objects` is present; it may be empty. An object has `category`, `score`, `bbox` `[x,y,w,h]` in the
 image's pixels, `area`, and `rle` (COCO compressed) where a mask exists. A counting model adds
 `count` and `density` (`size` `[rows,columns]`, `values` row-major); a backbone adds `embedding` and
-`features`; a prose/picture model adds `answer` and/or `image`. `resolution_used`, `computed_by`
-and `warnings` describe the run.
+`features`; a prose/picture model adds `answer` and/or `image`. A Nano Banana edit at
+`aspect_ratio=auto` adds `frame` — the picture you sent, as fractions of `image.data` — and the
+clients crop to it. `resolution_used`, `computed_by` and `warnings` describe the run.
 
 Use the client files from `https://docs.global-wheat.com/api/clients/` to decode RLE masks, density
 grids, feature grids and pictures; do not hand-roll the COCO decoder. Python: `global_wheat.py`;
@@ -101,8 +102,11 @@ JavaScript: `global-wheat.js` plus `.web.js`/`.node.js`; Java: `GlobalWheat.java
 ## Limits and failures
 
 - Three inferences per key; metadata reads take none.
-- `429`: wait and retry after `Retry-After`; `502`/`503`/`504`: one retry is reasonable; `400`:
-  fix the request, do not retry.
+- `429` names its reason: an inference lane, upload capacity, a team allowance or the shared budget.
+  Wait for `Retry-After` when it is capacity; a message naming credits or the budget does not clear by
+  retrying.
+- `502`/`503`/`504`: one retry is reasonable; `400`: fix the request, do not retry. A retried
+  `generate` is a new picture and a new charge.
 - Uploads: 15 MB, 50 megapixels; some models cap lower (YOLO26-seg 4 MP, WeVisOne 4 MP).
 
 See `https://docs.global-wheat.com/api/http/` for the full policy and

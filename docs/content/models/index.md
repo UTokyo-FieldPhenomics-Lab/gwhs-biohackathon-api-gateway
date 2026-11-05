@@ -12,8 +12,24 @@ label every pixel of a wheat canopy as head, stem or leaf — the dataset's own 
 laboratory's foundation model — and `tasselnetv4` counts what you show it an example of.
 
 Most calls send an image address, or your own photograph, and get the answer back. The Nano Banana
-ids also take a prompt with no image at all, through `POST /models/<id>/generate`. No weights travel
-to you, nothing runs on your machine, and there is no environment to set up.
+ids also take a prompt with no image at all, through `POST /models/<id>/generate`. No weights travel to
+you and nothing runs on your machine.
+
+## Choose by task
+
+| what you want | start with |
+|---|---|
+| masks for a phrase, a box or a point | [`sam3.1-meta`](sam3.1-meta.md) |
+| open-vocabulary instance masks | [`wevisone-vl-4b`](wevisone-vl-4b.md) |
+| every pixel labelled as head, stem or leaf | [`gwfss-segformer-b4`](gwfss-segformer-b4.md) or [`sprout-l-gwfss`](sprout-l-gwfss.md) |
+| a count, from a few example boxes | [`tasselnetv4`](tasselnetv4.md) |
+| dense features or one descriptor per picture | [`dinov3-vitl16`](dinov3.md) or [`dinov3-vith16plus`](dinov3.md) |
+| COCO boxes, or boxes with instance masks | [`yolo26-ultralytics`](yolo.md) or [`yolo26-seg-ultralytics`](yolo.md) |
+| a description of a picture | [`internvl-u`](internvl-u.md) |
+| a new picture, or an edit of one | [`nano-banana-2.1`](nano-banana.md) |
+
+Each link goes to the page that covers the id. The sections below say what each model is and where it
+runs.
 
 ## The models
 
@@ -45,9 +61,8 @@ These were trained for a wheat or plant task.
 | [`tasselnetv4`](tasselnetv4.md) | TasselNetV4 — class-agnostic plant counting, [the paper's code and checkpoint](https://arxiv.org/abs/2509.20857); you show exemplar boxes and it answers a number | `counting` | 384 px tall, tiled |
 
 An id names **whose weights these are**, not where they run: a collaborator's fine-tune of the same
-model appears as an id of its own, named after the data it was trained on. Every id this API serves is
-something it answers — a model with no machine behind it reports `backends_up: 0`, and a call is
-refused rather than queued.
+model appears as an id of its own, named after the data it was trained on. A model with no machine
+behind it reports `backends_up: 0`, and a call is refused rather than queued.
 
 `GET /models` is the live answer for what is running. `backends_up` is how many machines answered the
 last probe, and `checked_seconds_ago` is how long ago that was — a verdict with an age rather than a
@@ -62,8 +77,8 @@ Two things are fixed by the service rather than left to the request.
 **Each model runs at a side it was measured at.** `sam3.1-meta` runs at one of `672`, `784`, `896` or
 `1008` pixels square, 1008 the default and the ceiling. `gwfss-segformer-b4` runs at the `512` it was
 trained at and offers no choice at all. `tasselnetv4` resizes every picture to `384` px tall and tiles
-it, because that is the training crop. Those task models resize to a square *without preserving
-aspect ratio*.
+it, because that is the training crop. The square-input task models do not preserve aspect ratio; the
+two backbones and `internvl-u` do.
 
 The two backbones are the exception: `side` is the longer side and the shorter one follows the aspect
 ratio, each dimension floored to 16, so a 4:6 photograph at 512 runs at 336 × 512. `internvl-u`
@@ -72,8 +87,8 @@ at the ceiling and answered smaller, with a warning saying so.
 
 The answer reports `resolution_used`, so you can tell how coarse a result is at full size. A value
 above the published ceiling is not an error: the model runs at the ceiling and says so in `warnings`.
-A smaller one is faster and worse on small objects — the table on the model page has the numbers. A
-task model accepts only a resolution it was run at; a backbone accepts the range it declares.
+A smaller one is faster and worse on small objects; the model page says what was measured. A task
+model accepts only a resolution it was run at; a backbone accepts the range it declares.
 
 **Three inferences in flight per key, no queue.** Over it, `429`. The three are three across the whole
 team, not three per person. Only inference takes one of them — the two predict routes and `generate`.
@@ -93,8 +108,9 @@ cannot raise a request beyond the memory the model was admitted with.
 The API is here so that nobody has to own a GPU for the event, not because it is the only way. Run it
 yourself when:
 
-- **You are processing thousands of rows.** Each call is a round trip; a loop over a whole dataset is
-  faster on a card you hold. The datasets are public and so are the model weights.
+- **You are processing thousands of images.** Each call is a round trip; a loop over a whole dataset is
+  faster on a card you hold. The dataset images and the upstream checkpoints this service runs are
+  public; a hosted model such as Nano Banana is only reachable through this API.
 - **You are fine-tuning.** This service only runs inference, and only the checkpoints it publishes.
   The two backbones are the ones to fine-tune; the task models are already trained.
 - **You need a different checkpoint.** A fine-tune of your own is a model id we would have to host; on

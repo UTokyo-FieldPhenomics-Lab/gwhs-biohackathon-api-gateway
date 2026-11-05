@@ -1,25 +1,21 @@
 # Calling the API
 
-Every route on this site is one HTTP request: a key in one header, JSON in and JSON out. There are
-three ways in, and they are the same API at three distances.
+The same API at three distances. Pick the one that matches what you are doing.
 
-| | |
-|---|---|
-| [Raw HTTP](http/index.md) | the contract — every route on one line, the five calls worth copying, the refusals, the limits |
-| [Live API reference](reference.md) | every route and every field of its answer, and a form that sends the call; served by the API itself |
-| [Clients](clients/index.md) | the same API as a function in Python, JavaScript, or Java — one file each, masks decoded, with a guide per language |
+| way in | start here when | you get |
+|---|---|---|
+| [Raw HTTP](http/index.md) | you want to see the whole API on one page | routes, curl calls, refusals and limits |
+| [Live API reference](reference.md) | you know the call and need its fields | every route and answer field, with a try-it form |
+| [Clients](clients/index.md) | you want pixels rather than JSON | one file per language; images, paging and decoding done |
 
-Start with **Raw HTTP** if you have never called this API: it is one page and it is the whole shape of
-the thing. Go straight to **Clients** if what you want is a result rather than a request — an address
-in, a decoded mask out. **Live API reference** is what you open while writing code, when you need the
-shape of an answer. A *model's* parameters are not in that document, because they differ per model:
-`GET /models/<id>` is the list, and [Model parameters](http/index.md#model-parameters) is how to send them.
+All three use the same team key: **one key per team, three *inferences* in flight at once**, and
+`429` rather than a queue beyond that. A metadata read — a dataset listing, an image, the model
+directory — takes none of the three. [Limits](http/index.md#limits).
 
-Two things are true of all three:
+Dataset images and masks are public `data.*` URLs and need no key, so displaying one is a CDN request
+rather than an inference. Uploads and generated pictures travel through `api.*`.
 
-- **A key is required, and it is issued to your team.** One key per team, three *inferences* in
-  flight at once; over that the API answers `429` rather than queueing. A metadata read — a dataset
-  listing, a row, the model directory — never takes one of those three. See
-  [Limits](http/index.md#limits).
-- **Bytes never come from `api.*`.** A response carries an absolute `data.*` address for its image or
-  mask, which needs no key — so displaying an image is a CDN request, not one of your three.
+A *model's* parameters are not in the API reference, because they differ per model:
+`GET /models/<id>` lists them with their defaults and bounds, [Model
+parameters](http/index.md#model-parameters) explains how to send them, and the [model
+pages](../models/index.md) explain what they do.

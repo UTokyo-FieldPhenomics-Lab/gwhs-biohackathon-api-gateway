@@ -34,9 +34,16 @@ Package: `docs/`. Shared constraints are in [`project.md`](project.md).
 
 - **Only the recorder writes recorded quickstart outputs.** Never type or patch numbers in
   `<!-- output -->` regions. After code/data/pool changes, run `record_notebook.py` with a key;
-  this also writes cell images and removes obsolete ones. CI generation does not execute cells or
-  verify live recorded outputs. The command is in the [maintainer README](../../README.md#documentation-site).
+  this also writes cell images and removes obsolete ones. A picture is named after its section
+  heading, so a restructure renames images: re-record rather than editing a `quickstart-*.png` path by
+  hand. CI generation does not execute cells or verify live recorded outputs. The command is in the
+  [maintainer README](../../README.md#documentation-site).
   [Recording evidence](../references/2026101811_quickstart-outputs.md).
+- **The quickstart has three parts, and each part ends in a result.** Setup, Datasets, Models. Part 3
+  executes one model per answer shape — promptable segmentation, semantic segmentation, counting and a
+  backbone — and leaves the rest, including a paid generation, in a table. The page stays one
+  notebook; splitting it into pages would break the single `.ipynb` source.
+  [The pass](../references/2026110602_quickstart-three-parts.md).
 - **Keep quickstart Markdown convertible.** Use Python/bash fences, relative images and explicit
   notebook-skip regions; no language tabs or admonitions. Outputs use text-output fences, Markdown
   images or output HTML divs; the converter drops them. Use quiet `curl -sSO` for notebook downloads
@@ -53,6 +60,28 @@ Package: `docs/`. Shared constraints are in [`project.md`](project.md).
   table blocks from `fixtures/model-directory.json`; CI retains the model-page diff check. Refresh
   the fixture from authenticated `GET /models`, never handwrite the schema or require live access
   during a build. [Parameters](../references/2026101811_model-parameter-validation.md).
+- **Measure for the participant, not the operator.** A model page's performance section states the
+  side the model runs at, the approximate wait, and — where it changes the choice — the quality. Host
+  memory, resident process size and allocator peaks belong to deployment records, not the site.
+  [Trim record](../references/2026110600_docs-first-run-and-trim.md).
+- **A model page follows one order, and names its sources at the end.** At a glance, When to use it,
+  Call it (Python / JavaScript / Java / HTTP tabs), Parameters, optional Using it, What comes back,
+  optional What you can do with it, Performance, References. References carry Paper (one citation and
+  its arXiv/DOI), Code, Weights and License as bullets; the license name is the link. A family adds an
+  id table under At a glance rather than a new section.
+  [Template record](../references/2026110600_docs-first-run-and-trim.md).
+- **A dataset page follows one order, and names its sources at the end.** At a glance, When to use it,
+  Get one image (Python / JavaScript / Java / HTTP tabs), What one image holds, optional What you can
+  do with it, References. The main Datasets page is the chooser: At a glance, Which one, What one
+  image holds, Filters, with no per-dataset references. A sample dataset is a row in the chooser, not
+  a released dataset; state its licence or that it declares none. The chooser may say "row" because
+  `GET /datasets` counts them; the page itself says image.
+  [Dataset trim record](../references/2026110600_docs-first-run-and-trim.md).
+- **Call the unit an image; keep `row` as the API's address.** Headings and prose say image. Code,
+  JSON fields and paths keep `row`, defined once as the image's position in the pinned revision — not
+  a stable id, and not the same thing as the optional `image_id`. A page that says "image id" is
+  wrong even when it means "which image".
+  [Terminology record](../references/2026110600_docs-first-run-and-trim.md).
 - **A hosted model family is one page, one table per id.** Declare the ids in
   `<!-- models: … -->` and carry a `parameters:<id>` block for each; the prose is shared because the
   contract is. The page says the model is served through the provider and links the provider's
@@ -62,11 +91,25 @@ Package: `docs/`. Shared constraints are in [`project.md`](project.md).
 
 ## Integration and presentation
 
+- **Keep scrollbars neutral.** The theme turns a code block's thumb and the navigation drawer's
+  scrollbar accent on hover; `typography.css` pins both to the muted foreground, including focus and
+  the WebKit thumb, so scrolling does not read as a change in the content.
+  [Fix](../references/2026110602_quickstart-three-parts.md).
 - **Frame the API's reference and playground, never duplicate their contract rendering.** The
   gateway owns `/docs`, `/openapi.json` and `/play`; docs must not import the app. One
   `api/frame.js` uses `data-api-frame` to size both frames and forward the reader's theme.
   [Framing](../references/2026101617_the-model-page-and-the-play-page.md).
-- **Handwrite explanatory HTTP policy, not another schema.** `api/http.md` explains keys, refusals
+- **A fine-tune is a new id and a page of its own.** A page groups several ids only when they share
+  one provenance and one contract — checkpoints of one release, heads of one release, or tiers of
+  one hosted model. A different training set or weight line gets its own `<id>.md`, its own
+  `parameters:<id>` table and its own measurements; the models index gets its own row, under
+  General or Specialized by what it was trained on. A page that declares several ids carries
+  `<!-- models: … -->` and one `parameters:<id>` block per id. A new id refreshes
+  `docs/scripts/fixtures/model-directory.json` from `GET /models`, because the parameter table is
+  generated from that record. A hand-written model or id count is a second copy of the directory:
+  update it in the same change, or replace it with a `GET /models` reference.
+  [Models rules](models.md).
+- **Handwrite explanatory HTTP policy, not another schema.** `api/http/index.md` explains keys, refusals
   and limits while the API reference remains authoritative for response fields.
   [Participant structure](../references/2026101723_docs-restructure.md).
 - **Use the client's decoder as an ES module.** Do not maintain another RLE/palette decoder in
