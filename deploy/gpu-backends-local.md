@@ -42,15 +42,20 @@ Conventions that hold everywhere and are not re-decided per machine:
 
 - **A model's port is the model's, and the same number on every machine.** `12711` is
   `sam3.1-meta`, `12712` is `gwfss-segformer-b4`, `12713` is `tasselnetv4`, `12714` is
-  `dinov3-vitl16`, `12715` is `dinov3-vith16plus`, `12717` is `yolo26-ultralytics`, `12718` is
-  `yolo26-seg-ultralytics`, wherever they run. Inside a container the port is
+  `dinov3-vitl16`, `12715` is `dinov3-vith16plus`, `12716` is `internvl-u`, `12717` is
+  `yolo26-ultralytics`, `12718` is `yolo26-seg-ultralytics`, `12719` is `sprout-l-gwfss`, `12720`
+  is `wevisone-vl-4b`, wherever they run. Inside a container the port is
   always `12711` — each container has its own network namespace, so two models on one host do not
   collide there — and the host side carries the model's number. It sits outside both ephemeral
   ranges (`32768–60999` on Linux, `49152–65535` on Windows), and it is deliberately **not 8000**,
   which is the gateway's own socket on its host.
 - **A host with several cards publishes one port per card, and calls each card a machine.** One
   address cannot tell two cards apart, so a second copy of the same model on one host takes another
-  port and another machine name (§3.2).
+  port and another machine name (§3.2). The number is `12700 + 10 × card + model slot`, where the
+  slot is the model's number minus `12710`: card 1 is the familiar `12711`–`12720`, card 0 is
+  `12701`–`12710`, card 2 is `12721`–`12730`. The DGX Station is the machine this rule exists for —
+  seven containers on card 0, and `wevisone-vl-4b` on three cards at `12720`, `12730` and `12740`.
+  [Four cards](../.agents/references/202611060155_dgx-four-cards.md).
 - **A card is admitted against the card minus 1 GB**, never against the card — the desktop drives the
   same display. For scale, the demo model holds 8.5 GB resident.
 - **One router is one fault domain.** So however many machines the laboratory holds, they fail

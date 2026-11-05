@@ -39,6 +39,11 @@ repo-wide invariants are in [`project.md`](project.md) and are not repeated here
   `yolo26-seg-ultralytics`, `12719` is `sprout-l-gwfss`, `12720` is `wevisone-vl-4b`; internal
   container ports remain `12711` in separate namespaces.
   [Port assignment](../../deploy/gpu-backends-local.md).
+- **On a multi-card host the port is `12700 + 10 × card + model slot`, and each card is its own
+  machine.** One address cannot tell two cards apart, and a name shared by four containers makes the
+  gateway count four queues as one. Card 1 lands on `12711`–`12720`, so a single-card machine and a
+  one-card deployment are unchanged; card 0 lands on `12701`–`12710` and card 2 on `12721`–`12730`.
+  [Four cards](../references/202611060155_dgx-four-cards.md).
 - **Keep retired rows, with dated last-observed status and evidence.** Missing evidence or empty
   cells mean unknown, not absent; never delete a machine's history by removing its row.
   [Inventory evidence](../references/2026101923_gpu-occupancy.md).
@@ -53,16 +58,31 @@ repo-wide invariants are in [`project.md`](project.md) and are not repeated here
 
 | Machine (alias) | Where | Router and LAN | GPU / VRAM | Location group | Last recorded status and evidence |
 |---|---|---|---|---|---|
-| `lab-3090` — host `labpc-host`, tailnet `labpc-tailnet` | laboratory | `room-router-a` (GL-BE9300), the laboratory LAN | RTX 3090, 24576 MiB | laboratory | serving all five, plus `yolo26-ultralytics` on `12717`, `yolo26-seg-ultralytics` on `12718` — 2026-11-03, [the pair](../references/2026110316_yolo-ultralytics-pair.md), and `sprout-l-gwfss` on `12719` — 2026-11-04, [the model](../references/2026110420_sprout-l-gwfss.md); `tasselnetv4` added on `12713` — 2026-10-30, [counting contract](../references/2026102923_tasselnetv4-counting-contract.md); `dinov3-vitl16` and `dinov3-vith16plus` added on `12714`/`12715` — 2026-11-02, [backbones](../references/2026110215_dinov3-backbones.md); path 0.0 ms — 2026-10-29, [egress loss](../references/202610291100_campus-egress-loss.md) |
-| `homepc-4090` | home | `home-router` (GL-MT6000), the home LAN | RTX 4090, 24564 MiB | home | serving `gwfss`, `tasselnetv4` (`12713`, added 2026-10-30, [counting contract](../references/2026102923_tasselnetv4-counting-contract.md)) and `internvl-u` (`12716`, added 2026-11-03, [prose and pictures](../references/2026110219_internvl-u-prose-and-picture-answers.md)); path 22–537 ms, mdev 163, ICMP flapping — 2026-10-29, [egress loss](../references/202610291100_campus-egress-loss.md) |
-| `lab-5090` | laboratory | `room-router-d` (GL-MT6000), the 5090's LAN | RTX 5090, 32607 MiB | laboratory | serving all three, and the only Windows host; `tasselnetv4` added on `12713` — 2026-10-30, [counting contract](../references/2026102923_tasselnetv4-counting-contract.md); path 1.9–2.6 ms, ICMP filtered by its own firewall — 2026-10-29, [egress loss](../references/202610291100_campus-egress-loss.md) |
-| `dgx-v100` | laboratory | `room-router-e` (GL-MT6000), the plant-factory LAN | 4 × Tesla V100-DGXS-32GB, 32768 MiB each | laboratory | serving `wevisone-vl-4b` on `12720`, card 1 — 2026-11-05, [deployment](../references/2026110523_wevisone-vl-4b-in-the-pool.md); cards 2 and 3 idle, card 0 holds the desktop. `sam3.1-meta` cannot run here at all: its forward pass demands bfloat16 |
-| `lab-intel3090` | laboratory | `room-router-e` (GL-MT6000), the plant-factory LAN | RTX 3090, 24576 MiB | laboratory | serving all three on `12711`–`12713` — 2026-11-02, [bring-up](../references/2026110214_adding-lab-intel3090.md); alive on all three in `/pool`, rtt 0.58 s; Windows 11, so it serves only while its user session is signed in (per-user Docker Desktop, no automatic sign-in) |
+| `lab-3090` — host `labpc-host`, tailnet `labpc-tailnet` | laboratory | `room-router-a` (GL-BE9300), the laboratory LAN | RTX 3090, 24576 MiB | laboratory | serving `sam3.1-meta`, `gwfss-segformer-b4`, `dinov3-vitl16` and `dinov3-vith16plus`, plus `yolo26-ultralytics` on `12717` and `yolo26-seg-ultralytics` on `12718` — 2026-11-03, [the pair](../references/2026110316_yolo-ultralytics-pair.md), and `sprout-l-gwfss` on `12719` — 2026-11-04, [the model](../references/2026110420_sprout-l-gwfss.md); `tasselnetv4` was added on `12713` — 2026-10-30, [counting contract](../references/2026102923_tasselnetv4-counting-contract.md), but is not in this machine's `/pool` row on 2026-11-05; `alive`, rtt 0.54 s — `/pool` 2026-11-05; path 0.0 ms — 2026-10-29, [egress loss](../references/202610291100_campus-egress-loss.md) |
+| `homepc-4090` | home | `home-router` (GL-MT6000), the home LAN | RTX 4090, 24564 MiB | home | serving `sam3.1-meta`, `gwfss`, `tasselnetv4` (`12713`, added 2026-10-30, [counting contract](../references/2026102923_tasselnetv4-counting-contract.md)) and `internvl-u` (`12716`, added 2026-11-03, [prose and pictures](../references/2026110219_internvl-u-prose-and-picture-answers.md)); path 22–537 ms, mdev 163, ICMP flapping — 2026-10-29, [egress loss](../references/202610291100_campus-egress-loss.md) |
+| `lab-5090` | laboratory | `room-router-d` (GL-MT6000), the 5090's LAN | RTX 5090, 32607 MiB | laboratory | serving `sam3.1-meta`, `gwfss-segformer-b4` and `tasselnetv4` on `12711`–`12713`, and the only Windows host; `tasselnetv4` added on `12713` — 2026-10-30, [counting contract](../references/2026102923_tasselnetv4-counting-contract.md); `alive`, rtt 0.61 s — `/pool` 2026-11-05; path 1.9–2.6 ms, ICMP filtered by its own firewall — 2026-10-29, [egress loss](../references/202610291100_campus-egress-loss.md) |
+| `dgx-v100-0` | laboratory | `room-router-e` (GL-MT6000), the plant-factory LAN | Tesla V100-DGXS-32GB, 32768 MiB, card 0 | laboratory | serving `gwfss-segformer-b4` `12702`, `tasselnetv4` `12703`, `dinov3-vitl16` `12704`, `dinov3-vith16plus` `12705`, `yolo26-ultralytics` `12707`, `yolo26-seg-ultralytics` `12708`, `sprout-l-gwfss` `12709` — 2026-11-06, [four cards](../references/202611060155_dgx-four-cards.md); holds the desktop; 12.5 of 31 GB used |
+| `dgx-v100-1` | laboratory | `room-router-e` (GL-MT6000), the plant-factory LAN | Tesla V100-DGXS-32GB, 32768 MiB, card 1 | laboratory | serving `wevisone-vl-4b` `12720`, `gwfss-segformer-b4` `12712`, `tasselnetv4` `12713`, `dinov3-vitl16` `12714` — 2026-11-06, [four cards](../references/202611060155_dgx-four-cards.md); 20.9 of 31 GB used |
+| `dgx-v100-2` | laboratory | `room-router-e` (GL-MT6000), the plant-factory LAN | Tesla V100-DGXS-32GB, 32768 MiB, card 2 | laboratory | serving `wevisone-vl-4b` `12730`, `dinov3-vith16plus` `12725`, `sprout-l-gwfss` `12729` — 2026-11-06, [four cards](../references/202611060155_dgx-four-cards.md); 23.6 of 31 GB at `wevisone`'s peak |
+| `dgx-v100-3` | laboratory | `room-router-e` (GL-MT6000), the plant-factory LAN | Tesla V100-DGXS-32GB, 32768 MiB, card 3 | laboratory | serving `wevisone-vl-4b` `12740`, `tasselnetv4` `12733`, `yolo26-ultralytics` `12737`, `yolo26-seg-ultralytics` `12738` — 2026-11-06, [four cards](../references/202611060155_dgx-four-cards.md); 15.3 of 31 GB used |
+| `lab-intel3090` | laboratory | `room-router-e` (GL-MT6000), the plant-factory LAN | RTX 3090, 24576 MiB | laboratory | serving `sam3.1-meta`, `gwfss-segformer-b4` and `tasselnetv4` on `12711`–`12713` — 2026-11-02, [bring-up](../references/2026110214_adding-lab-intel3090.md); was alive on all three in `/pool`, rtt 0.58 s; Windows 11, so it serves only while its user session is signed in (per-user Docker Desktop, no automatic sign-in) |
 | a second 5090 | borrowed from a company | ? | RTX 5090, 32 GB | likely laboratory | not delivered — as recorded 2026-10-17 |
 | ~3 more 90-class | laboratory | ? | unknown, ~24 GB | laboratory | not measured |
 | `aws-euc1-l4` — EC2 `g6.xlarge` in the gateway's VPC | AWS `eu-central-1` | the gateway's subnet; group `biohack-gpu-backend`, `22` and `12711`–`12713` from the host's group only | NVIDIA L4, 23034 MiB | AWS | not running — the artifacts are a base AMI and a digest, not a machine; last served 2026-10-27 ([rehearsal](../references/20261027_aws-gpu-backend.md)) |
-| `vertex-global` — the managed-API wrapper on `gwhs-host` | the gateway host; Google global through its egress | loopback `127.0.0.1:8010`, prefixes `nano-banana-2`, `nano-banana-2.1`, `nano-banana-pro` | no GPU | AWS | implemented 2026-11-03, no container runs yet — [runbook](../../deploy/nanobanana.md) |
+| `vertex-global` — the managed-API wrapper on `gwhs-host` | the gateway host; Google global through its egress | loopback `127.0.0.1:8010`, prefixes `nano-banana-2`, `nano-banana-2.1`, `nano-banana-pro` | no GPU | AWS | serving all three; 1K `2.1` measured 2026-11-03, 2K and Pro still to measure; `alive` in `/pool` on 2026-11-05 — [runbook](../../deploy/nanobanana.md) |
 | ETH hosts | Zurich | not negotiated | unknown | ETH | not negotiated |
+
+On 2026-11-06 `GET /pool` reports `lab-3090`, `lab-5090`, `dgx-v100-0`, `dgx-v100-1`, `dgx-v100-2`,
+`dgx-v100-3` and `vertex-global` alive. The `homepc-4090` and `lab-intel3090` containers are not
+answering — `refused` and `timeout at connect` — and `/pool` names them by address rather than by
+their alias, so their run lines still need the machine label; the dated cells above are the last time
+they served.
+
+No card on `dgx-v100-*` runs `sam3.1-meta` (its forward pass demands bfloat16) or `internvl-u` (bf16
+weights, no measured fp16 conversion). The two DINOv3 ids run there in `float32`: their own
+capability choice, `float16`, answers 500 with NaN features on a V100, so that host pins
+`DINOV3_DTYPE=float32` until the container's default is fixed.
+[Four cards](../references/202611060155_dgx-four-cards.md).
 
 Location groups are conservative labels, not proven independent fault domains. Separate laboratory
 routers do not establish separate uplinks or power; verify those dependencies before claiming
