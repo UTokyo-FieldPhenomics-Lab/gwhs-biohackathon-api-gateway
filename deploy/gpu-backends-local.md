@@ -195,10 +195,12 @@ not:
   not run is anything that insists on bfloat16 or FlashAttention-2: the card has neither, which is
   `sam3.1-meta` and any checkpoint whose own autocast demands it. Check an image by running the
   §3.2 line and one real call, not by its README.
-- **Docker's disk is not the big disk.** `/` holds `/var/lib/docker`, and the 5.2 TB RAID at
-  `/ssdraid0` is where weights and build contexts belong. Read `df -h /var/lib/docker` before the
-  first build — a stopped container keeps its writable layer, and 138 of them held 524 GB on this
-  machine until they were removed.
+- **Ask Docker where its disk is; `df -h /` answers a different question.** `docker info --format
+  '{{.DockerRootDir}}'` names the filesystem that has to hold an image, and several machines here
+  have moved it — a root volume at 98 % beside a data-root with 281 GB free is the case that cost a
+  build. On the DGX the 5.2 TB RAID at `/ssdraid0` is where weights and build contexts belong, and
+  the space a stopped container keeps is the other number to read: 138 of them held 524 GB there
+  until they were removed.
 
 **Without the toolkit, `--gpus all` fails rather than falling back to the host's driver:**
 

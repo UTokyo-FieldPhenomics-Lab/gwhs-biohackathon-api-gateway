@@ -242,28 +242,35 @@ the counting model is a new template version with a third `docker pull`/`docker 
 repositories, including the two baked on 2026-10-27, so `scanOnPush` is accepted and evidently not
 serving the per-image status here. Not a property of this push.
 
-## The dtype push, 2026-11-04/05
+## The dtype push, 2026-11-05
 
-The `computed_by.dtype` change reached ECR for four repositories and stopped at two.
+All six repositories carry tag `20261105`, which is the first image set that publishes
+`computed_by.dtype`.
 
-| Repository | Tag | Digest |
-|---|---|---|
-| `sam3.1-meta` | `20261105` | `sha256:f766f987f1b14dec3f1c71c82e554adbc54b079928dff7961115ca3513ff070b` |
-| `gwfss-segformer-b4` | `20261105` | `sha256:d56a4f86d3a7c1a1e5cc485e80de356d9005d2790b48baf66393baee61c4ae7a` |
-| `dinov3-vitl16` | `20261105` | `sha256:1ef50f888f4919f7e0467ceb888146c7c85904f19498f542b4fa7dabdd5098da` |
-| `dinov3-vith16plus` | `20261105` | `sha256:390aa079a36366abfa81ce8399218bd0951ec319d16aaa5101a91671a63ba64b` |
-| `tasselnetv4` | `20261102` | `sha256:6ae7d7aaf0c2f2ecf4c04efdd2f58248e944a1bd2b9dff0d119da71a57ebeaba` — **old** |
-| `internvl-u` | `20261103` | `sha256:b8cdcb03d6c7f08009d872a0446e3bca0930977109800420b4661cc727dccbba` — **old** |
+| Repository | Digest |
+|---|---|
+| `sam3.1-meta` | `sha256:f766f987f1b14dec3f1c71c82e554adbc54b079928dff7961115ca3513ff070b` |
+| `gwfss-segformer-b4` | `sha256:d56a4f86d3a7c1a1e5cc485e80de356d9005d2790b48baf66393baee61c4ae7a` |
+| `dinov3-vitl16` | `sha256:1ef50f888f4919f7e0467ceb888146c7c85904f19498f542b4fa7dabdd5098da` |
+| `dinov3-vith16plus` | `sha256:390aa079a36366abfa81ce8399218bd0951ec319d16aaa5101a91671a63ba64b` |
+| `tasselnetv4` | `sha256:ad8b0123536da6b6664248933a910eb7a52ae86f4bb752a40ddcb6c899a73916` |
+| `internvl-u` | `sha256:481c3acdae76563cc34bf488a7f4ccdacf8385fd3b46d07e41bab7e002afedae` |
 
-The four pushed in seconds each: their layers were already in the repository, so only the code layer
-and the manifest moved — 4 KB per tag.
+The four built on the laboratory 3090 went up in seconds — 4 KB of manifest each — because their
+layers were already in the repository. `tasselnetv4` and `internvl-u` had their layers nowhere:
+their earlier images came from a different builder, so every layer digest differed and the push was
+the whole image. `internvl-u` took 18 min 42 s from this workstation's 30 MB/s uplink.
 
-The two that did not: their earlier images were built by a different builder, so **none** of their
-layers matched and the push was the whole image. Measured on the DGX's uplink, 583 KB/s,
-which is hours for 12 and 18 GB. Both images are rebuilt and waiting on that machine
-(`tasselnetv4`, `internvl-u`, with the dtype code); the push was stopped rather than left running on
-the laboratory's shared link.
+**Two things this cost, both avoidable.**
 
-Cheapest way to finish them when the instance is next wanted: build on the gateway host itself —
-the source archive is 31 MB, the base image and wheels download in-region at in-region speed, and the
-push back to ECR never leaves `eu-central-1`. The root volume has to hold one 18 GB image at a time.
+- **`df -h /` does not say where Docker stores anything.** This workstation's root volume showed
+  40 GB free and the build was moved to the DGX for that reason; its `data-root` is
+  `/home/crest/d/DockerCache/docker` with **281 GB** free, which §2.1 of
+  [`gpu-backends-local.md`](../../deploy/gpu-backends-local.md) had already recorded as this
+  machine's arrangement. Ask `docker info --format '{{.DockerRootDir}}'` before deciding a machine
+  cannot hold an image.
+- **The DGX's push was abandoned on a bad number.** 583 KB/s was a ten-second sample of
+  `tx_bytes` taken while the push was between layers; the sustained rate is about 2.9 MB/s, and the
+  half hour it had run had in fact uploaded every layer `tasselnetv4` needed — the later push from
+  the workstation found them and finished in 4.5 s. Measure a transfer over minutes, not seconds,
+  and prefer the machine that already holds the image.
