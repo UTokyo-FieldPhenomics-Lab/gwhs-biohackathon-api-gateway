@@ -36,8 +36,8 @@ repo-wide invariants are in [`project.md`](project.md) and are not repeated here
 - **Assign one host port per model consistently across machines.** `12711` is `sam3.1-meta`,
   `12712` is `gwfss-segformer-b4`, `12713` is `tasselnetv4`, `12714` is `dinov3-vitl16`, `12715` is
   `dinov3-vith16plus`, `12716` is `internvl-u`, `12717` is `yolo26-ultralytics`, `12718` is
-  `yolo26-seg-ultralytics`, `12719` is `sprout-l-gwfss`; internal container ports remain `12711` in
-  separate namespaces.
+  `yolo26-seg-ultralytics`, `12719` is `sprout-l-gwfss`, `12720` is `wevisone-vl-4b`; internal
+  container ports remain `12711` in separate namespaces.
   [Port assignment](../../deploy/gpu-backends-local.md).
 - **Keep retired rows, with dated last-observed status and evidence.** Missing evidence or empty
   cells mean unknown, not absent; never delete a machine's history by removing its row.
@@ -56,6 +56,7 @@ repo-wide invariants are in [`project.md`](project.md) and are not repeated here
 | `lab-3090` — host `labpc-host`, tailnet `labpc-tailnet` | laboratory | `room-router-a` (GL-BE9300), the laboratory LAN | RTX 3090, 24576 MiB | laboratory | serving all five, plus `yolo26-ultralytics` on `12717`, `yolo26-seg-ultralytics` on `12718` — 2026-11-03, [the pair](../references/2026110316_yolo-ultralytics-pair.md), and `sprout-l-gwfss` on `12719` — 2026-11-04, [the model](../references/2026110420_sprout-l-gwfss.md); `tasselnetv4` added on `12713` — 2026-10-30, [counting contract](../references/2026102923_tasselnetv4-counting-contract.md); `dinov3-vitl16` and `dinov3-vith16plus` added on `12714`/`12715` — 2026-11-02, [backbones](../references/2026110215_dinov3-backbones.md); path 0.0 ms — 2026-10-29, [egress loss](../references/202610291100_campus-egress-loss.md) |
 | `homepc-4090` | home | `home-router` (GL-MT6000), the home LAN | RTX 4090, 24564 MiB | home | serving `gwfss`, `tasselnetv4` (`12713`, added 2026-10-30, [counting contract](../references/2026102923_tasselnetv4-counting-contract.md)) and `internvl-u` (`12716`, added 2026-11-03, [prose and pictures](../references/2026110219_internvl-u-prose-and-picture-answers.md)); path 22–537 ms, mdev 163, ICMP flapping — 2026-10-29, [egress loss](../references/202610291100_campus-egress-loss.md) |
 | `lab-5090` | laboratory | `room-router-d` (GL-MT6000), the 5090's LAN | RTX 5090, 32607 MiB | laboratory | serving all three, and the only Windows host; `tasselnetv4` added on `12713` — 2026-10-30, [counting contract](../references/2026102923_tasselnetv4-counting-contract.md); path 1.9–2.6 ms, ICMP filtered by its own firewall — 2026-10-29, [egress loss](../references/202610291100_campus-egress-loss.md) |
+| `dgx-v100` | laboratory | `room-router-e` (GL-MT6000), the plant-factory LAN | 4 × Tesla V100-DGXS-32GB, 32768 MiB each | laboratory | serving `wevisone-vl-4b` on `12720`, card 1 — 2026-11-05, [deployment](../references/2026110523_wevisone-vl-4b-in-the-pool.md); cards 2 and 3 idle, card 0 holds the desktop. `sam3.1-meta` cannot run here at all: its forward pass demands bfloat16 |
 | `lab-intel3090` | laboratory | `room-router-e` (GL-MT6000), the plant-factory LAN | RTX 3090, 24576 MiB | laboratory | serving all three on `12711`–`12713` — 2026-11-02, [bring-up](../references/2026110214_adding-lab-intel3090.md); alive on all three in `/pool`, rtt 0.58 s; Windows 11, so it serves only while its user session is signed in (per-user Docker Desktop, no automatic sign-in) |
 | a second 5090 | borrowed from a company | ? | RTX 5090, 32 GB | likely laboratory | not delivered — as recorded 2026-10-17 |
 | ~3 more 90-class | laboratory | ? | unknown, ~24 GB | laboratory | not measured |
