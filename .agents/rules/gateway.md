@@ -48,7 +48,10 @@ Package: `gateway/`. Shared constraints are in [`project.md`](project.md).
   minutes, and passes the backend over for at least as long as it cost. A model that declares none
   keeps ten seconds. The default is not raised globally: a segmentation answer and a hosted
   image generation are different work, and one number for both would either cut the picture short
-  or make a dead card cost a minute. [Image backend](../../deploy/nanobanana.md).
+  or make a dead card cost a minute. `internvl-u` shipped without the declaration and lost every
+  picture to the default until it declared 120 s.
+  [Image backend](../../deploy/nanobanana.md),
+  [a picture takes 49.5 s on a 3090](../references/202611060235_lab-intel3090-internvl.md).
 - **Probe backend health off the request path.** One cancellable task uses
   `PROBE_INTERVAL_SECONDS`; publish `backends_up` and `checked_seconds_ago`. Retry undeclared
   containers on that clock; once read, a declaration requires a restart to change.
