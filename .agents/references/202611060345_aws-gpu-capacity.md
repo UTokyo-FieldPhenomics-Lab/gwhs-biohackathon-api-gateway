@@ -59,9 +59,29 @@ subnets, logs one line per attempt to `~/.local/state/gwhs/gpu-capacity.log`, an
 it launches. The subnet ids, the AMI and the security group are host-private and are not in the script:
 it sources `~/.config/gwhs/gpu-probe.env` (mode 0600), so the repository carries the question and the
 machine carries the identifiers. A crontab entry on the workstation runs it hourly from 09:00 to 15:00
-JST, which is 01:00–07:00 in Frankfurt:
+JST, which is 01:00–07:00 in Frankfurt, and the script removes that entry itself after 2026-11-13 —
+one week is enough to learn what the small hours look like:
 
     0 9-15 * * * /home/crest/Documents/Github/gwhs-biohackaton-api-gateway/deploy/probe-gpu-capacity.sh
+
+## The first g7e is held, once, for one hour
+
+A probe is destroyed within seconds. The **first** `g7e.*` is not: it is launched from a
+Blackwell-capable Deep Learning base image — the pool's own Debian image carries driver 550, which
+predates the card — with trial user-data that does the real deployment and measures it. That user-data
+logs the card and driver, logs in to ECR through the instance profile, pulls the six images ECR
+carries, starts all six containers on the one 96 GB card, and times one call per model. The report goes
+to the serial console; the probe reads it with `get-console-output` and saves it to
+`~/.local/state/gwhs/g7e-trial-<timestamp>.log`, then **destroys the instance after at most 60
+minutes**, finished or not. A marker file makes every later g7e a plain probe again.
+
+Why one hour and not "until it works": an unattended $5.72/h card is a bill, and the record of what
+happened is worth more than the extra attempts. If the trial's verdict is `driver-fails-on-this-card`
+or a pull failure, the next step is a decision, not another hour.
+
+The ids a trial cannot cover — `sprout`, both `yolo26` ids (no ECR image) and the two not planned for
+the rented card — are listed in the report as not tried.
+
 
 The schedule is the point: capacity is a function of the hour, and the question that matters is what
 Frankfurt's small hours look like, not what they look like while everyone is awake. A launch recorded

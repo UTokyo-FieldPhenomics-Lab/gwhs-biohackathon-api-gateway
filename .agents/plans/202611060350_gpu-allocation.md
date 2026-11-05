@@ -103,3 +103,21 @@ started before Monday's session and stopped after Friday's, which is what brings
 4. `models.json` gains one URL per new (machine, model); the gateway restarts; `/pool` is the check.
 5. A G7e vCPU quota case, if variant B is still wanted — the probes prove the account can request one
    (no `VcpuLimitExceeded`), but the quota for the family has never been read directly.
+
+## The first g7e, and the one-week probe
+
+`deploy/probe-gpu-capacity.sh` runs hourly from 09:00 to 15:00 JST (01:00–07:00 in Frankfurt) and
+stops itself on 2026-11-13: the question is what the small hours look like, not a permanent watch.
+
+Every launch it makes is a probe and is terminated within seconds — except the first `g7e.*`, which is
+held for **at most 60 minutes** and then destroyed whatever the trial reached. On that one instance the
+user-data runs the real deployment: the trial image (a Blackwell-capable Deep Learning base image, not
+the pool's Debian one whose driver predates the card), ECR login through the instance profile, pull of
+the six images ECR carries, all six containers on one card, and one timed call per model. The report
+goes to the serial console and is saved to `~/.local/state/gwhs/g7e-trial-<timestamp>.log`; the
+availability log is `~/.local/state/gwhs/gpu-capacity.log`. The trial happens once — a marker file
+keeps later g7e sightings as plain probes.
+
+The four ids a trial cannot cover are those with no ECR image (`sprout`, both `yolo26` ids) and the two
+that are not planned for the rented card at all (`wevisone`, and the three GWHSS fine-tunes that do not
+exist yet); the report says so instead of omitting them.
