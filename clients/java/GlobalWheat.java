@@ -1280,12 +1280,63 @@ public final class GlobalWheat {
         return Base64.getDecoder().decode(encoded);
     }
 
-    /** Attach a model's decoded {@code image.picture}, in place. */
+    /**
+     * Cut one answer picture back to the frame of the picture it edits.
+     *
+     * <p>The service pads the picture it sends when the model has no ratio that matches, and
+     * records where the caller's picture sits as {@code frame.content}. This applies that record: a
+     * crop at the answer's own resolution, re-encoded as PNG. A box covering the whole frame, or a
+     * payload {@code ImageIO} cannot read, returns the bytes untouched.
+     *
+     * @param encoded the picture the model returned
+     * @param frame the answer's {@code frame} record
+     * @return the cropped picture
+     */
+    @SuppressWarnings("unchecked")
+    static byte[] crop_to_frame(byte[] encoded, Map<String, Object> frame) {
+        Object content = frame.get("content");
+        if (!(content instanceof List<?> box) || box.size() != 4) return encoded;
+        double left = ((Number) box.get(0)).doubleValue();
+        double top = ((Number) box.get(1)).doubleValue();
+        double right = ((Number) box.get(2)).doubleValue();
+        double bottom = ((Number) box.get(3)).doubleValue();
+        if (left <= 0 && top <= 0 && right >= 1 && bottom >= 1) return encoded;
+        try {
+            BufferedImage image = ImageIO.read(new ByteArrayInputStream(encoded));
+            if (image == null) return encoded;
+            int x = (int) Math.max(0, Math.floor(left * image.getWidth()));
+            int y = (int) Math.max(0, Math.floor(top * image.getHeight()));
+            int width =
+                    (int)
+                            Math.max(
+                                    1,
+                                    Math.min(image.getWidth(), Math.ceil(right * image.getWidth()))
+                                            - x);
+            int height =
+                    (int)
+                            Math.max(
+                                    1,
+                                    Math.min(image.getHeight(), Math.ceil(bottom * image.getHeight()))
+                                            - y);
+            BufferedImage cut = image.getSubimage(x, y, width, height);
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            ImageIO.write(cut, "png", output);
+            return output.toByteArray();
+        } catch (IOException failure) {
+            return encoded;
+        }
+    }
+
+    /** Attach a model's decoded {@code image.picture}, in place, cut back to the frame it edits. */
     @SuppressWarnings("unchecked")
     private static void decodeImage(Map<String, Object> body) {
         if (body.get("image") instanceof Map<?, ?>) {
             Map<String, Object> image = (Map<String, Object>) body.get("image");
-            image.put("picture", decode_image(image));
+            byte[] bytes = decode_image(image);
+            if (body.get("frame") instanceof Map<?, ?> frame) {
+                bytes = crop_to_frame(bytes, (Map<String, Object>) frame);
+            }
+            image.put("picture", bytes);
         }
     }
 

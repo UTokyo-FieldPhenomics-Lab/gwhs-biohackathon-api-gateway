@@ -65,8 +65,19 @@ class Client {
    *   `(image, side) => Promise<Blob|Uint8Array|null>`: the image at most `side` pixels on its long
    *   edge, or `null` where it already fits and needs no re-encode. The browser and Node entries
    *   each supply one; this file does not, so an upload goes out untouched.
+   * @param {Function} [options.framer] How a picture answer is cut back to the frame of the picture
+   *   it edits, as `(bytes, mediaType, frame) => Promise<Uint8Array>`. The browser and Node entries
+   *   each supply one; without it the bytes are the model's own file and `frame` stays on the body
+   *   for the caller to apply.
    */
-  constructor({key, base, timeout = DEFAULT_TIMEOUT, fetch: transport, resizer = null} = {}) {
+  constructor({
+    key,
+    base,
+    timeout = DEFAULT_TIMEOUT,
+    fetch: transport,
+    resizer = null,
+    framer = null,
+  } = {}) {
     const environment = globalThis.process?.env ?? {};
     this.key = key ?? environment[KEY_ENV] ?? "";
     if (!this.key) {
@@ -75,6 +86,7 @@ class Client {
     this.base = (base ?? environment[BASE_ENV] ?? DEFAULT_BASE).replace(/\/+$/, "");
     this.timeout = timeout;
     this.resizer = resizer;
+    this.framer = framer;
     this._fetch = transport ?? globalThis.fetch;
     this._descriptions = new Map();
     this._declarations = new Map();
@@ -208,7 +220,7 @@ class Client {
       decode_objects(body);
       decode_density(body);
       decode_body_features(body);
-      decode_body_image(body);
+      await decode_body_image(body, this.framer);
     }
     return body;
   }
@@ -229,7 +241,7 @@ class Client {
       params: modelParams(params),
       timeout: Math.max(this.timeout, GENERATE_TIMEOUT),
     });
-    if (decode) decode_body_image(body);
+    if (decode) await decode_body_image(body, this.framer);
     return body;
   }
 
@@ -261,7 +273,7 @@ class Client {
       decode_objects(body);
       decode_density(body);
       decode_body_features(body);
-      decode_body_image(body);
+      await decode_body_image(body, this.framer);
     }
     return body;
   }
@@ -541,10 +553,23 @@ function decode_image(field) {
   return new Uint8Array(Buffer.from(base64, "base64"));
 }
 
-/** Attach a model's decoded `image.picture`, in place. */
-function decode_body_image(body) {
+/**
+ * Attach a model's decoded `image.picture`, in place, cut back to the frame it edits.
+ *
+ * A service that had to give the model a canvas — because the model only generates at its own
+ * ratios — records the box the caller's picture occupies in `frame`. The entry's `framer` applies
+ * it; without one the picture stays the model's own file and the record is still on the body.
+ * @param {object} body A prediction.
+ * @param {Function} [framer] `(bytes, mediaType, frame) => Promise<Uint8Array>`.
+ * @returns {Promise<void>}
+ */
+async function decode_body_image(body, framer = null) {
   if (body.image && typeof body.image === "object") {
-    body.image.picture = decode_image(body.image);
+    let bytes = decode_image(body.image);
+    if (typeof framer === "function" && body.frame) {
+      bytes = await framer(bytes, body.image.media_type, body.frame);
+    }
+    body.image.picture = bytes;
   }
 }
 

@@ -133,6 +133,24 @@ public final class Checks {
             check("generate sends the prompt", generateCall.contains("prompt=wheat"));
             check("generate sends no body", !generateCall.contains("{"));
 
+            Map<String, Object> framed = client.predict("nano-banana-2.1", "gwfss", 5, null);
+            Map<String, Object> framedImage = (Map<String, Object>) framed.get("image");
+            byte[] cropped = (byte[]) framedImage.get("picture");
+            BufferedImage croppedImage = ImageIO.read(new ByteArrayInputStream(cropped));
+            check(
+                    "a framed picture is cut back to its box",
+                    croppedImage != null
+                            && croppedImage.getWidth() == 1
+                            && croppedImage.getHeight() == 1);
+            check("the cropped picture is a PNG", (cropped[0] & 0xff) == 0x89);
+            check(
+                    "the raw picture keeps the model's bytes",
+                    framedImage
+                            .get("data")
+                            .equals(
+                                    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAADUlEQVR4"
+                                            + "nGM4UWEDRAALgwL5Z6uxbgAAAABJRU5ErkJggg=="));
+
             Map<String, Object> wrongType = new LinkedHashMap<>(image);
             wrongType.put("media_type", "text/plain");
             boolean refusedPicture = false;
@@ -446,6 +464,15 @@ public final class Checks {
                                     + "\"image\":{\"media_type\":\"image/png\",\"width\":2,\"height\":1,"
                                     + "\"data\":\"iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAADUlEQVR4"
                                     + "nGM4UWEDRAALgwL5Z6uxbgAAAABJRU5ErkJggg==\"},"
+                                    + "\"frame\":{\"width\":8,\"height\":4,\"content\":[0.0,0.0,1.0,1.0]},"
+                                    + "\"resolution_used\":1024}";
+            case "/models/nano-banana-2.1/predict" ->
+                    answer =
+                            "{\"model\":\"nano-banana-2.1\",\"objects\":[],"
+                                    + "\"image\":{\"media_type\":\"image/png\",\"width\":2,\"height\":1,"
+                                    + "\"data\":\"iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAADUlEQVR4"
+                                    + "nGM4UWEDRAALgwL5Z6uxbgAAAABJRU5ErkJggg==\"},"
+                                    + "\"frame\":{\"width\":8,\"height\":4,\"content\":[0.0,0.0,0.5,1.0]},"
                                     + "\"resolution_used\":1024}";
             default -> {
                 status = 401;

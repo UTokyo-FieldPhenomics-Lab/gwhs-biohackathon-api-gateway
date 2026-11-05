@@ -315,6 +315,29 @@ def test_a_generated_picture_arrives_openable() -> None:
     assert body["image"]["media_type"] == "image/png"
 
 
+def test_a_picture_answer_is_cut_back_to_the_frame_it_edits() -> None:
+    """The service records the box the input occupies on the canvas it built; the client crops."""
+    body = picture_body()
+    body["frame"] = {"width": 8, "height": 4, "content": [0.0, 0.0, 0.5, 1.0]}
+    client, _ = make([Reply(200, body)])
+
+    answer = client.predict("internvl-u", "gwfss", 0, prompt="warm the light")
+
+    assert answer["image"]["picture"].size == (1, 1)
+    assert answer["image"]["data"] == PICTURE, "the raw bytes are the model's, not the crop"
+
+
+def test_a_frame_over_the_whole_picture_crops_nothing() -> None:
+    """The common case is a frame that is already the answer: the picture is left at its size."""
+    body = picture_body()
+    body["frame"] = {"width": 8, "height": 4, "content": [0.0, 0.0, 1.0, 1.0]}
+    client, _ = make([Reply(200, body)])
+
+    answer = client.predict("internvl-u", "gwfss", 0, prompt="warm the light")
+
+    assert answer["image"]["picture"].size == (2, 1)
+
+
 def test_decode_false_leaves_a_generated_picture_as_it_arrived() -> None:
     """The same switch the masks and the two grids follow: nothing is opened."""
     body = picture_body()

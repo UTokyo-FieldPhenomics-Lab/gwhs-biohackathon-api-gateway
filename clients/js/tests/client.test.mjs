@@ -173,6 +173,46 @@ test("generate asks the generate route with no body", async () => {
   assert.equal(answer.image.picture.length, 70);
 });
 
+test("a framer cuts a picture answer back to the frame it edits", async () => {
+  const body = {
+    model: "nano-banana-2.1",
+    objects: [],
+    image: {...PICTURE},
+    frame: {width: 8, height: 4, content: [0, 0, 0.5, 1]},
+  };
+  const transport = fake([{status: 200, body}]);
+  const seen = [];
+  const api = new Client({
+    key: "t0ken",
+    base: "https://api.test",
+    fetch: transport.fetch,
+    framer: async (bytes, mediaType, frame) => {
+      seen.push([bytes.length, mediaType, frame.content]);
+      return new Uint8Array([1, 2, 3]);
+    },
+  });
+
+  const answer = await api.predict("nano-banana-2.1", "gwfss", 0, {prompt: "warm"});
+
+  assert.deepEqual(seen, [[70, "image/png", [0, 0, 0.5, 1]]]);
+  assert.deepEqual([...answer.image.picture], [1, 2, 3]);
+});
+
+test("without a framer a picture is the model's file and the frame stays on the body", async () => {
+  const body = {
+    model: "nano-banana-2.1",
+    objects: [],
+    image: {...PICTURE},
+    frame: {width: 8, height: 4, content: [0, 0, 0.5, 1]},
+  };
+  const {client: api} = client([{status: 200, body}]);
+
+  const answer = await api.predict("nano-banana-2.1", "gwfss", 0, {prompt: "warm"});
+
+  assert.equal(answer.image.picture.length, 70);
+  assert.deepEqual(answer.frame.content, [0, 0, 0.5, 1]);
+});
+
 test("a picture whose content type is not one is refused", () => {
   assert.throws(() => decode_image({...PICTURE, media_type: "text/plain"}), /media_type/);
 });

@@ -35,6 +35,7 @@ import io
 import json
 import os
 from collections.abc import Iterator, Mapping, Sequence
+from math import ceil, floor
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import quote
@@ -442,8 +443,9 @@ class Client:
             ``image`` for a model that answers in prose or pixels, ``warnings`` where it reported
             one. ``mask`` is on every object, ``density["grid"]`` is the field shaped to its
             ``size``, ``features["grid"]`` is the patch grid shaped to its ``size`` and
-            ``image["picture"]`` is the picture opened, all when ``decode`` is true; a counting,
-            backbone or picture answer has no objects, so only the field is added.
+            ``image["picture"]`` is the picture opened and cut back to the frame of the picture it
+            edits, all when ``decode`` is true; a counting, backbone or picture answer has no
+            objects, so only the field is added.
 
         Raises
         ------
@@ -947,7 +949,54 @@ def decode_features(field: Mapping[str, Any]) -> np.ndarray:
     return cast("np.ndarray", grid.reshape(rows, columns, dim))
 
 
-def decode_image(field: Mapping[str, Any]) -> Image.Image:
+def _crop_to_frame(picture: Image.Image, frame: Mapping[str, Any] | None) -> Image.Image:
+    """Cut one answer picture back to the frame of the picture it edits.
+
+    Parameters
+    ----------
+    picture : PIL.Image.Image
+        The picture the model returned, at whatever frame the service generated.
+    frame : mapping or None
+        The answer's ``frame`` record: ``width``, ``height`` and a four-float ``content`` box.
+        `None` leaves the picture alone.
+
+    Returns
+    -------
+    PIL.Image.Image
+        The picture, cropped where the record says the caller's own picture sits in it. A box
+        covering the whole frame, or a record this function cannot read, returns the picture as it
+        arrived rather than failing a decode that already succeeded.
+
+    Notes
+    -----
+    This is a crop, not a resize: the answer keeps the model's own resolution. A caller laying it
+    over the picture they sent scales once by ``frame["width"] / picture.width``.
+    """
+    if not isinstance(frame, Mapping):
+        return picture
+    content = frame.get("content")
+    if not isinstance(content, (list, tuple)) or len(content) != 4:
+        return picture
+    try:
+        left, top, right, bottom = (float(value) for value in content)
+    except (TypeError, ValueError):
+        return picture
+    if left <= 0.0 and top <= 0.0 and right >= 1.0 and bottom >= 1.0:
+        return picture
+    box = (
+        max(0, floor(left * picture.width)),
+        max(0, floor(top * picture.height)),
+        min(picture.width, ceil(right * picture.width)),
+        min(picture.height, ceil(bottom * picture.height)),
+    )
+    if box[2] <= box[0] or box[3] <= box[1]:
+        return picture
+    return picture.crop(box)
+
+
+def decode_image(
+    field: Mapping[str, Any], frame: Mapping[str, Any] | None = None
+) -> Image.Image:
     """Decode a model's ``image`` object into a Pillow image.
 
     Parameters
@@ -955,11 +1004,15 @@ def decode_image(field: Mapping[str, Any]) -> Image.Image:
     field : mapping
         The ``image`` object as the API publishes it: ``media_type``, ``width``, ``height`` and
         ``data``.
+    frame : mapping or None, optional
+        The answer's ``frame`` record, where the service had to give the model a canvas. The
+        picture is cropped to the box it names, so it has the shape of the picture that was edited.
 
     Returns
     -------
     PIL.Image.Image
-        The picture the model produced, opened from the encoded file the answer carried.
+        The picture the model produced, opened from the encoded file the answer carried, and cut
+        back to the caller's frame where the answer records one.
 
     Raises
     ------
@@ -985,7 +1038,7 @@ def decode_image(field: Mapping[str, Any]) -> Image.Image:
         raise ValueError(
             f"image carries {len(payload)} bytes that are not a picture: {error}"
         ) from None
-    return picture
+    return _crop_to_frame(picture, frame)
 
 
 def _decode_image(body: dict[str, Any]) -> None:
@@ -1004,7 +1057,7 @@ def _decode_image(body: dict[str, Any]) -> None:
     """
     image = body.get("image")
     if isinstance(image, dict):
-        image["picture"] = decode_image(image)
+        image["picture"] = decode_image(image, body.get("frame"))
 
 
 def _decode_objects(body: dict[str, Any]) -> None:

@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import {test} from "node:test";
 
 import {Client} from "../global-wheat.js";
-import {Client as WebClient, resize as web_resize} from "../global-wheat.web.js";
+import {Client as WebClient, crop as web_crop, resize as web_resize} from "../global-wheat.web.js";
 
 const SAM = {
   id: "sam3.1-meta",
@@ -175,9 +175,30 @@ test("the web resizer falls back to a canvas where OffscreenCanvas is absent", a
   assert.deepEqual(seen.toBlob, {type: "image/jpeg", quality: 0.9});
 });
 
-test("the web entry is the core client with a resizer", () => {
+test("the web cropper cuts the recorded box at the answer's size", async (t) => {
+  const seen = stub_browser(t, {width: 1000, height: 800});
+  const bytes = await web_crop(new Uint8Array([1]), "image/png", {
+    width: 500,
+    height: 400,
+    content: [0.1, 0.2, 0.9, 0.6],
+  });
+  assert.deepEqual(seen.canvases, [[800, 320]]);
+  assert.deepEqual(seen.draws, [[100, 160, 800, 320]]);
+  assert.deepEqual(seen.blobs, [{type: "image/png"}]);
+  assert.ok(bytes instanceof Uint8Array);
+});
+
+test("the web cropper leaves a whole-frame box untouched", async (t) => {
+  const seen = stub_browser(t, {width: 1000, height: 800});
+  const bytes = new Uint8Array([7]);
+  assert.equal(await web_crop(bytes, "image/png", {content: [0, 0, 1, 1]}), bytes);
+  assert.equal(seen.canvases.length, 0);
+});
+
+test("the web entry is the core client with a resizer and a cropper", () => {
   const client = new WebClient({key: "t0ken", base: "https://api.test", fetch: async () => {}});
   assert.equal(client.resizer, web_resize);
+  assert.equal(client.framer, web_crop);
 });
 
 /**
@@ -283,7 +304,26 @@ test("the node resizer leaves an image at the side untouched", {skip: needs_shar
   assert.equal(await node.resize(fitted, 200), null, "a second pass has nothing to do");
 });
 
+test("the node cropper cuts the recorded box", {skip: needs_sharp}, async () => {
+  const sharp = (await import("sharp")).default;
+  const source = await sharp({
+    create: {width: 100, height: 50, channels: 3, background: "#808080"},
+  })
+    .png()
+    .toBuffer();
+  const out = await node.crop(source, "image/png", {
+    width: 80,
+    height: 40,
+    content: [0.1, 0.2, 0.9, 0.6],
+  });
+  const {width, height, format} = await sharp(out).metadata();
+  assert.equal(width, 80);
+  assert.equal(height, 20);
+  assert.equal(format, "png");
+});
+
 test("the node entry is the core client with the sharp resizer", {skip: needs_sharp}, () => {
   const client = new node.Client({key: "t0ken", base: "https://api.test", fetch: async () => {}});
   assert.equal(client.resizer, node.resize);
+  assert.equal(client.framer, node.crop);
 });
