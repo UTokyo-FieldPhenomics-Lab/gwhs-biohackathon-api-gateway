@@ -217,6 +217,19 @@
         },
       ],
     },
+    // Text in, instances out: the only model here whose class is a phrase rather than a declared
+    // label list, which is why its chip writes a `query` and not a threshold. It writes one box per
+    // instance and decodes a mask for each, so an answer takes about half a minute — `max_instances`
+    // is the control that bounds the wait, and the legend is where the query and the areas are read.
+    "wevisone-vl-4b": {
+      legend: true,
+      examples: [
+        {label: "43 heads", dataset: "gwhd", row: 4, params: {query: "wheat head"}},
+        // The same frame under a different phrase: that is the whole point of an open-vocabulary
+        // model, and switching chips compares the two answers without retyping one.
+        {label: "leaves", dataset: "gwhd", row: 4, params: {query: "leaf"}},
+      ],
+    },
   };
   let view = {...VIEW_BASE};
   // A demo example is a cached published-row answer: the call is the same one the reader can make,
@@ -2377,7 +2390,15 @@
     $("run").disabled = true;
     running = true;
     clearTimeout(rowTimer);   // a row number typed a moment ago must not preview over the answer
-    say(state, "running…");
+    // A request to this pool can take half a minute — a mask model writes one box per instance and
+    // decodes a mask for each — and a line that never changes reads as a page that has stopped. The
+    // clock counts how long the reader has been waiting, which is the page's own fact; it says
+    // nothing about what the model is doing, and nothing here pretends to know.
+    const startedAt = Date.now();
+    say(state, "running… 0 s");
+    const clock = setInterval(() => {
+      say(state, "running… " + Math.round((Date.now() - startedAt) / 1000) + " s");
+    }, 1000);
     // A preview still in flight belongs to a choice this run has moved past, and must not be allowed
     // to draw over the result.
     previewToken += 1;
@@ -2463,6 +2484,8 @@
     } catch (error) {
       say(state, error.message, false);
     } finally {
+      // First, so a tick cannot overwrite what the catch is about to say, or the clear below.
+      clearInterval(clock);
       running = false;
       // Back to what the last probe said rather than to "enabled": a run that finished while the pool
       // went empty must not leave a button that would answer 503.
