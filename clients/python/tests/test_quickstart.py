@@ -37,7 +37,12 @@ def test_setup_collects_a_key_before_constructing_the_client(
     namespace: dict[str, Any] = {}
     for cell in cells:
         source = "".join(cell["source"])
-        if cell["cell_type"] != "code" or source.startswith("!"):
+        # A shell cell is Python only after the notebook's `!` prefix, and it may open with a
+        # comment above the command. A line starting with `!` is not valid Python anywhere, so
+        # this finds the cell whatever the page put before its first command.
+        if cell["cell_type"] != "code" or any(
+            line.lstrip().startswith("!") for line in source.splitlines()
+        ):
             continue
         exec(compile(source, "quickstart setup", "exec"), namespace)
         if "client" in namespace:
@@ -46,4 +51,6 @@ def test_setup_collects_a_key_before_constructing_the_client(
     assert isinstance(namespace.get("client"), global_wheat.Client)
     assert os.environ["GLOBAL_WHEAT_API_KEY"] == (existing or "entered-participant-key")
     assert len(prompts) == (0 if existing else 1)
-    assert capsys.readouterr().out == "Client\n"
+    # The setup prints the versions it found before the client's own name; the name is the last
+    # line, and what this test is about is that the client was constructed at all.
+    assert capsys.readouterr().out.strip().splitlines()[-1] == "Client"

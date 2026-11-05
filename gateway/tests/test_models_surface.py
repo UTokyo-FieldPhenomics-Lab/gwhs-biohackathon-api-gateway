@@ -2885,6 +2885,100 @@ def test_generate_sends_no_body_and_is_never_cached(tmp_path: Path, index_dir: P
     assert headers["X-Biohack-Team"] == TEAM
 
 
+GENERATE_DECLARATION: dict[str, Any] = {
+    **DECLARATION,
+    "parameters": [
+        {"name": "prompt", "type": "text", "max_length": 20, "required": True},
+        {"name": "image_size", "type": "enum", "default": "1K", "enum": ["1K", "2K"]},
+    ],
+}
+"""A picture model: a prompt with no default, and one enumerated size."""
+
+
+def test_generate_without_its_required_prompt_is_refused(tmp_path: Path, index_dir: Path) -> None:
+    """A model with no default prompt cannot be asked nothing, and the refusal names the field."""
+    client, backends = client_for(tmp_path, index_dir, GENERATE_DECLARATION)
+
+    response = client.post(f"/models/{MODEL}/generate", headers=KEY, params={"image_size": "1K"})
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "invalid_request"
+    assert "prompt" in response.json()["error"]["message"]
+    assert backends.predict_calls() == [], "an incomplete request reached a paid model"
+
+
+@pytest.mark.parametrize(
+    ("params", "named"),
+    [
+        ({"prompt": "wheat", "image_size": "4K"}, "image_size"),
+        ({"prompt": "w" * 21}, "prompt"),
+        ([("prompt", "a"), ("prompt", "b")], "prompt"),
+        ({"prompt": "wheat", "aspect_ratio": "16:9"}, "aspect_ratio"),
+    ],
+)
+def test_generate_applies_the_same_parameter_contract(
+    tmp_path: Path, index_dir: Path, params: list[tuple[str, str]] | dict[str, str], named: str
+) -> None:
+    """Generate is a route, not an exemption: names, lengths and choices are the model's."""
+    client, backends = client_for(tmp_path, index_dir, GENERATE_DECLARATION)
+
+    response = client.post(f"/models/{MODEL}/generate", headers=KEY, params=params)
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "invalid_request"
+    assert named in response.json()["error"]["message"]
+    assert backends.predict_calls() == []
+
+
+def test_an_upload_without_a_file_part_is_refused(
+    client: TestClient, backends: FakeBackends
+) -> None:
+    """The bytes are the request's whole payload; a form without them names nothing to run."""
+    response = client.post(f"/models/{MODEL}/predict/upload", headers=KEY, params={"prompt": "x"})
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "invalid_request"
+    assert backends.predict_calls() == []
+
+
+def test_an_upload_under_another_field_name_is_refused(
+    client: TestClient, backends: FakeBackends
+) -> None:
+    """`file` is the field the contract names, and a different name is not guessed at."""
+    response = client.post(
+        f"/models/{MODEL}/predict/upload",
+        headers=KEY,
+        files={"image": ("photo.jpg", b"\xff\xd8\xff\xe0 bytes", "image/jpeg")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "invalid_request"
+    assert backends.predict_calls() == [], "a form the contract cannot read reached a machine"
+
+
+@pytest.mark.parametrize(
+    ("content", "content_type"),
+    [
+        (b"{not json", "application/json"),
+        (b"{}", "text/plain"),
+        (b"", "application/json"),
+    ],
+)
+def test_a_predict_body_that_is_not_json_is_refused(
+    client: TestClient, backends: FakeBackends, content: bytes, content_type: str
+) -> None:
+    """The body is one small JSON object; anything else is the caller's mistake, not a backend's."""
+    response = client.post(
+        f"/models/{MODEL}/predict",
+        headers={**KEY, "Content-Type": content_type},
+        content=content,
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "invalid_request"
+    assert backends.predict_calls() == []
+
+
 def test_a_backend_at_capacity_is_relayed_without_leaving_the_pool(
     tmp_path: Path, index_dir: Path
 ) -> None:

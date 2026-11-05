@@ -55,17 +55,32 @@ def test_every_method_answers() -> None:
         model_id = models[0]["id"]
         assert client.model(model_id)["id"] == model_id
 
-        if not models[0]["backends_up"]:
-            pytest.skip("no machine is answering, so the inference half was not exercised")
+        # The inference half asks a promptable segmenter, not whatever id sorts first. The
+        # directory order is the host's, and a backbone takes `side` while a hosted picture model
+        # answers an edit — a `prompt` alone does not make a model a segmenter.
+        asked = next(
+            (
+                model
+                for model in models
+                if model["backends_up"]
+                and any(
+                    parameter["name"] in ("boxes", "points")
+                    for parameter in model.get("parameters") or []
+                )
+            ),
+            None,
+        )
+        if asked is None:
+            pytest.skip("no promptable segmenter has a machine answering")
 
-        prediction = client.predict(model_id, "gwhd", rows[0]["row"], prompt="wheat head")
-        assert prediction["model"] == model_id
+        prediction = client.predict(asked["id"], "gwhd", rows[0]["row"], prompt="wheat head")
+        assert prediction["model"] == asked["id"]
         for obj in prediction["objects"]:
             assert obj["mask"].ndim == 2
             assert int(obj["mask"].sum()) == int(obj["area"])
 
-        uploaded = client.predict_file(model_id, photo, prompt="wheat head")
-        assert uploaded["model"] == model_id
+        uploaded = client.predict_file(asked["id"], photo, prompt="wheat head")
+        assert uploaded["model"] == asked["id"]
 
 
 def test_resizing_before_upload_does_not_change_the_answer() -> None:

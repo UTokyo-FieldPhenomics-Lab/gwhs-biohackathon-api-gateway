@@ -209,6 +209,24 @@ def test_a_repeated_filter_is_one_condition(client: TestClient) -> None:
     assert twice == once
 
 
+def test_two_values_of_one_filter_narrow_rather_than_widen(client: TestClient) -> None:
+    """A repeated key is an `and`, which is what the page means by "both, never either".
+
+    The dataset page says a key sent twice narrows the result. On a tag every selected row must
+    carry both values; on a single-valued field such as `split` no row can, so the page is empty.
+    Both are the same rule, and a change to `or` would answer rows nobody asked for.
+    """
+    both = client.get("/datasets/gwhs-temp/images?tags=Labo&tags=healthy", headers=KEY).json()
+    either = client.get("/datasets/gwhs-temp/images?tags=Labo", headers=KEY).json()
+    impossible = client.get(
+        "/datasets/gwhs-temp/images?split=train&split=validation", headers=KEY
+    ).json()
+
+    assert [image["row"] for image in both["images"]] == [0]
+    assert [image["row"] for image in either["images"]] == [0, 1]
+    assert impossible == {"dataset": "gwhs-temp", "count": 0, "next_cursor": None, "images": []}
+
+
 def test_more_filters_than_the_surface_answers_are_refused(client: TestClient) -> None:
     """Distinct conditions are capped, so a long query cannot buy unbounded work per row."""
     query = "&".join(f"tags=v{index}" for index in range(MAX_FILTERS + 1))
@@ -308,13 +326,27 @@ def test_the_detail_omits_what_the_dataset_does_not_carry(client: TestClient) ->
 
 def test_an_unknown_dataset_or_row_is_not_found(client: TestClient) -> None:
     """A miss is a 404 whose message repeats nothing the caller sent."""
-    for path in ("/datasets/nope", "/datasets/nope/images", "/datasets/gwhd/images/99"):
+    for path in (
+        "/datasets/nope",
+        "/datasets/nope/images",
+        "/datasets/gwhd/images/99",
+        "/datasets/gwhd/images/-1",
+    ):
         response = client.get(path, headers=KEY)
 
         assert response.status_code == 404
         assert response.json()["error"]["code"] == "not_found"
 
     assert "nope" not in client.get("/datasets/nope", headers=KEY).text
+
+
+@pytest.mark.parametrize("row", ["abc", "1.5", "null", "1e3"])
+def test_a_row_that_is_not_a_row_number_is_a_bad_request(client: TestClient, row: str) -> None:
+    """The address is an integer, so a non-integer names nothing and is the request's fault."""
+    response = client.get(f"/datasets/gwhd/images/{row}", headers=KEY)
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "invalid_request"
 
 
 @pytest.mark.parametrize(
