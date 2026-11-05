@@ -132,6 +132,11 @@ curl -s -H "X-API-Key: $KEY" \
 The body carries `objects: []`, one `image` whose `data` decodes to a PNG, and a line in
 `/var/lib/biohack-nanobanana/ledger.jsonl`. A call with no key answers `401`.
 
+An **edit** of a picture whose ratio is not one of the ten carries `frame` as well: the file's own
+size and the box it occupies in `image`, as fractions. Upload a 2:1 crop to `/predict/upload` and the
+frame's width and height are the file's, `content` is not `[0, 0, 1, 1]`, and the picture's height is
+the canvas's. Naming `aspect_ratio` instead answers without `frame` and with a `reframed` warning.
+
 ## 7. The money
 
 | variable | what it does |
