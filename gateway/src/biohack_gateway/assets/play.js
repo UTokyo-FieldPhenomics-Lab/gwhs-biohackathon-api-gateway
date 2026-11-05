@@ -225,9 +225,10 @@
       legend: true,
       examples: [
         {label: "43 heads", dataset: "gwhd", row: 4, params: {query: "wheat head"}},
-        // The same frame under a different phrase: that is the whole point of an open-vocabulary
-        // model, and switching chips compares the two answers without retyping one.
-        {label: "leaves", dataset: "gwhd", row: 4, params: {query: "leaf"}},
+        // A photograph of the reader's own kind of subject, not a wheat row: the point of an
+        // open-vocabulary model is that the phrase chooses the class, and six carrots answer in
+        // seven seconds — which is also what a short answer costs compared with forty heads.
+        {label: "carrots", image: DEMO_IMAGE_PREFIX + "carrot.jpg", params: {query: "carrot"}},
       ],
     },
   };
