@@ -877,6 +877,13 @@
   //     whatever the reader typed, and a shell is not the place to find out that one held a quote.
   const shell = (text) => "'" + String(text).replace(/'/g, "'\\''") + "'";
 
+  // A file part is quoted for curl as well as for the shell. The two are separate layers: the shell
+  // has already handed curl one argument, and curl reads a form value for its own options after a
+  // `;` — `file=@a;b.jpg` is the file `a` with an option `b.jpg`, and curl exits 26 without sending
+  // anything. Double quotes around the path keep the whole name one filename; a quote or a backslash
+  // inside it is escaped for the same parser.
+  const formFile = (name) => 'file=@"' + String(name).replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
+
   const curlText = () => {
     const id = selectedModel();
     if (!id) return "";
@@ -891,7 +898,7 @@
         );
       }
       const chosen = $("file").files[0];
-      lines.push("  -F " + shell("file=@" + (chosen ? chosen.name : "photo.jpg")) + " \\");
+      lines.push("  -F " + shell(formFile(chosen ? chosen.name : "photo.jpg")) + " \\");
       lines.push("  " + shell(address + "/predict/upload" + (search ? "?" + search : "")));
     } else {
       lines.push('  -H "Content-Type: application/json" \\');
