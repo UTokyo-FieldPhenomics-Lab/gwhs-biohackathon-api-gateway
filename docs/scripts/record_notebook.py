@@ -24,9 +24,9 @@ render. What is not: `stderr`, because a library's warning on our machine is noi
 a participant's kernel would not print it either. A cell with nothing on stdout and no result
 simply gets no region — the page's `curl` is quiet for that reason.
 
-Images are written beside the page as `quickstart-<heading>.png`, named after the nearest section
-heading; the recorder deletes any it did not just write, so a picture that is no longer produced does
-not linger in the tree.
+Images are written under the site's static image tree as `quickstart-<heading>.png`, named after the
+nearest section heading; the recorder deletes any it did not just write, so a picture that is no
+longer produced does not linger in the tree.
 """
 
 from __future__ import annotations
@@ -43,8 +43,8 @@ from pathlib import Path
 
 import make_notebook
 
-EXAMPLES = make_notebook.SOURCE.parent
-"""The directory the page lives in, and where a recorded picture is written beside it."""
+EXAMPLES = make_notebook.REPO / "docs/content/static/images/examples"
+"""Where a recorded picture is written, and where a link points from the page."""
 
 HEADING = re.compile(r"^#{2,4}\s+(?P<label>.+?)\s*$")
 """A section heading: the nearest one names a picture written under it."""
@@ -322,7 +322,7 @@ def picture(block: Block, label: str, taken: int, written: list[Path]) -> list[s
     path = EXAMPLES / f"quickstart-{slug(label)}{suffix}.png"
     path.write_bytes(base64.b64decode(block.body))
     written.append(path)
-    return [f"![{label}]({path.name})"]
+    return [f"![{label}](../static/images/examples/{path.name})"]
 
 
 def html_block(block: Block) -> list[str]:

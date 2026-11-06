@@ -165,7 +165,7 @@ thumbnail
 ```
 
 <!-- output -->
-![The picture](quickstart-the-picture.png)
+![The picture](../static/images/examples/quickstart-the-picture.png)
 <!-- /output -->
 
 ### One mask
@@ -198,7 +198,7 @@ drawn
 ```
 
 <!-- output -->
-![One mask](quickstart-one-mask.png)
+![One mask](../static/images/examples/quickstart-one-mask.png)
 <!-- /output -->
 
 ### A palette mask
@@ -226,7 +226,7 @@ stem           27171 px
 leaf          109775 px
 ```
 
-![A palette mask](quickstart-a-palette-mask.png)
+![A palette mask](../static/images/examples/quickstart-a-palette-mask.png)
 <!-- /output -->
 
 ## 3. Models
@@ -274,7 +274,7 @@ shown
 ```
 
 <!-- output -->
-![A promptable segmenter](quickstart-a-promptable-segmenter.png)
+![A promptable segmenter](../static/images/examples/quickstart-a-promptable-segmenter.png)
 <!-- /output -->
 
 ### A semantic segmenter
@@ -316,7 +316,7 @@ prediction
 ```
 
 <!-- output -->
-![A semantic segmenter](quickstart-a-semantic-segmenter.png)
+![A semantic segmenter](../static/images/examples/quickstart-a-semantic-segmenter.png)
 <!-- /output -->
 
 ### A counter
@@ -381,7 +381,7 @@ counted_image
 ```
 
 <!-- output -->
-![A counter](quickstart-a-counter.png)
+![A counter](../static/images/examples/quickstart-a-counter.png)
 <!-- /output -->
 
 The red patch is the field's highest cell — about 44 pixels wide on this 1024-pixel image — around
@@ -441,7 +441,7 @@ pca_image
 ```
 
 <!-- output -->
-![A backbone](quickstart-a-backbone.png)
+![A backbone](../static/images/examples/quickstart-a-backbone.png)
 <!-- /output -->
 
 ### Your own photograph

@@ -164,7 +164,7 @@ The figure below is one `side=512` call from the L. The right panel is the patch
 its own three leading directions, one direction per colour channel:
 
 ![Row 4 of gwfss: the photograph, and the first three principal components of its 32 × 32 patch
-grid](dinov3-row4-features.jpg)
+grid](../static/images/models/dinov3-row4-features.jpg)
 
 Heads, stems and background separate because the features separate — no class was assigned to any of
 them, and the colours mean nothing on another picture. The H+ returns the same grid shape at a given

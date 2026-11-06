@@ -31,12 +31,13 @@ from PIL import Image, ImageColor, ImageDraw, ImageFont
 
 REPO = Path(__file__).resolve().parents[2]
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
-DATASETS = REPO / "docs/content/datasets"
-EXAMPLES = REPO / "docs/content/examples"
+PAGES = REPO / "docs/content"
+ASSETS = PAGES / "static" / "images"
+DATASETS = ASSETS / "datasets"
+MODELS = ASSETS / "models"
 PREDICTION = FIXTURES / "gwfss-row4-prediction.json"
 SPROUT_PREDICTION = FIXTURES / "sprout-row4-prediction.json"
 CLIENT_PYTHON = REPO / "clients/python"
-PAGES = REPO / "docs/content"
 
 sys.path.insert(0, str(CLIENT_PYTHON))
 import global_wheat  # noqa: E402
@@ -308,7 +309,7 @@ def draw_prediction(
              "gwfss-segformer-b4"),
             (panel(tint(base, measured, colours), 420, 420), "the dataset's mask"),
         ),
-        PAGES / "models" / "gwfss-row4-prediction.jpg",
+        MODELS / "gwfss-row4-prediction.jpg",
     )
 
 
@@ -332,7 +333,7 @@ def draw_sprout(
              "sprout-l-gwfss"),
             (panel(tint(base, measured, colours), 420, 420), "the dataset's mask"),
         ),
-        PAGES / "models" / "sprout-row4-prediction.jpg",
+        MODELS / "sprout-row4-prediction.jpg",
     )
 
 
@@ -371,7 +372,7 @@ def draw_dinov3(image: Image.Image) -> None:
             (panel(image, 420, 420), "the input"),
             (colours, "PCA of its " + " × ".join(str(value) for value in grid.shape[:2]) + " patch grid"),
         ),
-        PAGES / "models" / "dinov3-row4-features.jpg",
+        MODELS / "dinov3-row4-features.jpg",
     )
 
 

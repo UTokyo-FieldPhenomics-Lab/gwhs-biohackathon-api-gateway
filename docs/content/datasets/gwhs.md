@@ -18,7 +18,7 @@ development sample with the same schema, and it is what this page uses for its f
 | Licence | [CC-BY-4.0](#references) for `gwhs`; the sample declares none |
 | Status | not served; `gwhs-temp` is development only |
 
-![One instance image: the image, its boxes, and the decoded masks](gwhs-row0-annotation.jpg)
+![One instance image: the image, its boxes, and the decoded masks](../static/images/datasets/gwhs-row0-annotation.jpg)
 
 The figure is an image from `gwhs-temp`: a crop of a 592×2509 photograph of one ear, 24 objects, each with
 a box and the mask its geometry decodes to.
@@ -136,7 +136,7 @@ COCO flattens masks column-major; every one of them is transposed once, by the d
 
 Decode the mask and overlay it on the image:
 
-![One object: in the image, decoded, and over the image](rle-input-output.jpg)
+![One object: in the image, decoded, and over the image](../static/images/datasets/rle-input-output.jpg)
 
 The mask is the size of the image, so compositing it is ordinary array work — the same as a `gwfss`
 mask. Counting objects is the length of `objects`; counting spikelets per ear is one object per

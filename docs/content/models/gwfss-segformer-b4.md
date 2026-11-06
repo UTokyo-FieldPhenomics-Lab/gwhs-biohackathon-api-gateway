@@ -18,7 +18,7 @@ and nothing in the answer says how many heads the image holds.
 | Typical wait | about 0.2 s |
 | License | [CC-BY-4.0](#references) |
 
-![The model's classes on image 4, beside the mask the dataset publishes for it](gwfss-row4-prediction.jpg)
+![The model's classes on image 4, beside the mask the dataset publishes for it](../static/images/models/gwfss-row4-prediction.jpg)
 
 All 1,096 annotated images are published. Image 4 (`row` 4), shown above and used throughout this page, is the demo
 image: cut heads lying on straw.

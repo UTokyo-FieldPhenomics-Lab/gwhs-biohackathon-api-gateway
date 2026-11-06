@@ -19,7 +19,7 @@ images, published under CC-BY-4.0.
 
 |                    the image                     |                    its mask                     |
 | :----------------------------------------------: | :---------------------------------------------: |
-| ![A gwfss image](gwfss-row0-image.jpg) | ![Its mask](gwfss-row0-mask.png) |
+| ![A gwfss image](../static/images/datasets/gwfss-row0-image.jpg) | ![Its mask](../static/images/datasets/gwfss-row0-mask.png) |
 
 The mask is the annotation, not a second view of the image.
 
@@ -113,9 +113,9 @@ pixels, and the mask has the same size.
 
 Splitting the mask image by colour turns each class into its own boolean mask:
 
-![The palette mask of one image](mask-input.png)
+![The palette mask of one image](../static/images/datasets/mask-input.png)
 
-![The four classes, one boolean mask each](mask-output.png)
+![The four classes, one boolean mask each](../static/images/datasets/mask-output.png)
 
 `label_masks` does it with the palette from `describe`, never with a colour copied from a figure. A
 colour the dataset never declared is refused rather than labelled silently. Python is shown; the

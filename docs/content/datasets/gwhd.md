@@ -17,7 +17,7 @@ CC-BY-4.0.
 | Licence | [CC-BY-4.0](#references) |
 | Status | published in full |
 
-![One gwhd image with every published head boxed](gwhd-row0-boxes.jpg)
+![One gwhd image with every published head boxed](../static/images/datasets/gwhd-row0-boxes.jpg)
 
 Image 0 (`row` 0): a 1024×1024 plot photograph with **one box per wheat head**, 144 of them, drawn here in pink.
 The highlighted one is the image's first object.
@@ -99,7 +99,7 @@ A list page reports the same image as `statistics.objects` and never carries the
   this convention, on every dataset and in every model answer, so one drawing routine covers all of
   them:
 
-  ![How bbox maps onto the image](bbox-diagram.png)
+  ![How bbox maps onto the image](../static/images/datasets/bbox-diagram.png)
 
 - **`category` is `"0"`** because the upstream named no head class; the integer is returned as text
   rather than dressed up as a name.

@@ -91,13 +91,19 @@ Package: `docs/`. Shared constraints are in [`project.md`](project.md).
 
 ## Integration and presentation
 
+- **Keep the content root prose and its assets in one tree.** Pages stay under
+  `docs/content/{api,datasets,examples,models}`; global styles and scripts live in
+  `docs/content/static/{styles,scripts}`, and every page image under
+  `docs/content/static/images/<section>/`. The quickstart recorder and `make_figures.py` write there,
+  and a page links to `../static/images/<section>/`. Do not name the folder `assets`: Zensical emits
+  the theme to `site/assets/`, and a source folder with that name mixes the two in the build.
 - **Keep scrollbars neutral.** The theme turns a code block's thumb and the navigation drawer's
   scrollbar accent on hover; `typography.css` pins both to the muted foreground, including focus and
   the WebKit thumb, so scrolling does not read as a change in the content.
   [Fix](../references/2026110602_quickstart-three-parts.md).
 - **Frame the API's reference and playground, never duplicate their contract rendering.** The
   gateway owns `/docs`, `/openapi.json` and `/play`; docs must not import the app. One
-  `api/frame.js` uses `data-api-frame` to size both frames and forward the reader's theme.
+  `static/scripts/frame.js` uses `data-api-frame` to size both frames and forward the reader's theme.
   [Framing](../references/2026101617_the-model-page-and-the-play-page.md).
 - **A fine-tune is a new id and a page of its own.** A page groups several ids only when they share
   one provenance and one contract — checkpoints of one release, heads of one release, or tiers of
