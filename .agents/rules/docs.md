@@ -62,7 +62,8 @@ Package: `docs/`. Shared constraints are in [`project.md`](project.md).
   visualization derived from an answer, `REQUEST`/`ANSWER` for a prompt or exemplars, `MODEL` for two
   ids of one family, or `ONE CALL` for a request/answer card drawn as a conversation. The tag is in
   the figure, so a reader comparing pages never infers the card's shape from prose. A family page has
-  one figure for the family, not one per id.
+  one figure for the family, not one per id, and the figure sits before the `### The … ids` table
+  rather than under it, so it reads as part of At a glance.
 - **A generative model's card is one call, not a session.** Draw a request bubble with the prompt and,
   where there is one, the input picture; draw an answer bubble with the prose or the picture. Label
   them `REQUEST`/`ANSWER`, name the mode in the panel title, and say in the caption that it is one

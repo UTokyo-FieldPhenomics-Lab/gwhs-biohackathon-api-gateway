@@ -18,6 +18,12 @@ fastest models this API serves — one call is a few milliseconds.
 | Typical wait | 6–15 ms |
 | License | [AGPL-3.0](#references) |
 
+![The same potted-plant photograph through the detector and the mask head](../static/images/models/yolo-detection-and-segmentation.jpg)
+
+`dev/potted-plant.jpg` (CC0, Wikimedia Commons), `imgsz=1024`, `confidence_threshold=0.25`:
+`yolo26-ultralytics` and `yolo26-seg-ultralytics` on the same photograph. COCO's classes do not
+include wheat, which is why this page uses a photograph they do know.
+
 ### The two ids
 
 | property | `yolo26-ultralytics` | `yolo26-seg-ultralytics` |
@@ -26,12 +32,6 @@ fastest models this API serves — one call is a few milliseconds.
 | trained on | COCO's 80 classes | the same 80 classes, with instance masks |
 | an upload may be | 50 megapixels | 4 megapixels, and at most 100 objects back |
 | one 1024² call | 7.1 ms | 9.3 ms |
-
-![The same potted-plant photograph through the detector and the mask head](../static/images/models/yolo-detection-and-segmentation.jpg)
-
-`dev/potted-plant.jpg` (CC0, Wikimedia Commons), `imgsz=1024`, `confidence_threshold=0.25`:
-`yolo26-ultralytics` and `yolo26-seg-ultralytics` on the same photograph. COCO's classes do not
-include wheat, which is why this page uses a photograph they do know.
 
 **[Try v26](https://api.global-wheat.com/play?model=yolo26-ultralytics)** — the picker groups the two
 under **YOLO**, and the second control chooses the one with the mask head.

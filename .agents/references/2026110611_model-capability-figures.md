@@ -48,6 +48,10 @@ model's:
 | `MODEL` | `yolo` | two ids of one family |
 | `ONE CALL` | `internvl-u`, `nano-banana` | one request/answer call drawn as a conversation |
 
+On `yolo`, `dinov3` and `nano-banana` the card sits directly under the summary table and before the
+`### The … ids` table. It had first been placed after that table, which made the image read as part
+of the id comparison rather than as the page's first answer.
+
 The generative cards use `REQUEST` and `ANSWER` bubbles. They are one call, not a session; the
 caption says so. Prose answers are repeated in the caption for search and screen readers.
 

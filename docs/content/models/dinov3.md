@@ -24,6 +24,11 @@ or a class is yours to fit.
 | Typical wait | 17.7–44.8 ms |
 | License | [DINOv3 License](#references) |
 
+![gwfss image 4: the photograph and the first three principal components of its patch grid](../static/images/models/dinov3-row4-features.jpg)
+
+`gwfss` image 4 (`row` 4), `side=512`: the photograph and the first three principal components of its
+32 × 32 patch grid. The colours are the grid's own directions; they mean nothing on another picture.
+
 ### The two ids
 
 | property | `dinov3-vitl16` | `dinov3-vith16plus` |
@@ -33,11 +38,6 @@ or a class is yours to fit.
 | maximum `side` | 768 | 640 |
 | answer at the default, square | 2.8 MB | 2.0 MB |
 | answer at the ceiling, square | 6.3 MB | 5.5 MB |
-
-![gwfss image 4: the photograph and the first three principal components of its patch grid](../static/images/models/dinov3-row4-features.jpg)
-
-`gwfss` image 4 (`row` 4), `side=512`: the photograph and the first three principal components of its
-32 × 32 patch grid. The colours are the grid's own directions; they mean nothing on another picture.
 
 **[Try the L](https://api.global-wheat.com/play?model=dinov3-vitl16)** ·
 **[try the H+](https://api.global-wheat.com/play?model=dinov3-vith16plus)** — the `results` eye draws
