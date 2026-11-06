@@ -54,3 +54,18 @@ def test_palette_figures_use_the_client_and_supplied_colours(
     figures.draw_prediction(image, mask, classes)
 
     assert calls == [classes, classes]
+
+
+def test_a_capability_card_can_be_a_grid_with_role_tags(figures: ModuleType) -> None:
+    """A four-mode card is 2 × 2 and reserves the role line above every title."""
+    image = Image.new("RGB", (20, 20), "white")
+    row = figures.figure((image, "one"), (image, "two"))
+    grid = figures.figure(
+        (image, "one", "MODE"),
+        (image, "two", "MODE"),
+        (image, "three", "MODE"),
+        (image, "four", "MODE"),
+        columns=2,
+    )
+    assert grid.width == row.width
+    assert grid.height > row.height

@@ -15,6 +15,12 @@ mask, no box, no count.
 | Typical wait | 0.67 s for prose; 11–15 s for a picture |
 | License | [MIT](#references) |
 
+![Three one-call chat cards on gwfss image 4: prose, an edit and reason-then-draw](../static/images/models/internvl-u-answers.jpg)
+
+Three recorded calls on `gwfss` image 4 (`row` 4): `mode=text` answers the question in prose;
+`mode=image` edits the same photograph under colder evening light; `mode=text_image` reasons first and
+then draws. Each panel is one call, not a chat session.
+
 **[Try it on the live demo](https://api.global-wheat.com/play?model=internvl-u)** — the model is
 already selected and three example calls are one click away. The `results` eye shows the picture the
 model produced; closing it brings the photograph back, and the words appear in the bar under the

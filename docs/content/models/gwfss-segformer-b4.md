@@ -18,7 +18,10 @@ and nothing in the answer says how many heads the image holds.
 | Typical wait | about 0.2 s |
 | License | [CC-BY-4.0](#references) |
 
-![The model's classes on image 4, beside the mask the dataset publishes for it](../static/images/models/gwfss-row4-prediction.jpg)
+![gwfss image 4: the photograph, the model's three classes, and the dataset's mask](../static/images/models/gwfss-row4-prediction.jpg)
+
+`gwfss` image 4 (`row` 4): the photograph, the model's classes, and the dataset's mask. Both masks
+use the dataset's palette.
 
 All 1,096 annotated images are published. Image 4 (`row` 4), shown above and used throughout this page, is the demo
 image: cut heads lying on straw.
@@ -104,7 +107,7 @@ One object per class that has pixels. Background is the complement and is not re
     "rle": {"size": [512, 512], "counts": "…"}}]}
 ```
 
-Row 4's answer is those areas and no more: 88,848 px of head, 15,437 of stem, 124,434 of leaf, and
+Image 4's answer is those areas and no more: 88,848 px of head, 15,437 of stem, 124,434 of leaf, and
 33,425 px of background, which is what the three masks leave over.
 
 Two fields mean something other than what they mean on `sam3.1-meta`:

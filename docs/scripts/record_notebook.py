@@ -293,7 +293,7 @@ def slug(text: str) -> str:
 
 
 def picture(block: Block, label: str, taken: int, written: list[Path]) -> list[str]:
-    """Write one display result beside the page and return the markdown that shows it.
+    """Write one display result into the static image tree and return the markdown that shows it.
 
     Parameters
     ----------
@@ -309,7 +309,7 @@ def picture(block: Block, label: str, taken: int, written: list[Path]) -> list[s
     Returns
     -------
     list of str
-        A markdown image, pointing at a file beside the page.
+        A markdown image, pointing at a file under `../static/images/examples/`.
 
     Raises
     ------

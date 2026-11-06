@@ -16,8 +16,14 @@ these are: `meta` is the upstream release, not a wheat fine-tune.
 | Typical wait | 0.13–0.21 s |
 | License | [SAM License](#references) |
 
-**[Try it on the live demo](https://api.global-wheat.com/play?model=sam3.1-meta)** — one recorded
-answer is shown as a figure you can check yours against.
+![Four prompt forms on gwhd image 4: a phrase, a phrase with one box, a box alone and a point alone, each with its masks and object count](../static/images/models/sam31-prompt-modes.jpg)
+
+Four recorded prompt forms on `gwhd` image 4 (`row` 4) at `confidence_threshold=0.31`: the phrase
+alone, the phrase with one exemplar box, the box alone, and a point alone. Masks are drawn; every
+object also carries a box and a score.
+
+**[Try it on the live demo](https://api.global-wheat.com/play?model=sam3.1-meta)** — four recorded
+prompt forms are shown above, so you can check yours against them.
 
 ## When to use it
 

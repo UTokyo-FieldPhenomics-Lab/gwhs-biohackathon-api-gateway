@@ -17,6 +17,11 @@ head looks like, so the request carries **exemplar boxes**, and three of them is
 | Typical wait | 0.31 s |
 | License | [Apache-2.0](#references) |
 
+![gwhd image 4 with three exemplar boxes, and the density field the counter returns](../static/images/models/tasselnetv4-counting.jpg)
+
+`gwhd` image 4 (`row` 4) with the live demo's three exemplars. The field sums to 41.4; the blue boxes
+are the request, not detections.
+
 **[Try it on the live demo](https://api.global-wheat.com/play?model=tasselnetv4)** — the model is
 already selected; draw two or three boxes around heads on the picture and press Run. The `image` eye
 turns the photograph off so the field is read on its own.

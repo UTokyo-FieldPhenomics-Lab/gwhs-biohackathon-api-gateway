@@ -31,6 +31,12 @@ one to reach for; **`nano-banana-2`** is the earlier checkpoint, served for comp
 the allowance is counted in credits, where one 1K 2.1 picture is one, a 2K picture costs 1.5, one on
 `nano-banana-2` costs 2, and one on `nano-banana-pro` costs 4.
 
+![Two one-call chat cards: a wheat field from a prompt, and an edit of gwfss image 4](../static/images/models/nano-banana-generate-and-edit.jpg)
+
+Two recorded calls on `nano-banana-2.1` at 1K: `generate` makes a wheat field at golden hour;
+`edit` changes `gwfss` image 4 (`row` 4) under colder evening light. Each panel is one call, not a
+chat session.
+
 **[Try the 2.1](https://api.global-wheat.com/play?model=nano-banana-2.1)** — it is selected already,
 and the image's photograph is what the prompt changes. The `results` eye shows the picture the model
 produced.

@@ -18,7 +18,10 @@ returned.
 | Typical wait | 0.29–0.32 s |
 | License | [Apache-2.0](#references) |
 
-![The model's classes on image 4, beside the mask the dataset publishes for it](../static/images/models/sprout-row4-prediction.jpg)
+![gwfss image 4: the photograph, SPROUT-L's three classes, and the dataset's mask](../static/images/models/sprout-row4-prediction.jpg)
+
+`gwfss` image 4 (`row` 4): the photograph, SPROUT-L's classes, and the dataset's mask. Both masks
+use the dataset's palette.
 
 **[Try it on the live demo](https://api.global-wheat.com/play?model=sprout-l-gwfss)** — the model is
 already selected; pick `gwfss` image 4 (`row` 4) and press Run.

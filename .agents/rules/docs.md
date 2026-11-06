@@ -56,6 +56,22 @@ Package: `docs/`. Shared constraints are in [`project.md`](project.md).
   `global_wheat.label_masks`, and decode RLE through the client; do not hardcode a second semantic
   palette. Regeneration needs `GLOBAL_WHEAT_API_KEY`; normal builds do not. Quickstart cell images
   remain the recorder's output. [Offline regression](../../clients/python/tests/test_figures.py).
+- **Every model page carries one capability figure under its At a glance table, and every panel says
+  what it is.** A role tag above the panel title is `MODE` for several uses of one model,
+  `INPUT`/`ANSWER`/`REFERENCE` for one request with a published annotation, `INPUT`/`DERIVED` for a
+  visualization derived from an answer, `REQUEST`/`ANSWER` for a prompt or exemplars, `MODEL` for two
+  ids of one family, or `ONE CALL` for a request/answer card drawn as a conversation. The tag is in
+  the figure, so a reader comparing pages never infers the card's shape from prose. A family page has
+  one figure for the family, not one per id.
+- **A generative model's card is one call, not a session.** Draw a request bubble with the prompt and,
+  where there is one, the input picture; draw an answer bubble with the prose or the picture. Label
+  them `REQUEST`/`ANSWER`, name the mode in the panel title, and say in the caption that it is one
+  call; repeat prose answers in the caption for search and screen readers. The API holds no
+  conversation state.
+- **A hosted model's paid output is a fixture, not a build step.** Record `nano-banana` once with
+  `docs/scripts/record_nano_banana.py`, commit the pictures and their calls, and let
+  `make_figures.py` read them. `--force` is the only path that spends again; a routine regeneration
+  does not.
 - **Generate model parameter tables from a recorded declaration.** `make_models.py` writes marked
   table blocks from `fixtures/model-directory.json`; CI retains the model-page diff check. Refresh
   the fixture from authenticated `GET /models`, never handwrite the schema or require live access

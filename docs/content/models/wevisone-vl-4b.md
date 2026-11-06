@@ -17,6 +17,10 @@ asked for answers an empty list rather than an error.
 | Typical wait | about 25 s for forty instances |
 | License | [Apache-2.0](#references) |
 
+![gwhd image 4 with 43 wheat-head instances, each with its own mask](../static/images/models/wevisone-row4-instances.jpg)
+
+`gwhd` image 4 (`row` 4), `prompt="wheat head"`: 43 instances, each with its own mask and no score.
+
 **[Try it on the live demo](https://api.global-wheat.com/play?model=wevisone-vl-4b)** — the model is
 already selected; type what to look for, or press one of the two example chips.
 

@@ -207,6 +207,16 @@ Figure regeneration also uses the clients and requires that key for the publishe
 uv run --project docs --with pillow --with numpy --with requests python docs/scripts/make_figures.py
 ```
 
+The two paid Nano Banana pictures on the model page are recorded once, not regenerated:
+
+```bash
+GLOBAL_WHEAT_API_KEY=... uv run --project docs --with requests --with numpy --with pillow \
+  python docs/scripts/record_nano_banana.py
+```
+
+`make_figures.py` reads `docs/scripts/fixtures/nano-banana/`. `--force` is the only way to spend on a
+fresh pair; a routine regeneration does not call the paid model.
+
 ## Updating dependencies and conventions
 
 Edit the relevant `pyproject.toml`, then run `uv lock` in that subproject and commit its lock file.
