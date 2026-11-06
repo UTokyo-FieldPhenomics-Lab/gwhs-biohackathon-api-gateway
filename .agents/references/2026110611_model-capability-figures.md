@@ -49,7 +49,8 @@ model's:
 | `ONE CALL` | `internvl-u`, `nano-banana` | one request/answer call drawn as a conversation |
 
 On `yolo`, `dinov3` and `nano-banana` the card sits directly under the summary table and before the
-`### The … ids` table. It had first been placed after that table, which made the image read as part
+`### The … ids` table. The Nano Banana card has four panels — generate, edit, mask, detection — and
+the last two say in the caption that the marks are pixels, not `objects`. It had first been placed after that table, which made the image read as part
 of the id comparison rather than as the page's first answer.
 
 The generative cards use `REQUEST` and `ANSWER` bubbles. They are one call, not a session; the
@@ -78,14 +79,20 @@ the environment and never printed.
 | `internvl-u` | `mode=text_image`, one spike prompt, `size=768` | thought plus 768 × 768 picture |
 | `nano-banana-2.1` | `generate`, “a wheat field at golden hour”, 16:9, 1K | 1376 × 768 |
 | `nano-banana-2.1` | `edit` `gwfss` image 4, cooler light, 1K | 1024 × 1024 |
+| `nano-banana-2.1` | `gwfss` image 3, “generate segmentation masks for wheat head in the proposed image”, 1K | 1024 × 1024 with masks drawn |
+| `nano-banana-2.1` | `gwfss` image 3, “draw a red bounding box around every wheat head in the proposed image”, 1K | 1024 × 1024 with boxes drawn |
 
-The two Nano Banana calls spend credits and sample anew, so they were recorded once into
-`docs/scripts/fixtures/nano-banana/` by `record_nano_banana.py`. The fixture holds JPEG copies (600 KB
-for the pair, down from 3.4 MB of PNG) and the prompts; `make_figures.py` never calls the paid model.
-`--force` is the only path that spends again.
+The four Nano Banana calls spend credits and sample anew, so they were recorded once into
+`docs/scripts/fixtures/nano-banana/` by `record_nano_banana.py`. The fixture holds JPEG copies and the
+prompts; `make_figures.py` never calls the paid model. `--force` is the only path that spends again.
 
 ## What broke, and what changed
 
+- **The Nano Banana card stopped at generate and edit.** A reader could conclude the model only makes
+  pictures. It now carries four one-call panels: generation, edit, a segmentation mask and detection
+  boxes. The mask prompt is the live demo's `gwfss` image 3 example; the detection prompt is the new
+  one. Both answers are pictures with marks drawn into them — `objects` stays empty — and the caption
+  says so. The two extra calls cost two more credits.
 - **The YOLO card was unreadable on carrots.** Three or four overlapping boxes stacked their labels
   on one another, and the seg title `yolo26-seg-ultralytics — boxes + masks` clipped at the right
   edge. The card now uses `dev/potted-plant.jpg`, which answers exactly one object from both ids, and

@@ -68,7 +68,9 @@ Package: `docs/`. Shared constraints are in [`project.md`](project.md).
   where there is one, the input picture; draw an answer bubble with the prose or the picture. Label
   them `REQUEST`/`ANSWER`, name the mode in the panel title, and say in the caption that it is one
   call; repeat prose answers in the caption for search and screen readers. The API holds no
-  conversation state.
+  conversation state. A model that draws masks or boxes into a picture is still answering a picture:
+  the caption says those marks are pixels, not `objects`, and the page keeps its "not for
+  measurements" warning.
 - **A hosted model's paid output is a fixture, not a build step.** Record `nano-banana` once with
   `docs/scripts/record_nano_banana.py`, commit the pictures and their calls, and let
   `make_figures.py` read them. `--force` is the only path that spends again; a routine regeneration

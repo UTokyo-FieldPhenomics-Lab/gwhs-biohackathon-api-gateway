@@ -1,9 +1,10 @@
-"""Record the two paid pictures the Nano Banana model page shows, once.
+"""Record the four paid pictures the Nano Banana model page shows, once.
 
-The model page draws one generation and one edit as chat cards. Neither is reproducible: the model
-samples a new picture every time, and every call spends a team credit. So the answers are recorded
-here, committed as fixtures, and composed by `make_figures.py` without another call. Pass `--force`
-to spend again; without it the recorder refuses to overwrite a fixture it already has.
+The model page draws one generation, one edit, one segmentation mask and one detection card. None
+is reproducible: the model samples a new picture every time, and every call spends a team credit. So
+the answers are recorded here, committed as fixtures, and composed by `make_figures.py` without
+another call. Pass `--force` to spend again; without it the recorder refuses to overwrite a fixture
+it already has.
 
     set -a; . ./.env; set +a
     uv run --project docs --with requests --with numpy --with pillow \
@@ -44,9 +45,25 @@ EDIT = {
 }
 """The page's own edit example on `gwfss` image 4."""
 
+MASK = {
+    "prompt": "generate segmentation masks for wheat head in the proposed image",
+    "image_size": "1K",
+}
+"""The live demo's mask example on `gwfss` image 3."""
+
+DETECT = {
+    "prompt": "draw a red bounding box around every wheat head in the proposed image",
+    "image_size": "1K",
+}
+"""A detection prompt on the same image, to show boxes drawn as pixels."""
+
 
 def record(
-    client: global_wheat.Client, call: dict[str, object], *, row: int | None
+    client: global_wheat.Client,
+    name: str,
+    call: dict[str, object],
+    *,
+    row: int | None,
 ) -> dict[str, object]:
     """Run one call and write its picture and the facts the figure needs.
 
@@ -54,6 +71,8 @@ def record(
     ----------
     client : global_wheat.Client
         An authenticated client.
+    name : str
+        The fixture's short name for this call, which also names its picture.
     call : dict
         The prompt and the model's own parameters.
     row : int or None
@@ -66,10 +85,10 @@ def record(
     """
     if row is None:
         answer = client.generate(MODEL, **call)
-        picture = "generate.jpg"
+        picture = f"{name}.jpg"
     else:
         answer = client.predict(MODEL, "gwfss", row, **call)
-        picture = "edit.jpg"
+        picture = f"{name}.jpg"
     image = answer.get("image")
     if not isinstance(image, dict) or image.get("picture") is None:
         raise RuntimeError(f"{MODEL} answered without a picture")
@@ -78,6 +97,7 @@ def record(
     FIXTURE.mkdir(parents=True, exist_ok=True)
     (FIXTURE / picture).write_bytes(encoded.getvalue())
     return {
+        "name": name,
         "model": answer.get("model"),
         "route": "generate" if row is None else "predict",
         "dataset": None if row is None else "gwfss",
@@ -94,7 +114,7 @@ def record(
 
 
 def main() -> int:
-    """Record both pictures, unless the fixture already exists.
+    """Record the four pictures, unless the fixture already exists.
 
     Returns
     -------
@@ -114,14 +134,16 @@ def main() -> int:
         return 1
     client = global_wheat.Client(timeout=180)
     calls = [
-        record(client, GENERATE, row=None),
-        record(client, EDIT, row=4),
+        record(client, "generate", GENERATE, row=None),
+        record(client, "edit", EDIT, row=4),
+        record(client, "mask", MASK, row=3),
+        record(client, "detect", DETECT, row=3),
     ]
     FIXTURE.mkdir(parents=True, exist_ok=True)
     (FIXTURE / "calls.json").write_text(json.dumps(calls, indent=2) + "\n", encoding="utf-8")
     for entry in calls:
         print(
-            f"{entry['route']}: {entry['width']}x{entry['height']} "
+            f"{entry['name']}: {entry['width']}x{entry['height']} "
             f"{entry['picture']} ({entry['media_type']})"
         )
     return 0

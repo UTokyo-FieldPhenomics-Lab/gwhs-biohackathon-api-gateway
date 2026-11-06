@@ -207,7 +207,7 @@ Figure regeneration also uses the clients and requires that key for the publishe
 uv run --project docs --with pillow --with numpy --with requests python docs/scripts/make_figures.py
 ```
 
-The two paid Nano Banana pictures on the model page are recorded once, not regenerated:
+The four paid Nano Banana pictures on the model page are recorded once, not regenerated:
 
 ```bash
 GLOBAL_WHEAT_API_KEY=... uv run --project docs --with requests --with numpy --with pillow \
@@ -215,7 +215,7 @@ GLOBAL_WHEAT_API_KEY=... uv run --project docs --with requests --with numpy --wi
 ```
 
 `make_figures.py` reads `docs/scripts/fixtures/nano-banana/`. `--force` is the only way to spend on a
-fresh pair; a routine regeneration does not call the paid model.
+fresh set; a routine regeneration does not call the paid model.
 
 ## Updating dependencies and conventions
 

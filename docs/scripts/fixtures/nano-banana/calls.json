@@ -15,7 +15,8 @@
     "height": 768,
     "frame": null,
     "answer": null,
-    "provider_media_type": "image/png"
+    "provider_media_type": "image/png",
+    "name": "generate"
   },
   {
     "model": "nano-banana-2.1",
@@ -32,6 +33,43 @@
     "height": 1024,
     "frame": null,
     "answer": null,
-    "provider_media_type": "image/png"
+    "provider_media_type": "image/png",
+    "name": "edit"
+  },
+  {
+    "name": "mask",
+    "model": "nano-banana-2.1",
+    "route": "predict",
+    "dataset": "gwfss",
+    "row": 3,
+    "params": {
+      "prompt": "generate segmentation masks for wheat head in the proposed image",
+      "image_size": "1K"
+    },
+    "picture": "mask.jpg",
+    "media_type": "image/jpeg",
+    "provider_media_type": "image/png",
+    "width": 1024,
+    "height": 1024,
+    "frame": null,
+    "answer": "Here are the segmentation masks for the wheat heads in the provided image:"
+  },
+  {
+    "name": "detect",
+    "model": "nano-banana-2.1",
+    "route": "predict",
+    "dataset": "gwfss",
+    "row": 3,
+    "params": {
+      "prompt": "draw a red bounding box around every wheat head in the proposed image",
+      "image_size": "1K"
+    },
+    "picture": "detect.jpg",
+    "media_type": "image/jpeg",
+    "provider_media_type": "image/png",
+    "width": 1024,
+    "height": 1024,
+    "frame": null,
+    "answer": null
   }
 ]

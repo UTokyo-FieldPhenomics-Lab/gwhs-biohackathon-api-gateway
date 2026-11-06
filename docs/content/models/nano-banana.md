@@ -2,26 +2,28 @@
 
 <!-- models: nano-banana-2 nano-banana-2.1 nano-banana-pro -->
 
-Three image models from Google, served through **Vertex AI**: a picture from a prompt, or a new
-version of a picture you already have. The weights are Google's and run on Google's hardware; nothing
-is downloaded to you.
+Three image models from Google, served through **Vertex AI**: a picture from a prompt, a new version
+of a picture you already have, or a picture with masks or boxes drawn into it. The weights are
+Google's and run on Google's hardware; nothing is downloaded to you.
 
 ## At a glance
 
 | field | value |
 |---|---|
-| Task | text-to-image, and image editing at the level of the frame |
+| Task | text-to-image, image editing, and annotations drawn into the picture |
 | Input | `prompt` alone (`generate`), or an image and `prompt` (`predict`) |
 | Output | a picture in `image`; prose in `answer` where the model wrote any |
 | Runs at | 1K or 2K on the longer side, depending on the id |
 | Typical wait | 15–19 s per picture |
 | License | [Google Cloud terms](#references) |
 
-![Two one-call chat cards: a wheat field from a prompt, and an edit of gwfss image 4](../static/images/models/nano-banana-generate-and-edit.jpg)
+![Four one-call chat cards: a generated field, an edit, segmentation masks, and detection boxes](../static/images/models/nano-banana-tasks.jpg)
 
-Two recorded calls on `nano-banana-2.1` at 1K: `generate` makes a wheat field at golden hour;
-`edit` changes `gwfss` image 4 (`row` 4) under colder evening light. Each panel is one call, not a
-chat session.
+Four recorded calls on `nano-banana-2.1` at 1K: `generate` makes a wheat field at golden hour;
+`edit` changes `gwfss` image 4 (`row` 4) under colder evening light; `mask` and `detect` ask it to
+draw segmentation masks and boxes on `gwfss` image 3 (`row` 3). The masks and boxes are pixels in the
+returned picture, not `objects`: the answer's list stays empty. Each panel is one call, not a chat
+session.
 
 ### The three ids
 
@@ -48,12 +50,15 @@ produced.
 - Making a picture from a prompt with no input image.
 - Editing a picture you already have — a published image or your own photograph — at the level of the
   whole frame: light, season, style, a different scene.
+- Drawing visual annotations — segmentation masks or bounding boxes — when the deliverable is a
+  picture rather than geometry.
 - Returning a frame that lines up with the picture you sent, so the answer can be laid over it.
 
 **Not for**
 
 - **Measurements.** A count, a mask or a diagnosis it gives you is a description of an image it drew.
-  Use [`tasselnetv4`](tasselnetv4.md), [`sam3.1-meta`](sam3.1-meta.md) or
+  The masks and boxes in the cards above are drawn pixels, not `objects`; they are not a count, an
+  area or a score. Use [`tasselnetv4`](tasselnetv4.md), [`sam3.1-meta`](sam3.1-meta.md) or
   [`gwfss-segformer-b4`](gwfss-segformer-b4.md) for numbers and geometry.
 - **One-detail edits.** One awn, one lesion or one label is beyond what one prompt and one generation
   will reliably give you.
@@ -158,6 +163,11 @@ With the client from [Clients](../api/clients/index.md) set up, or the `API` and
 `generate` has no image of your own and is never cached: the same prompt twice is two pictures and two
 charges. `predict_file` sends your photograph, and `predict` does the same on a published image.
 
+The same call with an annotation prompt — “generate segmentation masks for wheat head in the proposed
+image” or “draw a red bounding box around every wheat head” — returns a picture with the masks or boxes
+drawn into it. They are pixels, not `objects`: the answer's list is empty, and nothing in it is a
+measurement.
+
 ## Parameters
 
 All three answer the same three parameters, and they ride in the **query string**: the request is one
@@ -216,10 +226,11 @@ a different frame.
 }
 ```
 
-`objects` is present and empty, so the same client parses this answer and a segmenter's. The prose,
-where the model wrote any, is in `answer`; the picture is in `image`. `image.data` is base64 of the
-encoded file, exactly as the model produced it — the picture is not stored and served from a URL, it is
-the answer.
+`objects` is present and empty, so the same client parses this answer and a segmenter's — and it
+stays empty when the prompt asks for masks or boxes: those are drawn into the picture, not returned
+as geometry. The prose, where the model wrote any, is in `answer`; the picture is in `image`.
+`image.data` is base64 of the encoded file, exactly as the model produced it — the picture is not
+stored and served from a URL, it is the answer.
 
 The clients decode it for you: `image["picture"]` is a Pillow image in Python, the file's bytes in
 JavaScript and Java. Nothing on this service re-encodes it — and on an edit at `auto`, the client has

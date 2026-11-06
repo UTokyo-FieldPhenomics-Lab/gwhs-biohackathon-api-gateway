@@ -9,7 +9,7 @@ them by a relative path, so a page never depends on the CDN or a model being up 
 
 The dataset figures use the publisher's recorded geometry in `fixtures/row-geometry.json`; the model
 cards call the deployed models once per run; the SegFormer and SPROUT-L cards use recorded answers,
-and the instance-dataset figure uses recorded geometry. The two Nano Banana pictures are a paid,
+and the instance-dataset figure uses recorded geometry. The four Nano Banana pictures are a paid,
 non-reproducible sample and come from `fixtures/nano-banana/`, recorded by
 `record_nano_banana.py`; this script never calls that model. Regeneration is what keeps a figure
 honest: change a fixture, a row or a model, and re-run.
@@ -394,6 +394,7 @@ def download(work: Path) -> dict[str, Image.Image]:
         "gwhd4": f"{DATA}/gwhd/images/00000004.jpg",
         "gwfss": f"{DATA}/gwfss/images/00000000.png",
         "gwfss_mask": f"{DATA}/gwfss/masks/00000000.png",
+        "gwfss3": f"{DATA}/gwfss/images/00000003.png",
         "gwfss4": f"{DATA}/gwfss/images/00000004.png",
         "gwfss4_mask": f"{DATA}/gwfss/masks/00000004.png",
         "instance": f"{DATA}/gwhs-temp/images/00000000.jpg",
@@ -430,7 +431,7 @@ def main() -> None:
         draw_wevisone(images["gwhd4"], client)
         draw_yolo(images["potted"], client)
         draw_internvl(images["gwfss4"], client)
-        draw_nano_banana(images["gwfss4"])
+        draw_nano_banana(images["gwfss4"], images["gwfss3"])
         draw_instance(images["instance"], objects, rles)
 
 
@@ -802,20 +803,36 @@ def draw_internvl(image: Image.Image, client: global_wheat.Client) -> None:
     )
 
 
-def draw_nano_banana(image: Image.Image) -> None:
-    """The hosted model's two routes, drawn from the pictures recorded once into a fixture."""
-    calls = json.loads((NANO_BANANA / "calls.json").read_text(encoding="utf-8"))
-    generation, edit = calls
-    generated = Image.open(NANO_BANANA / generation["picture"]).convert("RGB")
-    edited = Image.open(NANO_BANANA / edit["picture"]).convert("RGB")
+def draw_nano_banana(image: Image.Image, third: Image.Image) -> None:
+    """The hosted model's generation, edit, mask and detection cards from one fixture.
+
+    The mask and detection prompts ask for pixels, not geometry: the answer is a picture the model
+    drew over, and its ``objects`` list stays empty. The card shows what the model can be asked to
+    draw without implying the API returns a mask or a box.
+    """
+    calls = {
+        entry["name"]: entry
+        for entry in json.loads((NANO_BANANA / "calls.json").read_text(encoding="utf-8"))
+    }
+    def picture(name: str) -> Image.Image:
+        return Image.open(NANO_BANANA / calls[name]["picture"]).convert("RGB")
     save(
         figure(
-            (chat_panel(None, generation["params"]["prompt"], answer_image=generated),
+            (chat_panel(None, calls["generate"]["params"]["prompt"],
+                        answer_image=picture("generate")),
              "generate", "ONE CALL"),
-            (chat_panel(image, edit["params"]["prompt"], answer_image=edited),
+            (chat_panel(image, calls["edit"]["params"]["prompt"],
+                        answer_image=picture("edit")),
              "edit", "ONE CALL"),
+            (chat_panel(third, calls["mask"]["params"]["prompt"],
+                        answer_image=picture("mask")),
+             "segmentation mask", "ONE CALL"),
+            (chat_panel(third, calls["detect"]["params"]["prompt"],
+                        answer_image=picture("detect")),
+             "detection boxes", "ONE CALL"),
+            columns=2,
         ),
-        MODELS / "nano-banana-generate-and-edit.jpg",
+        MODELS / "nano-banana-tasks.jpg",
         quality=94,
     )
 
